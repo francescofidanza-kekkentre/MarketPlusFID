@@ -1,0 +1,47 @@
+{
+  "name": "MarketPulse Pro - Chromebook Trading & Portfolio",
+  "short_name": "MarketPulse",
+  "description": "Monitoraggio in tempo reale di Azioni, ETF e Criptovalute con Grafici Avanzati, Analisi Tecnica e Calcolatore del Rischio per Chromebook.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0f19",
+  "theme_color": "#0b0f19",
+  "categories": ["finance", "productivity", "business"],
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Watchlist",
+      "url": "./index.html?tab=watchlist",
+      "description": "Apri subito la tua Watchlist personale"
+    },
+    {
+      "name": "Calcolatore Rischio",
+      "url": "./index.html?tab=calculator",
+      "description": "Calcola Position Sizing e Risk/Reward"
+    },
+    {
+      "name": "Crypto Ticker",
+      "url": "./index.html?filter=crypto",
+      "description": "Visualizza le Criptovalute in tempo reale"
+    }
+  ]
+}

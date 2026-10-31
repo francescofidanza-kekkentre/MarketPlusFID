@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="MarketPulse Pro - App per Chromebook per monitorare Azioni, ETF, Crypto e supportare le decisioni di trading">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MarketPulse">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+
+  <title>MarketPulse Pro • Chromebook Trading & Portfolio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Application Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo">
+        <img src="icons/icon.svg" alt="MarketPulse" width="34" height="34">
+      </div>
+      <div class="brand-title">
+        MarketPulse <span class="badge">CHROMEBOOK</span>
+      </div>
+    </div>
+
+    <!-- Market Status & Sentiment Indicators -->
+    <div class="market-status-bar">
+      <div class="status-pill" id="marketHoursPill" title="Stato Mercati Principali">
+        <div class="status-indicator" id="marketIndicator"></div>
+        <span id="marketHoursText">NYSE: In corso</span>
+      </div>
+
+      <div class="fear-greed-pill" id="fearGreedPill" title="Fear & Greed Index globale da alternative.me">
+        <span style="color: var(--text-muted);">Sentiment:</span>
+        <span class="fear-greed-meter fg-neutral" id="fearGreedValue">52 • Neutrale</span>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <div class="search-box">
+        <input type="text" id="globalSearch" class="search-input" placeholder="Cerca ticker o nome..." autocomplete="off">
+        <span class="search-kbd">/</span>
+      </div>
+
+      <button id="installBtn" class="btn-install" title="Installa come App nativa per ChromeOS">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Installa App</span>
+      </button>
+
+      <button id="shortcutsBtn" class="btn-icon" title="Scorciatoie da tastiera Chromebook (?)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
+      </button>
+
+      <button id="settingsBtn" class="btn-icon" title="Impostazioni & Valuta">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Multi-Column Viewport -->
+  <main class="app-main">
+
+    <!-- LEFT PANEL: Watchlist & Multi-Asset Explorer -->
+    <aside class="app-panel-left">
+      <div class="watchlist-controls">
+        <div class="category-chips">
+          <button class="chip-btn active" data-filter="all">Tutti</button>
+          <button class="chip-btn" data-filter="stock">Azioni</button>
+          <button class="chip-btn" data-filter="etf">ETF</button>
+          <button class="chip-btn" data-filter="crypto">Crypto</button>
+          <button class="chip-btn" data-filter="watchlist">⭐ Preferiti</button>
+        </div>
+
+        <div class="watchlist-summary-bar">
+          <span id="assetCountText">24 Asset Monitorati</span>
+          <button id="addCustomTickerBtn" class="add-ticker-btn" title="Aggiungi Ticker personalizzato">
+            <span>+ Aggiungi</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Asset List -->
+      <div class="asset-list" id="assetListContainer">
+        <!-- Asset Cards injected dynamically via app.js -->
+      </div>
+    </aside>
+
+    <!-- CENTER PANEL: Charting & Technical Decision Support -->
+    <section class="app-panel-center">
+      
+      <!-- Selected Asset Bar -->
+      <div class="asset-header-bar">
+        <div class="ticker-identity">
+          <button id="favoriteToggleBtn" class="fav-toggle-btn" title="Aggiungi/Rimuovi dai preferiti">★</button>
+          <div class="ticker-titles">
+            <h2 id="activeSymbol">NVDA <span class="asset-type-badge type-stock" id="activeType">AZIONE</span></h2>
+            <p style="display: flex; align-items: center; gap: 8px;">
+              <span id="activeName">NVIDIA Corporation • NASDAQ</span>
+              <span id="activeSourceBadge" style="font-size: 0.65rem; padding: 2px 7px; border-radius: 12px; font-weight: 700;"></span>
+            </p>
+          </div>
+        </div>
+
+        <div class="ticker-stats-row">
+          <div class="big-price" id="activePrice">$142.60</div>
+          <div class="big-change badge-up" id="activeChange">+3.45%</div>
+
+          <div class="stat-metric">
+            <span>Max 24h</span>
+            <strong id="activeHigh">$144.10</strong>
+          </div>
+          <div class="stat-metric">
+            <span>Min 24h</span>
+            <strong id="activeLow">$138.80</strong>
+          </div>
+          <div class="stat-metric">
+            <span>Volume</span>
+            <strong id="activeVolume">48.2M</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Platform Deep Links -->
+      <div class="broker-shortcuts-bar">
+        <span>Apri su Piattaforma:</span>
+        <div class="broker-links">
+          <a href="#" id="linkTradingView" target="_blank" rel="noopener noreferrer" class="broker-btn" title="Apri grafico completo su TradingView">
+            <span>TradingView ↗</span>
+          </a>
+          <a href="#" id="linkBinance" target="_blank" rel="noopener noreferrer" class="broker-btn" title="Apri book e ordini su Binance">
+            <span>Binance ↗</span>
+          </a>
+          <a href="#" id="linkIBKR" target="_blank" rel="noopener noreferrer" class="broker-btn" title="Cerca su Interactive Brokers">
+            <span>Interactive Brokers ↗</span>
+          </a>
+          <a href="#" id="linkYahoo" target="_blank" rel="noopener noreferrer" class="broker-btn" title="Notizie e bilanci su Yahoo Finance">
+            <span>Yahoo Finance ↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Chart Toolbar -->
+      <div class="chart-toolbar">
+        <div class="toolbar-group">
+          <button class="tool-btn" data-timeframe="1D">1G</button>
+          <button class="tool-btn" data-timeframe="1W">1S</button>
+          <button class="tool-btn active" data-timeframe="1M">1M</button>
+          <button class="tool-btn" data-timeframe="3M">3M</button>
+          <button class="tool-btn" data-timeframe="1Y">1A</button>
+          <button class="tool-btn" data-timeframe="ALL">TUTTO</button>
+        </div>
+
+        <div class="toolbar-group">
+          <button class="tool-btn active" id="btnToggleCandles">📊 Candele</button>
+          <button class="tool-btn" id="btnToggleLine">📈 Linea</button>
+        </div>
+
+        <div class="toolbar-group">
+          <button class="tool-btn active" id="btnToggleEma" title="Medie Mobili Esponenziali (EMA 20 & EMA 50)">EMA (20/50)</button>
+          <button class="tool-btn" id="btnToggleBands" title="Bande di Bollinger (20, 2)">Bande</button>
+          <button class="tool-btn active" id="btnToggleRsi" title="RSI Relative Strength Index (14)">RSI</button>
+          <button class="tool-btn" id="btnToggleMacd" title="MACD (12, 26, 9)">MACD</button>
+        </div>
+      </div>
+
+      <!-- Chart Canvas Stage -->
+      <div class="chart-container" id="chartWrapper">
+        <canvas id="mainChartCanvas"></canvas>
+        <div id="chartTooltip" class="chart-tooltip" style="display: none;">
+          <div class="tooltip-val"><span class="label">O:</span><span id="ttO">-</span></div>
+          <div class="tooltip-val"><span class="label">H:</span><span id="ttH">-</span></div>
+          <div class="tooltip-val"><span class="label">L:</span><span id="ttL">-</span></div>
+          <div class="tooltip-val"><span class="label">C:</span><span id="ttC">-</span></div>
+          <div class="tooltip-val"><span class="label">Vol:</span><span id="ttV">-</span></div>
+        </div>
+      </div>
+
+      <!-- Subchart: RSI (Relative Strength Index) -->
+      <div class="subchart-container" id="rsiSubchartWrapper">
+        <span class="subchart-title">RSI (14) • <span id="rsiLiveVal">54.2</span></span>
+        <canvas id="rsiCanvas"></canvas>
+      </div>
+
+      <!-- Subchart: MACD (Moving Average Convergence Divergence) -->
+      <div class="subchart-container" id="macdSubchartWrapper" style="display: none;">
+        <span class="subchart-title">MACD (12, 26, 9) • <span id="macdLiveVal">0.42</span></span>
+        <canvas id="macdCanvas"></canvas>
+      </div>
+
+      <!-- Technical Decision Support & Signals Box -->
+      <div class="decision-support-banner">
+        <div class="decision-header">
+          <div class="decision-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <span>Decision Support & Indicatori Tecnici</span>
+          </div>
+          <div class="decision-rating-badge rating-buy" id="decisionRatingBadge">BUY MODERATO (74%)</div>
+        </div>
+
+        <div class="decision-signals-grid">
+          <div class="signal-pill">
+            <span class="name">RSI (14)</span>
+            <span class="val" id="signalRsi">Neutro (54.2)</span>
+          </div>
+          <div class="signal-pill">
+            <span class="name">Trend EMA 20/50</span>
+            <span class="val" id="signalEma" style="color: var(--color-up);">Rialzista (Golden Cross)</span>
+          </div>
+          <div class="signal-pill">
+            <span class="name">Bande Bollinger</span>
+            <span class="val" id="signalBands">All'interno del canale</span>
+          </div>
+          <div class="signal-pill">
+            <span class="name">MACD Momentum</span>
+            <span class="val" id="signalMacd" style="color: var(--color-up);">Incrocio Positivo</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT PANEL: Trading Tools, Position Sizer, Checklist & Journal -->
+    <aside class="app-panel-right">
+      <nav class="tools-nav">
+        <button class="tools-tab active" data-tool="calculator">Rischio & Size</button>
+        <button class="tools-tab" data-tool="checklist">Checklist Trade</button>
+        <button class="tools-tab" data-tool="journal">Note / Diario</button>
+      </nav>
+
+      <div class="tools-body">
+
+        <!-- Tool 1: Position Sizing & Risk Management Calculator -->
+        <div class="tool-pane active" id="paneCalculator">
+          
+          <div class="calc-field-group">
+            <label>Capitale di Trading (€/$)<span class="helper">Portfolio disponibile</span></label>
+            <div class="input-with-affix">
+              <span class="input-affix">€</span>
+              <input type="number" id="calcCapital" class="calc-input" value="10000" step="500">
+            </div>
+            <div class="calc-quick-chips">
+              <span class="calc-chip" data-capital="2000">2.000€</span>
+              <span class="calc-chip" data-capital="5000">5.000€</span>
+              <span class="calc-chip active" data-capital="10000">10.000€</span>
+              <span class="calc-chip" data-capital="25000">25.000€</span>
+            </div>
+          </div>
+
+          <div class="calc-field-group">
+            <label>Rischio Massimo (%)<span class="helper">Consigliato: 1% - 2%</span></label>
+            <div class="input-with-affix">
+              <span class="input-affix">%</span>
+              <input type="number" id="calcRiskPct" class="calc-input" value="1.5" step="0.1" min="0.1" max="10">
+            </div>
+            <div class="calc-quick-chips">
+              <span class="calc-chip" data-risk="1.0">1.0%</span>
+              <span class="calc-chip active" data-risk="1.5">1.5%</span>
+              <span class="calc-chip" data-risk="2.0">2.0%</span>
+              <span class="calc-chip" data-risk="3.0">3.0%</span>
+            </div>
+          </div>
+
+          <div class="calc-field-group">
+            <label>Prezzo d'Ingresso (Entry)<span class="helper">Prezzo corrente pre-caricato</span></label>
+            <div class="input-with-affix">
+              <span class="input-affix">$</span>
+              <input type="number" id="calcEntryPrice" class="calc-input" value="142.60" step="0.01">
+            </div>
+          </div>
+
+          <div class="calc-field-group">
+            <label>Stop Loss<span class="helper" id="calcSlDistance">-3.5%</span></label>
+            <div class="input-with-affix">
+              <span class="input-affix">$</span>
+              <input type="number" id="calcStopLoss" class="calc-input" value="137.60" step="0.01">
+            </div>
+          </div>
+
+          <div class="calc-field-group">
+            <label>Take Profit (Target)<span class="helper" id="calcTpDistance">+8.4%</span></label>
+            <div class="input-with-affix">
+              <span class="input-affix">$</span>
+              <input type="number" id="calcTakeProfit" class="calc-input" value="154.60" step="0.01">
+            </div>
+          </div>
+
+          <!-- Dynamic Results Card -->
+          <div class="calc-results-card">
+            <div class="result-row-primary">
+              <span class="label">Dimensione Posizione (Shares/Qty):</span>
+              <span class="value" id="calcOutputShares">30 Quote</span>
+            </div>
+
+            <div class="result-grid-metrics">
+              <div class="metric-box">
+                <div class="label">Rischio Max Monetario</div>
+                <div class="value" id="calcOutputRiskCash" style="color: var(--color-down);">€150.00</div>
+              </div>
+              <div class="metric-box">
+                <div class="label">Profitto Potenziale</div>
+                <div class="value" id="calcOutputProfitCash" style="color: var(--color-up);">€360.00</div>
+              </div>
+              <div class="metric-box">
+                <div class="label">Controvalore Posizione</div>
+                <div class="value" id="calcOutputTotalInvested">€4,278.00</div>
+              </div>
+              <div class="metric-box">
+                <div class="label">% Portafoglio Impegnato</div>
+                <div class="value" id="calcOutputPortfolioWeight">42.8%</div>
+              </div>
+            </div>
+
+            <div class="rr-verdict-box rating-strong-buy" id="calcRrVerdict">
+              <span>Rapporto R:R (Rischio/Rendimento):</span>
+              <span id="calcOutputRrRatio">1 : 2.40</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Tool 2: Pre-Trade Discipline Checklist -->
+        <div class="tool-pane" id="paneChecklist">
+          <div class="checklist-container">
+            <p style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+              Verifica prima di eseguire l'ordine sul tuo broker. La disciplina salva il capitale:
+            </p>
+
+            <label class="checklist-item">
+              <input type="checkbox" class="chk-item" checked>
+              <div class="checklist-text">
+                <strong>1. Trend allineato</strong>
+                <p>Il prezzo si trova sopra le medie mobili chiave (o sotto se short)?</p>
+              </div>
+            </label>
+
+            <label class="checklist-item">
+              <input type="checkbox" class="chk-item" checked>
+              <div class="checklist-text">
+                <strong>2. Livello Chiave Identificato</strong>
+                <p>Ingresso su supporto/pullback evidente o rottura confermata?</p>
+              </div>
+            </label>
+
+            <label class="checklist-item">
+              <input type="checkbox" class="chk-item" checked>
+              <div class="checklist-text">
+                <strong>3. Rapporto R:R >= 1:2</strong>
+                <p>Il potenziale profitto supera almeno il doppio del rischio calcolato?</p>
+              </div>
+            </label>
+
+            <label class="checklist-item">
+              <input type="checkbox" class="chk-item">
+              <div class="checklist-text">
+                <strong>4. Conferma dai Volumi</strong>
+                <p>I volumi dell'ultima sessione sono superiori alla media a 20 giorni?</p>
+              </div>
+            </label>
+
+            <label class="checklist-item">
+              <input type="checkbox" class="chk-item" checked>
+              <div class="checklist-text">
+                <strong>5. Nessun evento ad alto impatto imminente</strong>
+                <p>Assenza di trimestrali (earnings) o riunioni FED/BCE nelle prossime 24h.</p>
+              </div>
+            </label>
+
+            <div class="score-meter-card">
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700;">
+                <span>Discipline Score:</span>
+                <span id="chkScoreVal">80% • Setup Valido</span>
+              </div>
+              <div class="score-progress-bar">
+                <div class="score-progress-fill" id="chkScoreFill" style="width: 80%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tool 3: Trading Journal & Personal Notes -->
+        <div class="tool-pane" id="paneJournal">
+          <div class="notes-container">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">
+              Piano di trading e note personali per <strong id="notesActiveSymbol" style="color: var(--accent-blue);">NVDA</strong>:
+            </p>
+            <textarea id="tickerNotesInput" class="notes-textarea" placeholder="Esempio:
+- Setup: Breakout con retest a $140
+- Trigger: Chiusura candela oraria sopra $142
+- Target 1: $154 (massimi storici)
+- Stop Loss rigoroso a $137.60 sotto swing low."></textarea>
+            
+            <div class="notes-actions">
+              <span id="notesSavedIndicator" style="font-size: 0.75rem; color: var(--color-up); display: none; align-self: center;">Salvato ✓</span>
+              <button id="saveNotesBtn" class="btn-primary">Salva Note</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- MODAL: Add Custom Asset -->
+  <div class="modal-backdrop" id="modalAddTicker">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 style="font-size: 1.1rem; font-weight: 700;">Aggiungi Ticker</h3>
+        <button class="modal-close" id="closeAddTickerModal">&times;</button>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Simbolo Ticker (es. TSLA, BTC, VWCE)</label>
+        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="AAPL" style="padding-left: 10px; text-transform: uppercase;">
+      </div>
+
+      <div class="calc-field-group">
+        <label>Nome Completo Azienda / Fondo / Token</label>
+        <input type="text" id="newTickerName" class="calc-input" placeholder="Apple Inc." style="padding-left: 10px;">
+      </div>
+
+      <div class="calc-field-group">
+        <label>Tipologia Asset</label>
+        <select id="newTickerType" class="calc-input" style="padding-left: 10px;">
+          <option value="stock">Azione (Stock)</option>
+          <option value="etf">ETF / Fondo Indicizzato</option>
+          <option value="crypto">Criptovaluta</option>
+        </select>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Prezzo Iniziale Indicativo ($ o €)</label>
+        <input type="number" id="newTickerPrice" class="calc-input" placeholder="100.00" step="0.01" style="padding-left: 10px;">
+      </div>
+
+      <button id="submitNewTickerBtn" class="btn-primary" style="width: 100%; margin-top: 8px;">Aggiungi a MarketPulse</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Chromebook Shortcuts Cheatsheet -->
+  <div class="modal-backdrop" id="modalShortcuts">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 style="font-size: 1.1rem; font-weight: 700;">Scorciatoie Chromebook</h3>
+        <button class="modal-close" id="closeShortcutsModal">&times;</button>
+      </div>
+
+      <table class="shortcuts-table">
+        <tbody>
+          <tr><td>Cerca qualsiasi Ticker</td><td><kbd>/</kbd></td></tr>
+          <tr><td>Timeframe 1 Giorno / 1 Settimana</td><td><kbd>1</kbd> o <kbd>2</kbd></td></tr>
+          <tr><td>Timeframe 1 Mese / 1 Anno</td><td><kbd>3</kbd> o <kbd>5</kbd></td></tr>
+          <tr><td>Attiva/Disattiva Candele / Linea</td><td><kbd>C</kbd></td></tr>
+          <tr><td>Mostra/Nascondi Indicatore RSI</td><td><kbd>R</kbd></td></tr>
+          <tr><td>Mostra/Nascondi Indicatore MACD</td><td><kbd>M</kbd></td></tr>
+          <tr><td>Aggiungi/Rimuovi da Preferiti</td><td><kbd>F</kbd></td></tr>
+          <tr><td>Chiudi finestre o modali</td><td><kbd>Esc</kbd></td></tr>
+        </tbody>
+      </table>
+
+      <p style="font-size: 0.72rem; color: var(--text-muted); text-align: center;">
+        Ottimizzato per Chromebook con touchpad, touch screen e tastiera fisica ChromeOS.
+      </p>
+    </div>
+  </div>
+
+  <!-- MODAL: Settings -->
+  <div class="modal-backdrop" id="modalSettings">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 style="font-size: 1.1rem; font-weight: 700;">Impostazioni PWA</h3>
+        <button class="modal-close" id="closeSettingsModal">&times;</button>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Valuta Base di Riferimento</label>
+        <select id="settingCurrency" class="calc-input" style="padding-left: 10px;">
+          <option value="EUR">Euro (€)</option>
+          <option value="USD">Dollaro Statunitense ($)</option>
+        </select>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Aggiornamento Automatico Prezzi</label>
+        <select id="settingRefreshRate" class="calc-input" style="padding-left: 10px;">
+          <option value="5000">Ogni 5 secondi (Tempo reale attivo)</option>
+          <option value="15000">Ogni 15 secondi</option>
+          <option value="60000">Ogni 60 secondi (Risparmio batteria)</option>
+        </select>
+      </div>
+
+      <div class="calc-field-group">
+        <label>
+          <span>Chiave API Finnhub (Storico Reale Wall Street)</span>
+          <a href="https://finnhub.io" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue); font-size: 0.72rem; text-decoration: none;">Chiave gratis ↗</a>
+        </label>
+        <input type="text" id="settingFinnhubKey" class="calc-input" placeholder="Incolla la tua chiave (es. ct3...)" style="padding-left: 10px; font-family: var(--font-mono);">
+        <div id="finnhubStatusText" style="font-size: 0.72rem; margin-top: 4px; font-weight: 600;"></div>
+        <p style="font-size: 0.7rem; color: var(--text-muted); line-height: 1.3; margin-top: 2px;">
+          Permette all'app pubblicata su GitHub Pages di scaricare le candele e i prezzi reali 100% ufficiali di Azioni ed ETF direttamente dal browser.
+        </p>
+      </div>
+
+      <button id="saveSettingsBtn" class="btn-primary" style="width: 100%; margin-top: 8px;">Salva Preferenze</button>
+    </div>
+  </div>
+
+  <!-- Main JavaScript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
