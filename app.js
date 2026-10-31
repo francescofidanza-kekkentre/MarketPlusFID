@@ -514,7 +514,7 @@ async function loadAndRenderChart(asset, timeframe) {
 }
 
 function showChartNoData(asset) {
-  const canvas = document.getElementById('mainChart');
+  const canvas = document.getElementById('mainChartCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -532,7 +532,7 @@ function showChartNoData(asset) {
   ctx.textAlign = 'left';
 
   // Clear indicator canvases too
-  ['rsiChart', 'macdChart'].forEach(id => {
+  ['rsiCanvas', 'macdCanvas'].forEach(id => {
     const c = document.getElementById(id);
     if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
   });
