@@ -265,6 +265,7 @@ function renderAssetList() {
           <div class="asset-symbol-row">
             <span class="asset-symbol">${asset.symbol}</span>
             <span class="asset-type-badge type-${asset.type}">${asset.type}</span>
+            <button class="delete-btn" title="Elimina asset">🗑️</button>
           </div>
           <span class="asset-name" title="${asset.name}">${asset.name}</span>
         </div>
@@ -279,11 +280,22 @@ function renderAssetList() {
 
   // Attach click events
   container.querySelectorAll('.asset-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const sym = el.getAttribute('data-symbol');
-      const found = AppState.assets.find(a => a.symbol === sym);
-      if (found) selectAsset(found);
-    });
+      el.addEventListener('click', () => {
+        const sym = el.getAttribute('data-symbol');
+        const found = AppState.assets.find(a => a.symbol === sym);
+        if (found) selectAsset(found);
+      });
+      // Delete button handler
+      const deleteBtn = el.querySelector('.delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); // prevent row selection
+          const sym = el.getAttribute('data-symbol');
+          AppState.assets = AppState.assets.filter(a => a.symbol !== sym);
+          saveAssetsToStorage();
+          renderAssetList();
+        });
+      }
   });
 }
 

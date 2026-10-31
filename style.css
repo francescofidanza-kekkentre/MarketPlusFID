@@ -407,6 +407,29 @@ body {
   gap: 6px;
 }
 
+.delete-btn {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
+.asset-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
 .asset-symbol {
   font-weight: 700;
   font-size: 0.9rem;
