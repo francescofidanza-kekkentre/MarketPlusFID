@@ -6,30 +6,30 @@
 // --- Default Asset Database ---
 const DEFAULT_ASSETS = [
   // Stocks
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', type: 'stock', exchange: 'NASDAQ', price: 142.60, change: 3.45, high: 144.10, low: 138.80, volume: '48.2M', favorite: true },
-  { symbol: 'AAPL', name: 'Apple Inc.', type: 'stock', exchange: 'NASDAQ', price: 234.80, change: 1.12, high: 236.00, low: 232.50, volume: '32.1M', favorite: true },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', type: 'stock', exchange: 'NASDAQ', price: 431.20, change: 0.85, high: 433.50, low: 428.10, volume: '18.4M', favorite: false },
-  { symbol: 'TSLA', name: 'Tesla Inc.', type: 'stock', exchange: 'NASDAQ', price: 252.10, change: -2.15, high: 258.40, low: 249.20, volume: '62.7M', favorite: true },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'stock', exchange: 'NASDAQ', price: 171.40, change: 1.34, high: 172.90, low: 169.80, volume: '22.9M', favorite: false },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'stock', exchange: 'NASDAQ', price: 194.50, change: -0.45, high: 196.20, low: 193.10, volume: '25.6M', favorite: false },
-  { symbol: 'META', name: 'Meta Platforms Inc.', type: 'stock', exchange: 'NASDAQ', price: 582.00, change: 2.20, high: 586.50, low: 574.00, volume: '14.8M', favorite: false },
-  { symbol: 'ASML', name: 'ASML Holding N.V.', type: 'stock', exchange: 'EURONEXT', price: 712.50, change: -1.05, high: 722.00, low: 708.00, volume: '3.1M', favorite: false },
+  { symbol: 'NVDA', name: 'NVIDIA Corporation', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'AAPL', name: 'Apple Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'TSLA', name: 'Tesla Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'META', name: 'Meta Platforms Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'ASML', name: 'ASML Holding N.V.', type: 'stock', exchange: 'EURONEXT', price: null, change: null, high: null, low: null, volume: null, favorite: false },
 
   // ETFs
-  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'etf', exchange: 'NYSE Arca', price: 582.40, change: 0.72, high: 583.50, low: 579.80, volume: '54.2M', favorite: true },
-  { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', type: 'etf', exchange: 'NASDAQ', price: 496.10, change: 1.25, high: 498.20, low: 492.40, volume: '38.6M', favorite: true },
-  { symbol: 'VWCE', name: 'Vanguard FTSE All-World UCITS', type: 'etf', exchange: 'XETRA', price: 124.80, change: 0.40, high: 125.10, low: 124.20, volume: '4.5M', favorite: true },
-  { symbol: 'SOXX', name: 'iShares Semiconductor ETF', type: 'etf', exchange: 'NASDAQ', price: 228.30, change: 2.80, high: 231.00, low: 224.50, volume: '12.4M', favorite: false },
-  { symbol: 'GLD', name: 'SPDR Gold Shares ETF', type: 'etf', exchange: 'NYSE Arca', price: 254.90, change: 0.35, high: 256.20, low: 253.80, volume: '7.8M', favorite: false },
-  { symbol: 'URTH', name: 'iShares MSCI World ETF', type: 'etf', exchange: 'NYSE Arca', price: 158.20, change: 0.65, high: 158.90, low: 157.40, volume: '2.1M', favorite: false },
+  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'etf', exchange: 'NYSE Arca', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', type: 'etf', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'VWCE', name: 'Vanguard FTSE All-World UCITS', type: 'etf', exchange: 'XETRA', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'SOXX', name: 'iShares Semiconductor ETF', type: 'etf', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'GLD', name: 'SPDR Gold Shares ETF', type: 'etf', exchange: 'NYSE Arca', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'URTH', name: 'iShares MSCI World ETF', type: 'etf', exchange: 'NYSE Arca', price: null, change: null, high: null, low: null, volume: null, favorite: false },
 
   // Crypto
-  { symbol: 'BTC', name: 'Bitcoin (USDT)', type: 'crypto', exchange: 'Binance / Global', price: 69450.00, change: 2.65, high: 70100.00, low: 68200.00, volume: '$32.4B', favorite: true },
-  { symbol: 'ETH', name: 'Ethereum (USDT)', type: 'crypto', exchange: 'Binance / Global', price: 2540.00, change: 1.80, high: 2580.00, low: 2490.00, volume: '$16.1B', favorite: true },
-  { symbol: 'SOL', name: 'Solana (USDT)', type: 'crypto', exchange: 'Binance / Global', price: 178.20, change: 4.85, high: 181.50, low: 171.20, volume: '$4.2B', favorite: true },
-  { symbol: 'BNB', name: 'BNB (USDT)', type: 'crypto', exchange: 'Binance / Global', price: 592.10, change: 0.95, high: 598.00, low: 587.00, volume: '$1.1B', favorite: false },
-  { symbol: 'XRP', name: 'Ripple (USDT)', type: 'crypto', exchange: 'Binance / Global', price: 0.528, change: -1.20, high: 0.542, low: 0.521, volume: '$840M', favorite: false },
-  { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', price: 0.354, change: 1.15, high: 0.362, low: 0.348, volume: '$310M', favorite: false }
+  { symbol: 'BTC', name: 'Bitcoin (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'ETH', name: 'Ethereum (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'SOL', name: 'Solana (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'BNB', name: 'BNB (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'XRP', name: 'Ripple (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: false }
 ];
 
 // --- State Management ---
@@ -194,10 +194,9 @@ async function pollLivePrices() {
     }
   } catch (e) {}
 
-  // 2. Fetch real Stock/ETF quotes from Finnhub if key is configured, or realistic micro-ticks as fallback
+  // 2. Fetch real Stock/ETF quotes from Finnhub if key is configured — no simulation fallback
   if (AppState.settings.finnhubKey) {
     const stockSymbols = AppState.assets.filter(a => a.type !== 'crypto');
-    // Poll the active selected asset first, and other assets progressively
     for (const asset of stockSymbols) {
       fetch(`https://finnhub.io/api/v1/quote?symbol=${asset.symbol}&token=${AppState.settings.finnhubKey}`)
         .then(res => res.json())
@@ -205,8 +204,9 @@ async function pollLivePrices() {
           if (data && data.c && data.c > 0) {
             asset.price = parseFloat(data.c);
             asset.change = parseFloat(data.dp || 0);
-            asset.high = parseFloat(data.h || data.c);
-            asset.low = parseFloat(data.l || data.c);
+            asset.high = data.h > 0 ? parseFloat(data.h) : null;
+            asset.low = data.l > 0 ? parseFloat(data.l) : null;
+            asset.volume = data.v > 0 ? data.v : null;
             renderAssetList();
             if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
               updateSelectedAssetHeader();
@@ -214,15 +214,8 @@ async function pollLivePrices() {
           }
         }).catch(() => {});
     }
-  } else {
-    // Micro-fluctuations for Stocks/ETFs when offline/no key
-    AppState.assets.forEach(asset => {
-      if (asset.type !== 'crypto') {
-        const deltaPercent = (Math.random() - 0.495) * 0.15; // slight tick
-        asset.price = +(asset.price * (1 + deltaPercent / 100)).toFixed(2);
-      }
-    });
   }
+  // If no Finnhub key, prices for stocks/ETFs remain as last known value — no simulation
 
   renderAssetList();
   if (AppState.selectedAsset) {
@@ -254,10 +247,11 @@ function renderAssetList() {
 
   container.innerHTML = filtered.map(asset => {
     const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
-    const isUp = asset.change >= 0;
+    const isUp = (asset.change ?? 0) >= 0;
     const changeBadgeClass = isUp ? 'badge-up' : 'badge-down';
     const changeSign = isUp ? '+' : '';
-    const formattedPrice = formatCurrency(asset.price, asset.type);
+    const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset.type) : '—';
+    const formattedChange = asset.change != null ? `${changeSign}${asset.change.toFixed(2)}%` : '—';
 
     return `
       <div class="asset-item ${isSelected ? 'selected' : ''}" data-symbol="${asset.symbol}">
@@ -272,7 +266,7 @@ function renderAssetList() {
 
         <div class="asset-price-box">
           <span class="asset-price">${formattedPrice}</span>
-          <span class="asset-change ${changeBadgeClass}">${changeSign}${asset.change.toFixed(2)}%</span>
+          <span class="asset-change ${asset.change != null ? changeBadgeClass : ''}">${formattedChange}</span>
         </div>
       </div>
     `;
@@ -324,15 +318,20 @@ function updateSelectedAssetHeader() {
   document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${asset.type}" id="activeType">${asset.type.toUpperCase()}</span>`;
   document.getElementById('activeName').textContent = `${asset.name} • ${asset.exchange}`;
 
-  const isUp = asset.change >= 0;
+  const isUp = (asset.change ?? 0) >= 0;
   const changeEl = document.getElementById('activeChange');
-  changeEl.className = `big-change ${isUp ? 'badge-up' : 'badge-down'}`;
-  changeEl.textContent = `${isUp ? '+' : ''}${asset.change.toFixed(2)}%`;
+  if (asset.change != null) {
+    changeEl.className = `big-change ${isUp ? 'badge-up' : 'badge-down'}`;
+    changeEl.textContent = `${isUp ? '+' : ''}${asset.change.toFixed(2)}%`;
+  } else {
+    changeEl.className = 'big-change';
+    changeEl.textContent = '—';
+  }
 
-  document.getElementById('activePrice').textContent = formatCurrency(asset.price, asset.type);
-  document.getElementById('activeHigh').textContent = formatCurrency(asset.high || asset.price * 1.02, asset.type);
-  document.getElementById('activeLow').textContent = formatCurrency(asset.low || asset.price * 0.98, asset.type);
-  document.getElementById('activeVolume').textContent = asset.volume || '12.5M';
+  document.getElementById('activePrice').textContent = asset.price != null ? formatCurrency(asset.price, asset.type) : '—';
+  document.getElementById('activeHigh').textContent = asset.high ? formatCurrency(asset.high, asset.type) : '—';
+  document.getElementById('activeLow').textContent = asset.low ? formatCurrency(asset.low, asset.type) : '—';
+  document.getElementById('activeVolume').textContent = asset.volume || '—';
 
   const favBtn = document.getElementById('favoriteToggleBtn');
   if (favBtn) favBtn.className = `fav-toggle-btn ${asset.favorite ? 'active' : ''}`;
@@ -434,7 +433,7 @@ async function loadAndRenderChart(asset, timeframe) {
                 high: parseFloat(fhData.h[i]),
                 low: parseFloat(fhData.l[i]),
                 close: parseFloat(fhData.c[i]),
-                volume: parseFloat(fhData.v[i] || 50000)
+                volume: fhData.v && fhData.v[i] > 0 ? parseFloat(fhData.v[i]) : null
               }));
               if (bars.length > 0) {
                 asset.price = bars[bars.length - 1].close;
@@ -481,7 +480,7 @@ async function loadAndRenderChart(asset, timeframe) {
                   high: parseFloat(q.high[i]),
                   low: parseFloat(q.low[i]),
                   close: parseFloat(q.close[i]),
-                  volume: parseFloat(q.volume?.[i] || 50000)
+                  volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
                 });
               }
             }
@@ -493,9 +492,10 @@ async function loadAndRenderChart(asset, timeframe) {
       }
     }
 
-    // 3. Graceful realistic generator if offline or rate-limited
+    // 3. No data available — do NOT simulate. Show error in chart instead.
     if (!bars || bars.length === 0) {
-      bars = generateHistoricalBars(asset.price, timeframe, asset.change);
+      showChartNoData(asset);
+      return;
     }
 
     AppState.cachedBars[cacheKey] = bars;
@@ -511,6 +511,31 @@ async function loadAndRenderChart(asset, timeframe) {
 
   // Update Technical Decision Banner
   updateTechnicalDecisionBanner(bars);
+}
+
+function showChartNoData(asset) {
+  const canvas = document.getElementById('mainChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  const msg1 = 'Dati non disponibili per ' + asset.symbol;
+  const msg2 = asset.type === 'crypto'
+    ? 'Binance non raggiungibile'
+    : AppState.settings.finnhubKey
+      ? 'Finnhub non ha restituito dati'
+      : 'Configura la chiave API Finnhub nelle impostazioni';
+  ctx.fillText(msg1, canvas.width / 2, canvas.height / 2 - 14);
+  ctx.fillText(msg2, canvas.width / 2, canvas.height / 2 + 10);
+  ctx.textAlign = 'left';
+
+  // Clear indicator canvases too
+  ['rsiChart', 'macdChart'].forEach(id => {
+    const c = document.getElementById(id);
+    if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  });
 }
 
 function generateHistoricalBars(currentPrice, timeframe, assetChange = 0) {
@@ -1487,9 +1512,9 @@ function setupModals() {
       exchange: type === 'crypto' ? 'Crypto' : 'Stock Exchange',
       price: price,
       change: 0.0,
-      high: price * 1.02,
-      low: price * 0.98,
-      volume: '1.0M',
+      high: null,
+      low: null,
+      volume: null,
       favorite: true
     };
 
