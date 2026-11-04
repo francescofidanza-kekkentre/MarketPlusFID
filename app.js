@@ -47,13 +47,21 @@ const AppState = {
   },
   settings: {
     currency: 'USD',
-    refreshRate: 5000,
-    finnhubKey: ''
+    refreshRate: 5000
   },
   cachedBars: {}, // symbol_timeframe -> []
+  barsLastUpdated: {}, // symbol_timeframe -> timestamp ms
+  quoteLastUpdated: {}, // symbol -> timestamp ms
+  localApiAvailable: null, // null = unknown, true = local server.py active, false = static hosting
+  preferredProxyIdx: 0,
+  stockPollInProgress: false,
   crosshair: null,
   deferredPrompt: null
 };
+
+const HISTORY_STORAGE_KEY = 'marketpulse_history_v1';
+const INCREMENTAL_SYNC_COOLDOWN_MS = 10000; // Minimum interval between incremental candle fetches per key
+const STOCK_QUOTE_POLL_COOLDOWN_MS = 30000; // Poll stock/ETF quotes every 30s without API key
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -98,10 +106,97 @@ function loadStoredData() {
       AppState.settings = Object.assign(AppState.settings, JSON.parse(storedSettings));
     } catch (e) {}
   }
+
+  // Load persisted historical bars from localStorage so once downloaded they remain saved
+  const storedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
+  if (storedHistory) {
+    try {
+      const parsed = JSON.parse(storedHistory);
+      if (parsed && typeof parsed === 'object') {
+        for (const [key, entry] of Object.entries(parsed)) {
+          if (entry && Array.isArray(entry.bars) && entry.bars.length > 0) {
+            AppState.cachedBars[key] = entry.bars.map(b => ({
+              time: new Date(b.t),
+              open: b.o,
+              high: b.h,
+              low: b.l,
+              close: b.c,
+              volume: b.v
+            }));
+            AppState.barsLastUpdated[key] = entry.updatedAt || 0;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[MarketPulse] Error loading stored history:', e);
+    }
+  }
 }
 
 function saveAssetsToStorage() {
-  localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
+  try {
+    localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
+  } catch (e) {}
+}
+
+function saveHistoryToStorage() {
+  try {
+    const serialized = {};
+    for (const [key, bars] of Object.entries(AppState.cachedBars)) {
+      if (Array.isArray(bars) && bars.length > 0) {
+        serialized[key] = {
+          updatedAt: AppState.barsLastUpdated[key] || Date.now(),
+          bars: bars.map(b => ({
+            t: b.time instanceof Date ? b.time.getTime() : new Date(b.time).getTime(),
+            o: b.open,
+            h: b.high,
+            l: b.low,
+            c: b.close,
+            v: b.volume
+          }))
+        };
+      }
+    }
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(serialized));
+  } catch (e) {
+    console.warn('[MarketPulse] Unable to persist historical bars to localStorage:', e);
+  }
+}
+
+function mergeHistoricalBars(existingBars, newBars) {
+  if (!existingBars || existingBars.length === 0) return newBars || [];
+  if (!newBars || newBars.length === 0) return existingBars;
+
+  const map = new Map();
+  for (const b of existingBars) {
+    const ts = b.time instanceof Date ? b.time.getTime() : new Date(b.time).getTime();
+    map.set(ts, { ...b, time: new Date(ts) });
+  }
+  for (const b of newBars) {
+    const ts = b.time instanceof Date ? b.time.getTime() : new Date(b.time).getTime();
+    map.set(ts, { ...b, time: new Date(ts) });
+  }
+
+  return Array.from(map.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(entry => entry[1]);
+}
+
+function updateCachedBarsWithLivePrice(symbol, livePrice) {
+  if (livePrice == null || isNaN(livePrice)) return;
+  let updatedAny = false;
+  for (const [key, bars] of Object.entries(AppState.cachedBars)) {
+    if (key.startsWith(`${symbol}_`) && Array.isArray(bars) && bars.length > 0) {
+      const last = bars[bars.length - 1];
+      last.close = livePrice;
+      if (livePrice > last.high) last.high = livePrice;
+      if (livePrice < last.low) last.low = livePrice;
+      updatedAny = true;
+    }
+  }
+  if (updatedAny) {
+    saveHistoryToStorage();
+  }
 }
 
 // --- Live Market Hours Check ---
@@ -170,9 +265,179 @@ function renderFearGreed(val, label) {
   }
 }
 
-// --- Polling Live Prices (Binance for Crypto + Simulation for Stocks) ---
+// --- Keyless Symbol & Market Helpers (Yahoo Finance & Stooq) ---
+function getYahooSymbol(asset) {
+  const sym = (asset.symbol || '').trim().toUpperCase();
+  if (sym.includes('.')) return sym;
+  if (sym === 'VWCE' || (asset.exchange && asset.exchange.toUpperCase().includes('XETRA'))) {
+    return `${sym}.DE`;
+  }
+  return sym;
+}
+
+function getStooqSymbol(asset) {
+  const sym = (asset.symbol || '').trim().toLowerCase();
+  if (sym.includes('.')) return sym;
+  if (sym === 'vwce' || (asset.exchange && asset.exchange.toUpperCase().includes('XETRA'))) {
+    return `${sym}.de`;
+  }
+  return `${sym}.us`;
+}
+
+function formatVolumeCompact(vol) {
+  if (vol == null || isNaN(vol) || vol <= 0) return null;
+  if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
+  if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`;
+  if (vol >= 1e3) return `${(vol / 1e3).toFixed(1)}K`;
+  return Math.round(vol).toString();
+}
+
+async function fetchUrlViaKeylessGateways(targetUrl, expectJson = true) {
+  const proxyBuilders = [
+    (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+  ];
+
+  const total = proxyBuilders.length;
+  for (let offset = 0; offset < total; offset++) {
+    const idx = (AppState.preferredProxyIdx + offset) % total;
+    const proxiedUrl = proxyBuilders[idx](targetUrl);
+    try {
+      const res = await fetch(proxiedUrl, { signal: AbortSignal.timeout(4500) });
+      if (res.ok) {
+        const payload = expectJson ? await res.json() : await res.text();
+        if (payload) {
+          AppState.preferredProxyIdx = idx;
+          return payload;
+        }
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+async function fetchYahooChartRaw(asset, range, interval, sinceSec = null) {
+  const yahooSym = getYahooSymbol(asset);
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // 1. Try local server.py endpoint if available (zero CORS, persistent disk cache)
+  if (AppState.localApiAvailable !== false) {
+    try {
+      const localUrl = sinceSec != null
+        ? `/api/history?symbol=${encodeURIComponent(yahooSym)}&range=${range}&interval=${interval}&since=${sinceSec}`
+        : `/api/history?symbol=${encodeURIComponent(yahooSym)}&range=${range}&interval=${interval}`;
+      const localRes = await fetch(localUrl, { signal: AbortSignal.timeout(1500) });
+      if (localRes.status === 404) {
+        AppState.localApiAvailable = false;
+      } else if (localRes.ok) {
+        const data = await localRes.json();
+        if (data && data.chart && data.chart.result && data.chart.result[0]) {
+          AppState.localApiAvailable = true;
+          return data;
+        }
+      }
+    } catch (e) {
+      if (AppState.localApiAvailable === null) {
+        AppState.localApiAvailable = false;
+      }
+    }
+  }
+
+  // 2. Keyless Yahoo Finance v8 chart API via multi-gateway CORS fallback
+  const queryPart = sinceSec != null
+    ? `period1=${sinceSec}&period2=${nowSec}&interval=${interval}&includePrePost=false`
+    : `range=${range}&interval=${interval}&includePrePost=false`;
+
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    const targetUrl = `https://${host}/v8/finance/chart/${encodeURIComponent(yahooSym)}?${queryPart}`;
+    const data = await fetchUrlViaKeylessGateways(targetUrl, true);
+    if (data && data.chart && data.chart.result && data.chart.result[0]) {
+      return data;
+    }
+  }
+
+  return null;
+}
+
+function applyYahooMetaToAsset(asset, resObj, parsedBars = []) {
+  if (!asset || !resObj) return;
+  const meta = resObj.meta || {};
+  const lastBar = parsedBars.length > 0 ? parsedBars[parsedBars.length - 1] : null;
+  const prevBar = parsedBars.length > 1 ? parsedBars[parsedBars.length - 2] : null;
+
+  const livePrice = (meta.regularMarketPrice != null && meta.regularMarketPrice > 0)
+    ? parseFloat(meta.regularMarketPrice)
+    : (lastBar ? lastBar.close : null);
+
+  if (livePrice != null && !isNaN(livePrice)) {
+    asset.price = livePrice;
+  }
+
+  const prevClose = (meta.chartPreviousClose != null && meta.chartPreviousClose > 0)
+    ? parseFloat(meta.chartPreviousClose)
+    : (meta.previousClose != null && meta.previousClose > 0)
+      ? parseFloat(meta.previousClose)
+      : (prevBar ? prevBar.close : null);
+
+  if (asset.price != null && prevClose != null && prevClose > 0) {
+    asset.change = ((asset.price - prevClose) / prevClose) * 100;
+  }
+
+  if (meta.regularMarketDayHigh != null && meta.regularMarketDayHigh > 0) {
+    asset.high = parseFloat(meta.regularMarketDayHigh);
+  } else if (lastBar && lastBar.high > 0) {
+    asset.high = lastBar.high;
+  }
+
+  if (meta.regularMarketDayLow != null && meta.regularMarketDayLow > 0) {
+    asset.low = parseFloat(meta.regularMarketDayLow);
+  } else if (lastBar && lastBar.low > 0) {
+    asset.low = lastBar.low;
+  }
+
+  const rawVol = (meta.regularMarketVolume != null && meta.regularMarketVolume > 0)
+    ? meta.regularMarketVolume
+    : (lastBar && lastBar.volume > 0 ? lastBar.volume : null);
+  const formattedVol = formatVolumeCompact(rawVol);
+  if (formattedVol) {
+    asset.volume = formattedVol;
+  }
+}
+
+async function fetchStockQuoteKeyless(asset) {
+  const data = await fetchYahooChartRaw(asset, '5d', '1d', null);
+  if (data && data.chart && data.chart.result && data.chart.result[0]) {
+    const resObj = data.chart.result[0];
+    const timestamps = resObj.timestamp || [];
+    const q = resObj.indicators?.quote?.[0] || {};
+    const parsed = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (q.open && q.open[i] != null && q.close[i] != null) {
+        parsed.push({
+          time: new Date(timestamps[i] * 1000),
+          open: parseFloat(q.open[i]),
+          high: parseFloat(q.high[i] ?? Math.max(q.open[i], q.close[i])),
+          low: parseFloat(q.low[i] ?? Math.min(q.open[i], q.close[i])),
+          close: parseFloat(q.close[i]),
+          volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
+        });
+      }
+    }
+    applyYahooMetaToAsset(asset, resObj, parsed);
+    AppState.quoteLastUpdated[asset.symbol] = Date.now();
+    saveAssetsToStorage();
+    if (asset.price != null) {
+      updateCachedBarsWithLivePrice(asset.symbol, asset.price);
+    }
+    return true;
+  }
+  return false;
+}
+
+// --- Polling Live Prices (Keyless: Binance for Crypto + Yahoo Finance for Stocks/ETFs) ---
 async function pollLivePrices() {
-  // 1. Fetch real crypto tickers from Binance API (CORS friendly)
+  // 1. Fetch real crypto tickers from Binance API (CORS friendly, keyless)
   try {
     const cryptoSymbols = AppState.assets.filter(a => a.type === 'crypto');
     for (const asset of cryptoSymbols) {
@@ -185,37 +450,55 @@ async function pollLivePrices() {
             asset.change = parseFloat(data.priceChangePercent);
             asset.high = parseFloat(data.highPrice);
             asset.low = parseFloat(data.lowPrice);
+            if (data.quoteVolume) {
+              const volFormatted = formatVolumeCompact(parseFloat(data.quoteVolume));
+              if (volFormatted) asset.volume = volFormatted;
+            }
+            saveAssetsToStorage();
+            updateCachedBarsWithLivePrice(asset.symbol, asset.price);
             renderAssetList();
             if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
               updateSelectedAssetHeader();
+              loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe);
             }
           }
         }).catch(() => {});
     }
   } catch (e) {}
 
-  // 2. Fetch real Stock/ETF quotes from Finnhub if key is configured — no simulation fallback
-  if (AppState.settings.finnhubKey) {
-    const stockSymbols = AppState.assets.filter(a => a.type !== 'crypto');
-    for (const asset of stockSymbols) {
-      fetch(`https://finnhub.io/api/v1/quote?symbol=${asset.symbol}&token=${AppState.settings.finnhubKey}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.c && data.c > 0) {
-            asset.price = parseFloat(data.c);
-            asset.change = parseFloat(data.dp || 0);
-            asset.high = data.h > 0 ? parseFloat(data.h) : null;
-            asset.low = data.l > 0 ? parseFloat(data.l) : null;
-            asset.volume = data.v > 0 ? data.v : null;
+  // 2. Fetch real Stock & ETF quotes from Yahoo Finance (keyless, no simulation)
+  if (!AppState.stockPollInProgress) {
+    AppState.stockPollInProgress = true;
+    (async () => {
+      try {
+        const now = Date.now();
+        const stockAssets = AppState.assets.filter(a => a.type !== 'crypto');
+        // Prioritize currently selected asset first
+        stockAssets.sort((a, b) => {
+          if (AppState.selectedAsset && a.symbol === AppState.selectedAsset.symbol) return -1;
+          if (AppState.selectedAsset && b.symbol === AppState.selectedAsset.symbol) return 1;
+          return 0;
+        });
+
+        for (const asset of stockAssets) {
+          const lastUpd = AppState.quoteLastUpdated[asset.symbol] || 0;
+          if (asset.price != null && (now - lastUpd < STOCK_QUOTE_POLL_COOLDOWN_MS)) {
+            continue;
+          }
+          const updated = await fetchStockQuoteKeyless(asset);
+          if (updated) {
             renderAssetList();
             if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
               updateSelectedAssetHeader();
+              updateRiskCalculatorPreloads(asset);
             }
           }
-        }).catch(() => {});
-    }
+        }
+      } catch (e) {} finally {
+        AppState.stockPollInProgress = false;
+      }
+    })();
   }
-  // If no Finnhub key, prices for stocks/ETFs remain as last known value — no simulation
 
   renderAssetList();
   if (AppState.selectedAsset) {
@@ -286,7 +569,14 @@ function renderAssetList() {
           e.stopPropagation(); // prevent row selection
           const sym = el.getAttribute('data-symbol');
           AppState.assets = AppState.assets.filter(a => a.symbol !== sym);
+          for (const key of Object.keys(AppState.cachedBars)) {
+            if (key.startsWith(`${sym}_`)) {
+              delete AppState.cachedBars[key];
+              delete AppState.barsLastUpdated[key];
+            }
+          }
           saveAssetsToStorage();
+          saveHistoryToStorage();
           renderAssetList();
         });
       }
@@ -345,18 +635,12 @@ function updateSelectedAssetHeader() {
       sourceBadge.style.color = '#10b981';
       sourceBadge.style.border = '1px solid rgba(16, 185, 129, 0.3)';
       sourceBadge.title = 'Prezzo e storico candele in tempo reale dai server ufficiali di Binance';
-    } else if (AppState.settings.finnhubKey) {
-      sourceBadge.textContent = '● Finnhub Live (Wall St.)';
+    } else {
+      sourceBadge.textContent = '● Yahoo Finance Live';
       sourceBadge.style.background = 'rgba(56, 189, 248, 0.15)';
       sourceBadge.style.color = '#38bdf8';
       sourceBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
-      sourceBadge.title = 'Prezzo e storico candele ufficiali in tempo reale da Finnhub.io';
-    } else {
-      sourceBadge.textContent = '● Sim / Offline';
-      sourceBadge.style.background = 'rgba(245, 158, 11, 0.15)';
-      sourceBadge.style.color = '#fbbf24';
-      sourceBadge.style.border = '1px solid rgba(245, 158, 11, 0.3)';
-      sourceBadge.title = 'Nessuna chiave API Finnhub configurata nelle impostazioni';
+      sourceBadge.title = 'Prezzo e storico candele reali da Yahoo Finance / Wall St. (senza chiave API)';
     }
   }
 }
@@ -390,20 +674,81 @@ function updateBrokerLinks(asset) {
 }
 
 // --- Candlestick & Technical Indicators Generator ---
-async function loadAndRenderChart(asset, timeframe) {
-  const cacheKey = `${asset.symbol}_${timeframe}`;
-  let bars = AppState.cachedBars[cacheKey];
+async function fetchStooqBarsKeyless(asset, timeframe, sinceTimestampMs = null) {
+  try {
+    const stooqSym = getStooqSymbol(asset);
+    const invMap = { '1D': 'd', '1W': 'd', '1M': 'd', '3M': 'd', '1Y': 'w', 'ALL': 'm' };
+    const stooqInv = invMap[timeframe] || 'd';
+    const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSym)}&i=${stooqInv}`;
+    const csvText = await fetchUrlViaKeylessGateways(targetUrl, false);
+    if (!csvText || typeof csvText !== 'string' || !csvText.includes(',')) return null;
 
-  if (!bars) {
-    // 1. If crypto, fetch real Binance klines directly (CORS supported natively)
-    if (asset.type === 'crypto') {
-      try {
-        const intervalMap = { '1D': '1h', '1W': '4h', '1M': '1d', '3M': '1d', '1Y': '1w', 'ALL': '1M' };
-        const interval = intervalMap[timeframe] || '1d';
-        const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&limit=60`);
-        if (res.ok) {
-          const raw = await res.json();
-          bars = raw.map(k => ({
+    const lines = csvText.trim().split(/\r?\n/);
+    if (lines.length < 2) return null;
+
+    const allBars = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      if (cols.length >= 5) {
+        const dt = new Date(`${cols[0]}T16:00:00Z`);
+        const o = parseFloat(cols[1]);
+        const h = parseFloat(cols[2]);
+        const l = parseFloat(cols[3]);
+        const c = parseFloat(cols[4]);
+        const v = cols.length >= 6 && parseFloat(cols[5]) > 0 ? parseFloat(cols[5]) : null;
+        if (!isNaN(dt.getTime()) && !isNaN(o) && !isNaN(c)) {
+          allBars.push({ time: dt, open: o, high: h, low: l, close: c, volume: v });
+        }
+      }
+    }
+
+    if (allBars.length === 0) return null;
+
+    const limitMap = { '1D': 30, '1W': 35, '1M': 35, '3M': 90, '1Y': 52, 'ALL': 60 };
+    const maxCount = limitMap[timeframe] || 60;
+    const sliced = sinceTimestampMs != null
+      ? allBars.filter(b => b.time.getTime() >= sinceTimestampMs)
+      : allBars.slice(-maxCount);
+
+    if (allBars.length > 0) {
+      const last = allBars[allBars.length - 1];
+      const prev = allBars.length > 1 ? allBars[allBars.length - 2] : null;
+      asset.price = last.close;
+      if (prev && prev.close > 0) {
+        asset.change = ((last.close - prev.close) / prev.close) * 100;
+      }
+      asset.high = last.high;
+      asset.low = last.low;
+      if (last.volume) asset.volume = formatVolumeCompact(last.volume);
+      saveAssetsToStorage();
+      renderAssetList();
+      if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
+        updateSelectedAssetHeader();
+      }
+    }
+
+    return sliced;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchBarsFromSource(asset, timeframe, sinceTimestampMs = null) {
+  let fetchedBars = null;
+
+  // 1. If crypto, fetch real Binance klines directly (CORS supported natively, keyless)
+  if (asset.type === 'crypto') {
+    try {
+      const intervalMap = { '1D': '1h', '1W': '4h', '1M': '1d', '3M': '1d', '1Y': '1w', 'ALL': '1M' };
+      const interval = intervalMap[timeframe] || '1d';
+      const url = sinceTimestampMs != null
+        ? `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&startTime=${sinceTimestampMs}`
+        : `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&limit=60`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const raw = await res.json();
+        if (Array.isArray(raw) && raw.length > 0) {
+          fetchedBars = raw.map(k => ({
             time: new Date(k[0]),
             open: parseFloat(k[1]),
             high: parseFloat(k[2]),
@@ -412,105 +757,116 @@ async function loadAndRenderChart(asset, timeframe) {
             volume: parseFloat(k[5])
           }));
         }
-      } catch (e) {}
-    } else {
-      // 2. If Finnhub key is configured, fetch official Wall Street candlestick history!
-      if (AppState.settings.finnhubKey) {
-        try {
-          const resMap = { '1D': '5', '1W': '30', '1M': 'D', '3M': 'D', '1Y': 'W', 'ALL': 'M' };
-          const resolution = resMap[timeframe] || 'D';
-          const to = Math.floor(Date.now() / 1000);
-          const secondsMap = { '1D': 86400 * 2, '1W': 86400 * 7, '1M': 86400 * 35, '3M': 86400 * 100, '1Y': 86400 * 370, 'ALL': 86400 * 365 * 5 };
-          const from = to - (secondsMap[timeframe] || 86400 * 35);
+      }
+    } catch (e) {}
+  } else {
+    // 2. For Stocks & ETFs: fetch 100% real data from Yahoo Finance (keyless) with Stooq fallback
+    try {
+      const rangeMap = { '1D': '1d', '1W': '5d', '1M': '1mo', '3M': '3mo', '1Y': '1y', 'ALL': '5y' };
+      const intervalMap = { '1D': '5m', '1W': '15m', '1M': '1d', '3M': '1d', '1Y': '1wk', 'ALL': '1mo' };
+      const r = rangeMap[timeframe] || '1mo';
+      const inv = intervalMap[timeframe] || '1d';
+      const sinceSec = sinceTimestampMs != null ? Math.floor(sinceTimestampMs / 1000) : null;
 
-          const fhRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${asset.symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${AppState.settings.finnhubKey}`);
-          if (fhRes.ok) {
-            const fhData = await fhRes.json();
-            if (fhData && fhData.s === 'ok' && fhData.c && fhData.c.length > 0) {
-              bars = fhData.t.map((ts, i) => ({
-                time: new Date(ts * 1000),
-                open: parseFloat(fhData.o[i]),
-                high: parseFloat(fhData.h[i]),
-                low: parseFloat(fhData.l[i]),
-                close: parseFloat(fhData.c[i]),
-                volume: fhData.v && fhData.v[i] > 0 ? parseFloat(fhData.v[i]) : null
-              }));
-              if (bars.length > 0) {
-                asset.price = bars[bars.length - 1].close;
-              }
-            }
+      const fetchedData = await fetchYahooChartRaw(asset, r, inv, sinceSec);
+      if (fetchedData && fetchedData.chart && fetchedData.chart.result && fetchedData.chart.result[0]) {
+        const resObj = fetchedData.chart.result[0];
+        const timestamps = resObj.timestamp || [];
+        const q = resObj.indicators?.quote?.[0] || {};
+        const parsed = [];
+        for (let i = 0; i < timestamps.length; i++) {
+          if (q.open && q.open[i] != null && q.close[i] != null) {
+            parsed.push({
+              time: new Date(timestamps[i] * 1000),
+              open: parseFloat(q.open[i]),
+              high: parseFloat(q.high[i] ?? Math.max(q.open[i], q.close[i])),
+              low: parseFloat(q.low[i] ?? Math.min(q.open[i], q.close[i])),
+              close: parseFloat(q.close[i]),
+              volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
+            });
           }
-        } catch (fhErr) {
-          console.log('Finnhub candle fetch error:', fhErr);
+        }
+
+        applyYahooMetaToAsset(asset, resObj, parsed);
+        AppState.quoteLastUpdated[asset.symbol] = Date.now();
+        saveAssetsToStorage();
+        renderAssetList();
+        if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
+          updateSelectedAssetHeader();
+          updateRiskCalculatorPreloads(asset);
+        }
+
+        if (sinceSec != null ? parsed.length > 0 : parsed.length > 2) {
+          fetchedBars = parsed;
         }
       }
-
-      // If Finnhub not configured or failed, try local server or public CORS proxy
-      if (!bars || bars.length === 0) {
-        try {
-          const rangeMap = { '1D': '1d', '1W': '5d', '1M': '1mo', '3M': '3mo', '1Y': '1y', 'ALL': '5y' };
-          const intervalMap = { '1D': '5m', '1W': '15m', '1M': '1d', '3M': '1d', '1Y': '1wk', 'ALL': '1mo' };
-          const r = rangeMap[timeframe] || '1mo';
-          const inv = intervalMap[timeframe] || '1d';
-
-          // Check if local proxy is active
-          let fetchedData = null;
-          try {
-            const localRes = await fetch(`/api/history?symbol=${asset.symbol}&range=${r}&interval=${inv}`, { signal: AbortSignal.timeout(1500) });
-            if (localRes.ok) fetchedData = await localRes.json();
-          } catch (err) {}
-
-          // Fallback to client-side CORS proxy when hosted on GitHub/Firebase/Netlify
-          if (!fetchedData || fetchedData.error) {
-            const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${asset.symbol}?range=${r}&interval=${inv}`;
-            const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { signal: AbortSignal.timeout(3000) });
-            if (proxyRes.ok) fetchedData = await proxyRes.json();
-          }
-
-          if (fetchedData && fetchedData.chart && fetchedData.chart.result && fetchedData.chart.result[0]) {
-            const resObj = fetchedData.chart.result[0];
-            const timestamps = resObj.timestamp || [];
-            const q = resObj.indicators?.quote?.[0] || {};
-            const parsed = [];
-            for (let i = 0; i < timestamps.length; i++) {
-              if (q.open && q.open[i] != null && q.close[i] != null) {
-                parsed.push({
-                  time: new Date(timestamps[i] * 1000),
-                  open: parseFloat(q.open[i]),
-                  high: parseFloat(q.high[i]),
-                  low: parseFloat(q.low[i]),
-                  close: parseFloat(q.close[i]),
-                  volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
-                });
-              }
-            }
-            if (parsed.length > 5) bars = parsed;
-          }
-        } catch (e) {
-          console.log('Online stock fetch fallback:', e);
-        }
-      }
+    } catch (e) {
+      console.log('Yahoo Finance stock fetch error:', e);
     }
 
-    // 3. No data available — do NOT simulate. Show error in chart instead.
-    if (!bars || bars.length === 0) {
-      showChartNoData(asset);
-      return;
+    // Secondary keyless real-data fallback (Stooq Historical Market Data)
+    if (!fetchedBars || fetchedBars.length === 0) {
+      fetchedBars = await fetchStooqBarsKeyless(asset, timeframe, sinceTimestampMs);
     }
-
-    AppState.cachedBars[cacheKey] = bars;
   }
 
-  // Calculate Indicators
-  calculateIndicators(bars);
+  return fetchedBars;
+}
 
-  // Render Canvas Charts
+function renderChartFromBars(bars) {
+  calculateIndicators(bars);
   renderMainChart(bars);
   renderRsiChart(bars);
   renderMacdChart(bars);
-
-  // Update Technical Decision Banner
   updateTechnicalDecisionBanner(bars);
+}
+
+async function loadAndRenderChart(asset, timeframe, options = {}) {
+  const cacheKey = `${asset.symbol}_${timeframe}`;
+  let bars = AppState.cachedBars[cacheKey];
+
+  // If historical bars are already saved locally, render them immediately and only fetch new data incrementally
+  if (bars && bars.length > 0) {
+    renderChartFromBars(bars);
+
+    if (options.renderOnly) return;
+
+    const lastUpdated = AppState.barsLastUpdated[cacheKey] || 0;
+    const shouldSyncIncremental = options.forceIncremental || (Date.now() - lastUpdated >= INCREMENTAL_SYNC_COOLDOWN_MS);
+    if (!shouldSyncIncremental) return;
+
+    const lastBar = bars[bars.length - 1];
+    const lastBarTimeMs = lastBar.time instanceof Date ? lastBar.time.getTime() : new Date(lastBar.time).getTime();
+
+    AppState.barsLastUpdated[cacheKey] = Date.now();
+    const newBars = await fetchBarsFromSource(asset, timeframe, lastBarTimeMs);
+    if (newBars && newBars.length > 0) {
+      bars = mergeHistoricalBars(AppState.cachedBars[cacheKey] || bars, newBars);
+      AppState.cachedBars[cacheKey] = bars;
+      AppState.barsLastUpdated[cacheKey] = Date.now();
+      saveHistoryToStorage();
+
+      if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol && AppState.activeTimeframe === timeframe) {
+        renderChartFromBars(bars);
+      }
+    }
+    return;
+  }
+
+  // First-time download for this asset & timeframe: fetch full history and save it persistently
+  bars = await fetchBarsFromSource(asset, timeframe, null);
+
+  // No data available — do NOT simulate. Show error in chart instead.
+  if (!bars || bars.length === 0) {
+    showChartNoData(asset);
+    return;
+  }
+
+  AppState.cachedBars[cacheKey] = bars;
+  AppState.barsLastUpdated[cacheKey] = Date.now();
+  saveHistoryToStorage();
+
+  renderChartFromBars(bars);
 }
 
 function showChartNoData(asset) {
@@ -521,12 +877,10 @@ function showChartNoData(asset) {
   ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
   ctx.font = '14px sans-serif';
   ctx.textAlign = 'center';
-  const msg1 = 'Dati non disponibili per ' + asset.symbol;
+  const msg1 = 'Dati reali non disponibili al momento per ' + asset.symbol;
   const msg2 = asset.type === 'crypto'
-    ? 'Binance non raggiungibile'
-    : AppState.settings.finnhubKey
-      ? 'Finnhub non ha restituito dati'
-      : 'Configura la chiave API Finnhub nelle impostazioni';
+    ? 'Server Binance temporaneamente non raggiungibile'
+    : 'Server Yahoo Finance / Mercati temporaneamente non raggiungibile';
   ctx.fillText(msg1, canvas.width / 2, canvas.height / 2 - 14);
   ctx.fillText(msg2, canvas.width / 2, canvas.height / 2 + 10);
   ctx.textAlign = 'left';
@@ -536,47 +890,6 @@ function showChartNoData(asset) {
     const c = document.getElementById(id);
     if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
   });
-}
-
-function generateHistoricalBars(currentPrice, timeframe, assetChange = 0) {
-  const count = 55;
-  const bars = new Array(count);
-  const now = new Date();
-  const stepHours = timeframe === '1D' ? 0.5 : (timeframe === '1W' ? 3 : 24);
-
-  // The last candle (current session) reflects the actual daily % change of the asset
-  const changePct = (assetChange || 0) / 100;
-  const currentClose = currentPrice;
-  // If change is +2%, open was close / 1.02. If change is -2%, open was close / 0.98.
-  const currentOpen = changePct !== 0 ? +(currentClose / (1 + changePct)).toFixed(2) : +(currentClose * 0.998).toFixed(2);
-  const dailyRange = Math.max(0.006, Math.abs(changePct) * 0.4) * currentPrice;
-
-  bars[count - 1] = {
-    time: now,
-    open: currentOpen,
-    close: currentClose,
-    high: +(Math.max(currentOpen, currentClose) + Math.random() * dailyRange * 0.5).toFixed(2),
-    low: +(Math.min(currentOpen, currentClose) - Math.random() * dailyRange * 0.5).toFixed(2),
-    volume: Math.round(75000 + Math.random() * 120000)
-  };
-
-  // Generate previous historical candles backwards smoothly so there is no gap
-  let prevClose = currentOpen;
-  for (let i = count - 2; i >= 0; i--) {
-    const time = new Date(now.getTime() - (count - 1 - i) * stepHours * 3600 * 1000);
-    const volatility = prevClose * 0.012;
-    const candleChange = (Math.random() - 0.49) * volatility;
-    const close = prevClose;
-    const open = +(close - candleChange).toFixed(2);
-    const high = +(Math.max(open, close) + Math.random() * volatility * 0.6).toFixed(2);
-    const low = +(Math.min(open, close) - Math.random() * volatility * 0.6).toFixed(2);
-    const volume = Math.round(40000 + Math.random() * 140000);
-
-    bars[i] = { time, open, high, low, close, volume };
-    prevClose = open;
-  }
-
-  return bars;
 }
 
 // --- Technical Indicators Math ---
@@ -1176,10 +1489,12 @@ function updateRiskCalculatorPreloads(asset) {
   const slInput = document.getElementById('calcStopLoss');
   const tpInput = document.getElementById('calcTakeProfit');
 
-  entryInput.value = asset.price.toFixed(2);
-  // Default Stop Loss at -3.5%, Take Profit at +8.4%
-  slInput.value = (asset.price * 0.965).toFixed(2);
-  tpInput.value = (asset.price * 1.084).toFixed(2);
+  if (asset && asset.price != null && !isNaN(asset.price)) {
+    entryInput.value = asset.price.toFixed(2);
+    // Default Stop Loss at -3.5%, Take Profit at +8.4%
+    slInput.value = (asset.price * 0.965).toFixed(2);
+    tpInput.value = (asset.price * 1.084).toFixed(2);
+  }
 
   calculateRiskOutput();
 }
@@ -1428,7 +1743,7 @@ function setupEventListeners() {
 
 function redrawCurrentChart() {
   if (AppState.selectedAsset) {
-    loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe);
+    loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe, { renderOnly: true });
   }
 }
 
@@ -1461,7 +1776,7 @@ function setupChartCrosshair() {
       document.getElementById('ttH').textContent = `$${b.high.toFixed(2)}`;
       document.getElementById('ttL').textContent = `$${b.low.toFixed(2)}`;
       document.getElementById('ttC').textContent = `$${b.close.toFixed(2)}`;
-      document.getElementById('ttV').textContent = b.volume.toLocaleString();
+      document.getElementById('ttV').textContent = b.volume != null ? b.volume.toLocaleString() : '—';
     }
   };
 
@@ -1550,30 +1865,6 @@ function setupModals() {
       const refresh = document.getElementById('settingRefreshRate');
       if (refresh) refresh.value = (AppState.settings.refreshRate || 5000).toString();
 
-      const fh = document.getElementById('settingFinnhubKey');
-      if (fh) fh.value = AppState.settings.finnhubKey || '';
-
-      const statusEl = document.getElementById('finnhubStatusText');
-      if (statusEl) {
-        if (AppState.settings.finnhubKey) {
-          statusEl.innerHTML = '<span style="color: #38bdf8;">🔄 Verifica chiave Finnhub in corso...</span>';
-          fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${AppState.settings.finnhubKey}`)
-            .then(res => res.json())
-            .then(d => {
-              if (d && d.c && d.c > 0) {
-                statusEl.innerHTML = `<span style="color: #10b981;">🟢 Finnhub Connesso con successo! (Test AAPL: $${d.c})</span>`;
-              } else {
-                statusEl.innerHTML = '<span style="color: #ef4444;">🔴 Chiave non valida o limite superato</span>';
-              }
-            })
-            .catch(() => {
-              statusEl.innerHTML = '<span style="color: #f59e0b;">🟡 Connessione di rete non disponibile</span>';
-            });
-        } else {
-          statusEl.innerHTML = '<span style="color: var(--text-muted);">⚪ Nessuna chiave inserita (usa dati stimati/offline)</span>';
-        }
-      }
-
       modalSettings.classList.add('open');
     });
   }
@@ -1594,17 +1885,13 @@ function setupModals() {
       const refresh = document.getElementById('settingRefreshRate');
       if (refresh) AppState.settings.refreshRate = parseInt(refresh.value, 10);
 
-      const fh = document.getElementById('settingFinnhubKey');
-      if (fh) AppState.settings.finnhubKey = fh.value.trim();
-
       localStorage.setItem('marketpulse_settings', JSON.stringify(AppState.settings));
       modalSettings.classList.remove('open');
 
-      // Invalidate cached bars so real Finnhub data loads immediately!
-      AppState.cachedBars = {};
+      // Keep saved historical bars and force an incremental sync for new data!
       if (AppState.selectedAsset) {
         updateSelectedAssetHeader();
-        loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe);
+        loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe, { forceIncremental: true });
       }
       pollLivePrices();
     });

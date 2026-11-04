@@ -6,6 +6,7 @@
       "**/.*",
       "**/node_modules/**",
       "server.py",
+      "history_cache.json",
       "__pycache__/**"
     ],
     "headers": [
