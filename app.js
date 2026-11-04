@@ -49,18 +49,19 @@ const AppState = {
     currency: 'USD',
     refreshRate: 5000
   },
-  cachedBars: {}, // symbol_timeframe -> []
+  cachedBars: {}, // symbol_DAILY, symbol_INTRADAY, or symbol_timeframe -> []
   renderedBars: [], // currently visible slice of bars on screen
-  barsLastUpdated: {}, // symbol_timeframe -> timestamp ms
+  barsLastUpdated: {}, // key -> timestamp ms
   quoteLastUpdated: {}, // symbol -> timestamp ms
   localApiAvailable: null, // null = unknown, true = local server.py active, false = static hosting
   preferredProxyIdx: 0,
   stockPollInProgress: false,
+  chartFetchInProgress: false,
   crosshair: null,
   deferredPrompt: null
 };
 
-const HISTORY_STORAGE_KEY = 'marketpulse_history_v2';
+const HISTORY_STORAGE_KEY = 'marketpulse_history_v3';
 const INCREMENTAL_SYNC_COOLDOWN_MS = 10000; // Minimum interval between incremental candle fetches per key
 const STOCK_QUOTE_POLL_COOLDOWN_MS = 30000; // Poll stock/ETF quotes every 30s without API key
 
@@ -135,9 +136,9 @@ function loadStoredData() {
 
   // Hydrate asset quotes immediately from any saved daily history
   for (const asset of AppState.assets) {
-    const dailyBars = AppState.cachedBars[`${asset.symbol}_1M`] ||
-                      AppState.cachedBars[`${asset.symbol}_3M`] ||
-                      AppState.cachedBars[`${asset.symbol}_1Y`];
+    const dailyBars = AppState.cachedBars[`${asset.symbol}_DAILY`] ||
+                      AppState.cachedBars[`${asset.symbol}_1M`] ||
+                      AppState.cachedBars[`${asset.symbol}_3M`];
     if (dailyBars && dailyBars.length >= 2) {
       syncAssetQuoteFromBars(asset, dailyBars);
     }
@@ -475,25 +476,25 @@ function applyYahooMetaToAsset(asset, resObj, parsedBars = [], interval = '1d', 
 }
 
 async function fetchStockQuoteKeyless(asset) {
-  const cacheKey1M = `${asset.symbol}_1M`;
-  const cacheKey3M = `${asset.symbol}_3M`;
-  const existingDaily = AppState.cachedBars[cacheKey3M] || AppState.cachedBars[cacheKey1M];
+  const dailyKey = `${asset.symbol}_DAILY`;
+  const existingDaily = AppState.cachedBars[dailyKey];
   const isIncremental = Boolean(existingDaily && existingDaily.length >= 60);
 
-  const data = await fetchYahooChartRaw(asset, '6mo', '1d', isIncremental);
+  let data = await fetchYahooChartRaw(asset, '5y', '1d', isIncremental);
+  if (!isValidYahooChartPayload(data) && !isIncremental) {
+    data = await fetchYahooChartRaw(asset, '2y', '1d', false);
+  }
   if (isValidYahooChartPayload(data)) {
     const { resObj, parsed } = parseYahooBarsFromResponse(data);
-    applyYahooMetaToAsset(asset, resObj, parsed, '1d', isIncremental ? '5d' : '6mo');
+    applyYahooMetaToAsset(asset, resObj, parsed, '1d', isIncremental ? '5d' : '5y');
     AppState.quoteLastUpdated[asset.symbol] = Date.now();
     saveAssetsToStorage();
 
-    // Persist daily candles (with 6mo warm-up for EMA 50 / RSI / MACD) so clicking any stock renders 1M & 3M immediately
+    // Persist multi-year daily candles so clicking any stock renders 1M, 3M, 1A, and TUTTO immediately (0ms)
     if (parsed.length > 0) {
       const merged = mergeHistoricalBars(existingDaily || [], parsed);
-      AppState.cachedBars[cacheKey1M] = merged;
-      AppState.cachedBars[cacheKey3M] = merged;
-      AppState.barsLastUpdated[cacheKey1M] = Date.now();
-      AppState.barsLastUpdated[cacheKey3M] = Date.now();
+      AppState.cachedBars[dailyKey] = merged;
+      AppState.barsLastUpdated[dailyKey] = Date.now();
       saveHistoryToStorage();
     } else if (asset.price != null) {
       updateCachedBarsWithLivePrice(asset.symbol, asset.price);
@@ -527,7 +528,7 @@ async function pollLivePrices() {
             renderAssetList();
             if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
               updateSelectedAssetHeader();
-              loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe);
+              redrawCurrentChart();
             }
           }
         }).catch(() => {});
@@ -540,7 +541,7 @@ async function pollLivePrices() {
     (async () => {
       try {
         // Give priority to the currently selected asset chart load first
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 800));
 
         const stockAssets = AppState.assets.filter(a => a.type !== 'crypto');
         const needsUpdate = stockAssets.filter(a => {
@@ -549,6 +550,10 @@ async function pollLivePrices() {
         });
 
         for (const asset of needsUpdate) {
+          // Yield network priority if user is actively switching chart / timeframe
+          while (AppState.chartFetchInProgress) {
+            await new Promise(r => setTimeout(r, 300));
+          }
           const updated = await fetchStockQuoteKeyless(asset);
           if (updated) {
             renderAssetList();
@@ -739,12 +744,10 @@ function updateBrokerLinks(asset) {
 }
 
 // --- Candlestick & Technical Indicators Generator ---
-async function fetchStooqBarsKeyless(asset, timeframe, isIncremental = false) {
+async function fetchStooqBarsKeyless(asset, isIncremental = false) {
   try {
     const stooqSym = getStooqSymbol(asset);
-    const invMap = { '1D': 'd', '1W': 'd', '1M': 'd', '3M': 'd', '1Y': 'w', 'ALL': 'm' };
-    const stooqInv = invMap[timeframe] || 'd';
-    const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSym)}&i=${stooqInv}`;
+    const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSym)}&i=d`;
     const isValidCsv = (txt) => typeof txt === 'string' && txt.includes('Date,Open,High,Low,Close') && txt.trim().split(/\r?\n/).length > 2;
     const csvText = await fetchUrlViaKeylessGateways(targetUrl, false, isValidCsv);
     if (!isValidCsv(csvText)) return null;
@@ -768,20 +771,11 @@ async function fetchStooqBarsKeyless(asset, timeframe, isIncremental = false) {
 
     if (allBars.length === 0) return null;
 
-    const limitMap = { '1D': 100, '1W': 100, '1M': 120, '3M': 140, '1Y': 110, 'ALL': 120 };
-    const maxCount = isIncremental ? 5 : (limitMap[timeframe] || 120);
+    const maxCount = isIncremental ? 5 : 1300;
     const sliced = allBars.slice(-maxCount);
 
     if (allBars.length > 0) {
-      const last = allBars[allBars.length - 1];
-      const prev = allBars.length > 1 ? allBars[allBars.length - 2] : null;
-      asset.price = last.close;
-      if (stooqInv === 'd' && prev && prev.close > 0) {
-        asset.change = ((last.close - prev.close) / prev.close) * 100;
-      }
-      asset.high = last.high;
-      asset.low = last.low;
-      if (last.volume) asset.volume = formatVolumeCompact(last.volume);
+      syncAssetQuoteFromBars(asset, allBars);
       saveAssetsToStorage();
       renderAssetList();
       if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
@@ -816,22 +810,156 @@ function parseYahooBarsFromResponse(fetchedData) {
   return { resObj, parsed };
 }
 
-async function fetchBarsFromSource(asset, timeframe, isIncremental = false) {
-  let fetchedBars = null;
+function isIntradaySeries(bars) {
+  if (!Array.isArray(bars) || bars.length < 3) return false;
+  const n = Math.min(bars.length - 1, 10);
+  let totalDiff = 0;
+  for (let i = bars.length - n; i < bars.length; i++) {
+    const t1 = bars[i - 1].time instanceof Date ? bars[i - 1].time.getTime() : new Date(bars[i - 1].time).getTime();
+    const t2 = bars[i].time instanceof Date ? bars[i].time.getTime() : new Date(bars[i].time).getTime();
+    totalDiff += Math.max(0, t2 - t1);
+  }
+  const avgDiffMs = totalDiff / n;
+  return avgDiffMs > 0 && avgDiffMs < 12 * 3600 * 1000;
+}
 
-  // 1. If crypto, fetch real Binance klines directly (CORS supported natively, keyless)
+function aggregateBarsByPeriod(bars, mode) {
+  if (!Array.isArray(bars) || bars.length === 0) return [];
+  if (mode === 'pair') {
+    const out = [];
+    for (let i = 0; i < bars.length; i += 2) {
+      const b1 = bars[i];
+      const b2 = bars[i + 1];
+      if (!b2) {
+        out.push({ ...b1, time: new Date(b1.time) });
+      } else {
+        out.push({
+          time: new Date(b2.time),
+          open: b1.open,
+          high: Math.max(b1.high, b2.high),
+          low: Math.min(b1.low, b2.low),
+          close: b2.close,
+          volume: (b1.volume || 0) + (b2.volume || 0)
+        });
+      }
+    }
+    return out;
+  }
+
+  const groups = [];
+  let currentKey = null;
+  let currentBar = null;
+
+  for (const b of bars) {
+    const d = b.time instanceof Date ? b.time : new Date(b.time);
+    let key;
+    if (mode === 'week') {
+      // Group by Monday-aligned UTC week
+      const dayOfWeek = (d.getUTCDay() + 6) % 7; // 0 = Mon .. 6 = Sun
+      const mondayMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - dayOfWeek);
+      key = `W_${mondayMs}`;
+    } else {
+      // Group by calendar month
+      key = `M_${d.getUTCFullYear()}_${d.getUTCMonth()}`;
+    }
+
+    if (key !== currentKey) {
+      if (currentBar) groups.push(currentBar);
+      currentKey = key;
+      currentBar = {
+        time: new Date(d.getTime()),
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume || 0
+      };
+    } else {
+      currentBar.time = new Date(d.getTime());
+      if (b.high > currentBar.high) currentBar.high = b.high;
+      if (b.low < currentBar.low) currentBar.low = b.low;
+      currentBar.close = b.close;
+      currentBar.volume += (b.volume || 0);
+    }
+  }
+  if (currentBar) groups.push(currentBar);
+  return groups;
+}
+
+function buildTimeframeSeries(rawBars, timeframe, isCrypto = false) {
+  if (!Array.isArray(rawBars) || rawBars.length === 0) return [];
+  let series = rawBars.map(b => ({ ...b, time: b.time instanceof Date ? new Date(b.time.getTime()) : new Date(b.time) }));
+
+  const intraday = isIntradaySeries(series);
+
+  if (intraday) {
+    if (timeframe === '1D') {
+      calculateIndicators(series);
+      // Extract the latest trading session's bars (or last 32 intraday bars for 24h crypto / full session)
+      if (isCrypto) {
+        return series.slice(-48);
+      }
+      const lastDate = series[series.length - 1].time;
+      const lastDayKey = `${lastDate.getUTCFullYear()}-${lastDate.getUTCMonth()}-${lastDate.getUTCDate()}`;
+      const sameDayBars = series.filter(b => {
+        const d = b.time;
+        return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}` === lastDayKey;
+      });
+      return sameDayBars.length >= 12 ? sameDayBars : series.slice(-28);
+    }
+    if (timeframe === '1W') {
+      if (!isCrypto && series.length > 80) {
+        series = aggregateBarsByPeriod(series, 'pair');
+      }
+      calculateIndicators(series);
+      const maxW = isCrypto ? 42 : 65;
+      return series.slice(-maxW);
+    }
+  }
+
+  // Daily series handling (powers 1M, 3M, 1Y, ALL natively, plus immediate 0ms fallback for 1D/1W)
+  if (timeframe === '1Y') {
+    const weekly = series.length > 90 ? aggregateBarsByPeriod(series, 'week') : series;
+    calculateIndicators(weekly);
+    return weekly.slice(-52);
+  }
+
+  if (timeframe === 'ALL') {
+    const monthly = series.length > 180 ? aggregateBarsByPeriod(series, 'month') : (series.length > 90 ? aggregateBarsByPeriod(series, 'week') : series);
+    calculateIndicators(monthly);
+    return monthly.slice(-60);
+  }
+
+  calculateIndicators(series);
+  const dailySliceMap = {
+    '1D': 7,
+    '1W': 14,
+    '1M': isCrypto ? 30 : 22,
+    '3M': isCrypto ? 90 : 65
+  };
+  const count = dailySliceMap[timeframe] || 30;
+  return series.slice(-count);
+}
+
+async function fetchMasterSeriesFromSource(asset, seriesType, isIncremental = false) {
+  // seriesType is 'DAILY' (used for 1M, 3M, 1Y, ALL) or 'INTRADAY_1D' / 'INTRADAY_1W' / 'INTRADAY'
   if (asset.type === 'crypto') {
     try {
-      const intervalMap = { '1D': '1h', '1W': '4h', '1M': '1d', '3M': '1d', '1Y': '1w', 'ALL': '1M' };
-      const interval = intervalMap[timeframe] || '1d';
-      // Fetch extra warm-up bars on initial load so EMA 50, RSI 14, and MACD are warmed up from the left edge
-      const limit = isIncremental ? 5 : 140;
+      let interval = '1d';
+      let limit = isIncremental ? 5 : 750;
+      if (seriesType === 'INTRADAY_1D') {
+        interval = '30m';
+        limit = isIncremental ? 6 : 120;
+      } else if (seriesType === 'INTRADAY_1W') {
+        interval = '4h';
+        limit = isIncremental ? 6 : 110;
+      }
       const url = `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&limit=${limit}`;
       const res = await fetch(url);
       if (res.ok) {
         const raw = await res.json();
         if (Array.isArray(raw) && raw.length > 0) {
-          fetchedBars = raw.map(k => ({
+          return raw.map(k => ({
             time: new Date(k[0]),
             open: parseFloat(k[1]),
             high: parseFloat(k[2]),
@@ -842,32 +970,18 @@ async function fetchBarsFromSource(asset, timeframe, isIncremental = false) {
         }
       }
     } catch (e) {}
-  } else {
-    // 2. For Stocks & ETFs: fetch 100% real data from Yahoo Finance (keyless) with Stooq fallback
-    try {
-      // Request sufficient warm-up range so EMA 20, EMA 50, Bollinger, RSI 14, and MACD are warm across the full visible window
-      const rangeMap = { '1D': '5d', '1W': '1mo', '1M': '6mo', '3M': '1y', '1Y': '2y', 'ALL': '5y' };
-      const intervalMap = { '1D': '5m', '1W': '1h', '1M': '1d', '3M': '1d', '1Y': '1wk', 'ALL': '1mo' };
-      let r = rangeMap[timeframe] || '6mo';
-      let inv = intervalMap[timeframe] || '1d';
+    return null;
+  }
 
-      let fetchedData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
-      let { resObj, parsed } = parseYahooBarsFromResponse(fetchedData);
-
-      // If intraday (5m/1h) returned too few bars (e.g. market closed / holiday / European exchange), fallback to daily real bars
-      if ((timeframe === '1D' || timeframe === '1W') && (isIncremental ? parsed.length === 0 : parsed.length <= 2)) {
-        r = '6mo';
-        inv = '1d';
-        const fallbackData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
-        const fb = parseYahooBarsFromResponse(fallbackData);
-        if (fb.parsed.length > 0) {
-          resObj = fb.resObj;
-          parsed = fb.parsed;
-        }
-      }
-
-      if (resObj) {
-        applyYahooMetaToAsset(asset, resObj, parsed, inv, isIncremental ? '5d' : r);
+  // Stocks & ETFs (Yahoo Finance v8 keyless + Stooq fallback)
+  try {
+    if (seriesType === 'INTRADAY') {
+      const r = '5d';
+      const inv = '15m';
+      const fetchedData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
+      const { resObj, parsed } = parseYahooBarsFromResponse(fetchedData);
+      if (resObj && parsed.length > 0) {
+        applyYahooMetaToAsset(asset, resObj, parsed, inv, isIncremental ? '1d' : r);
         AppState.quoteLastUpdated[asset.symbol] = Date.now();
         saveAssetsToStorage();
         renderAssetList();
@@ -875,61 +989,44 @@ async function fetchBarsFromSource(asset, timeframe, isIncremental = false) {
           updateSelectedAssetHeader();
           updateRiskCalculatorPreloads(asset);
         }
-
-        if (isIncremental ? parsed.length > 0 : parsed.length > 2) {
-          fetchedBars = parsed;
-          // Share full daily history between 1M and 3M so switching between them is instant
-          if (!isIncremental && inv === '1d' && parsed.length >= 60) {
-            AppState.cachedBars[`${asset.symbol}_1M`] = parsed;
-            AppState.cachedBars[`${asset.symbol}_3M`] = parsed;
-            AppState.barsLastUpdated[`${asset.symbol}_1M`] = Date.now();
-            AppState.barsLastUpdated[`${asset.symbol}_3M`] = Date.now();
-          }
-        }
+        return parsed;
       }
-    } catch (e) {
-      console.log('Yahoo Finance stock fetch error:', e);
+      return null;
     }
 
-    // Secondary keyless real-data fallback (Stooq Historical Market Data)
-    if (!fetchedBars || fetchedBars.length === 0) {
-      fetchedBars = await fetchStooqBarsKeyless(asset, timeframe, isIncremental);
+    // DAILY master series (5 years of daily candles -> powers 1M, 3M, 1Y, ALL)
+    let r = '5y';
+    const inv = '1d';
+    let fetchedData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
+    if (!isValidYahooChartPayload(fetchedData) && !isIncremental) {
+      r = '2y';
+      fetchedData = await fetchYahooChartRaw(asset, r, inv, false);
     }
-
-    // If network is temporarily unreachable during initial load of a timeframe, check if we already have saved real bars for this asset
-    if ((!fetchedBars || fetchedBars.length === 0) && !isIncremental) {
-      for (const tf of ['3M', '1M', '1Y', '1W', '1D', 'ALL']) {
-        const existingOther = AppState.cachedBars[`${asset.symbol}_${tf}`];
-        if (existingOther && existingOther.length > 2) {
-          fetchedBars = existingOther.map(b => ({ ...b, time: new Date(b.time) }));
-          break;
-        }
+    const { resObj, parsed } = parseYahooBarsFromResponse(fetchedData);
+    if (resObj && parsed.length > 0) {
+      applyYahooMetaToAsset(asset, resObj, parsed, inv, isIncremental ? '5d' : r);
+      AppState.quoteLastUpdated[asset.symbol] = Date.now();
+      saveAssetsToStorage();
+      renderAssetList();
+      if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
+        updateSelectedAssetHeader();
+        updateRiskCalculatorPreloads(asset);
       }
+      return parsed;
     }
+  } catch (e) {
+    console.log('Yahoo Finance stock fetch error:', e);
   }
 
-  return fetchedBars;
+  if (seriesType === 'DAILY') {
+    return await fetchStooqBarsKeyless(asset, isIncremental);
+  }
+  return null;
 }
 
-function getVisibleBars(bars, timeframe) {
-  if (!Array.isArray(bars) || bars.length === 0) return [];
-  const visibleCountMap = {
-    '1D': 60,
-    '1W': 48,
-    '1M': 25,
-    '3M': 65,
-    '1Y': 52,
-    'ALL': 60
-  };
-  const maxVisible = visibleCountMap[timeframe] || 60;
-  return bars.length > maxVisible ? bars.slice(-maxVisible) : bars;
-}
-
-function renderChartFromBars(bars, timeframe = AppState.activeTimeframe) {
-  // Compute indicators on the full historical series first (so EMA 20/50, RSI 14, MACD are warmed up)
-  calculateIndicators(bars);
-  // Then slice the visible window for the active timeframe
-  const visibleBars = getVisibleBars(bars, timeframe);
+function renderChartFromBars(rawBars, timeframe = AppState.activeTimeframe) {
+  const isCrypto = Boolean(AppState.selectedAsset && AppState.selectedAsset.type === 'crypto');
+  const visibleBars = buildTimeframeSeries(rawBars, timeframe, isCrypto);
   AppState.renderedBars = visibleBars;
   renderMainChart(visibleBars);
   renderRsiChart(visibleBars);
@@ -938,51 +1035,87 @@ function renderChartFromBars(bars, timeframe = AppState.activeTimeframe) {
 }
 
 async function loadAndRenderChart(asset, timeframe, options = {}) {
-  const cacheKey = `${asset.symbol}_${timeframe}`;
-  let bars = AppState.cachedBars[cacheKey];
+  const isCrypto = asset.type === 'crypto';
+  const isIntradayTf = timeframe === '1D' || timeframe === '1W';
+  const dailyKey = `${asset.symbol}_DAILY`;
+  const primaryKey = isIntradayTf
+    ? (isCrypto ? `${asset.symbol}_${timeframe}` : `${asset.symbol}_INTRADAY`)
+    : dailyKey;
+  const seriesType = isIntradayTf
+    ? (isCrypto ? `INTRADAY_${timeframe}` : 'INTRADAY')
+    : 'DAILY';
 
-  // Ensure minimum warm-up bar count for daily timeframes (e.g. if 3M only had < 60 bars from an older session)
-  const minBarsRequired = timeframe === '3M' ? 60 : (timeframe === '1M' ? 35 : 10);
+  let primaryBars = AppState.cachedBars[primaryKey];
+  const dailyFallbackBars = AppState.cachedBars[dailyKey] || AppState.cachedBars[`${asset.symbol}_3M`] || AppState.cachedBars[`${asset.symbol}_1M`];
 
-  // If historical bars are already saved locally, render them immediately and only fetch new data incrementally
-  if (bars && bars.length >= minBarsRequired) {
-    renderChartFromBars(bars, timeframe);
+  // Migrate legacy 1M/3M daily cache into _DAILY if needed
+  if (!AppState.cachedBars[dailyKey] && dailyFallbackBars && dailyFallbackBars.length >= 30) {
+    AppState.cachedBars[dailyKey] = dailyFallbackBars;
+    if (!isIntradayTf) primaryBars = dailyFallbackBars;
+  }
+
+  const minBarsRequired = isIntradayTf ? 10 : 30;
+
+  // 1. If we already have cached bars for this series, render IMMEDIATELY (0ms) and only sync new bars incrementally
+  if (primaryBars && primaryBars.length >= minBarsRequired) {
+    renderChartFromBars(primaryBars, timeframe);
 
     if (options.renderOnly) return;
 
-    const lastUpdated = AppState.barsLastUpdated[cacheKey] || 0;
+    const lastUpdated = AppState.barsLastUpdated[primaryKey] || 0;
     const shouldSyncIncremental = options.forceIncremental || (Date.now() - lastUpdated >= INCREMENTAL_SYNC_COOLDOWN_MS);
     if (!shouldSyncIncremental) return;
 
-    AppState.barsLastUpdated[cacheKey] = Date.now();
-    const newBars = await fetchBarsFromSource(asset, timeframe, true);
+    AppState.barsLastUpdated[primaryKey] = Date.now();
+    const newBars = await fetchMasterSeriesFromSource(asset, seriesType, true);
     if (newBars && newBars.length > 0) {
-      bars = mergeHistoricalBars(AppState.cachedBars[cacheKey] || bars, newBars);
-      AppState.cachedBars[cacheKey] = bars;
-      AppState.barsLastUpdated[cacheKey] = Date.now();
+      primaryBars = mergeHistoricalBars(AppState.cachedBars[primaryKey] || primaryBars, newBars);
+      AppState.cachedBars[primaryKey] = primaryBars;
+      AppState.barsLastUpdated[primaryKey] = Date.now();
       saveHistoryToStorage();
 
       if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol && AppState.activeTimeframe === timeframe) {
-        renderChartFromBars(bars, timeframe);
+        renderChartFromBars(primaryBars, timeframe);
       }
     }
     return;
   }
 
-  // First-time download for this asset & timeframe: fetch full history and save it persistently
-  bars = await fetchBarsFromSource(asset, timeframe, false);
-
-  // No data available — do NOT simulate. Show error in chart instead.
-  if (!bars || bars.length === 0) {
-    showChartNoData(asset);
-    return;
+  // 2. If switching to 1D or 1W and intraday isn't cached yet, render an immediate 0ms zoomed view from DAILY while intraday loads!
+  if (isIntradayTf && dailyFallbackBars && dailyFallbackBars.length > 5) {
+    renderChartFromBars(dailyFallbackBars, timeframe);
+    if (options.renderOnly) return;
   }
 
-  AppState.cachedBars[cacheKey] = bars;
-  AppState.barsLastUpdated[cacheKey] = Date.now();
-  saveHistoryToStorage();
+  // 3. First-time download for this series
+  AppState.chartFetchInProgress = true;
+  try {
+    const fetched = await fetchMasterSeriesFromSource(asset, seriesType, false);
+    if (fetched && fetched.length > 0) {
+      AppState.cachedBars[primaryKey] = fetched;
+      AppState.barsLastUpdated[primaryKey] = Date.now();
+      saveHistoryToStorage();
 
-  renderChartFromBars(bars, timeframe);
+      if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol && AppState.activeTimeframe === timeframe) {
+        renderChartFromBars(fetched, timeframe);
+      }
+      return;
+    }
+
+    // If intraday fetch failed (e.g. market closed / European ETF without 15m feed), keep the zoomed daily view
+    if (isIntradayTf && dailyFallbackBars && dailyFallbackBars.length > 2) {
+      if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol && AppState.activeTimeframe === timeframe) {
+        renderChartFromBars(dailyFallbackBars, timeframe);
+      }
+      return;
+    }
+
+    if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol && AppState.activeTimeframe === timeframe) {
+      showChartNoData(asset);
+    }
+  } finally {
+    AppState.chartFetchInProgress = false;
+  }
 }
 
 function showChartNoData(asset) {
@@ -1338,15 +1471,31 @@ function renderMainChart(bars) {
     ctx.stroke();
   }
 
-  // Time Scale Text
+  // Time Scale Text (Timeframe-aware formatting)
   ctx.fillStyle = '#64748b';
   ctx.font = '9px JetBrains Mono, monospace';
   ctx.textAlign = 'center';
-  const timeStep = Math.ceil(bars.length / 5);
+  const timeStep = Math.max(1, Math.ceil(bars.length / 5));
+  const intradayView = isIntradaySeries(bars);
+  const tf = AppState.activeTimeframe;
   for (let i = 0; i < bars.length; i += timeStep) {
     const x = i * stepX + stepX / 2;
-    const d = bars[i].time;
-    const str = `${d.getDate()}/${d.getMonth() + 1}`;
+    const d = bars[i].time instanceof Date ? bars[i].time : new Date(bars[i].time);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    let str;
+    if (tf === '1D' && intradayView) {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      str = `${hh}:${min}`;
+    } else if (tf === '1Y') {
+      str = `${dd}/${mm}/${yy}`;
+    } else if (tf === 'ALL') {
+      str = `${mm}/${d.getFullYear()}`;
+    } else {
+      str = `${dd}/${mm}`;
+    }
     ctx.fillText(str, x, height - 10);
   }
 
@@ -2101,7 +2250,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=9').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {

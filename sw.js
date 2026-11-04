@@ -1,10 +1,11 @@
 // Service Worker for MarketPulse Pro (Chromebook Trading PWA)
-const CACHE_NAME = 'marketpulse-cache-v8';
+const CACHE_NAME = 'marketpulse-cache-v9';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './app.js?v=9',
   './manifest.webmanifest',
   './icon.svg'
 ];
