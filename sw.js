@@ -1,12 +1,12 @@
 // Service Worker for MarketPulse Pro (Chromebook Trading PWA)
-const CACHE_NAME = 'marketpulse-cache-v6';
+const CACHE_NAME = 'marketpulse-cache-v7';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './manifest.webmanifest',
-  './icons/icon.svg'
+  './icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
@@ -37,15 +37,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // For external APIs, prioritize network and fail gracefully
+  // Do not intercept external cross-origin API calls or local /api proxy calls in SW
   if (url.origin !== location.origin || url.pathname.startsWith('/api')) {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: 'Network unavailable' }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
     return;
   }
 

@@ -292,50 +292,85 @@ function formatVolumeCompact(vol) {
   return Math.round(vol).toString();
 }
 
-async function fetchUrlViaKeylessGateways(targetUrl, expectJson = true) {
-  const proxyBuilders = [
-    (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+async function fetchUrlViaKeylessGateways(targetUrl, expectJson = true, validator = null) {
+  const proxyConfigs = [
+    {
+      buildUrl: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+      unwrap: async (res, wantJson) => {
+        const wrapper = await res.json();
+        if (!wrapper || typeof wrapper.contents !== 'string' || !wrapper.contents.trim()) return null;
+        return wantJson ? JSON.parse(wrapper.contents) : wrapper.contents;
+      }
+    },
+    {
+      buildUrl: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      unwrap: async (res, wantJson) => wantJson ? await res.json() : await res.text()
+    },
+    {
+      buildUrl: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+      unwrap: async (res, wantJson) => wantJson ? await res.json() : await res.text()
+    },
+    {
+      buildUrl: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      unwrap: async (res, wantJson) => wantJson ? await res.json() : await res.text()
+    }
   ];
 
-  const total = proxyBuilders.length;
+  const total = proxyConfigs.length;
   for (let offset = 0; offset < total; offset++) {
     const idx = (AppState.preferredProxyIdx + offset) % total;
-    const proxiedUrl = proxyBuilders[idx](targetUrl);
+    const cfg = proxyConfigs[idx];
+    const proxiedUrl = cfg.buildUrl(targetUrl);
     try {
-      const res = await fetch(proxiedUrl, { signal: AbortSignal.timeout(4500) });
+      const res = await fetch(proxiedUrl, { signal: AbortSignal.timeout(5500) });
       if (res.ok) {
-        const payload = expectJson ? await res.json() : await res.text();
-        if (payload) {
-          AppState.preferredProxyIdx = idx;
-          return payload;
+        const payload = await cfg.unwrap(res, expectJson);
+        // Reject fake error responses (e.g. from legacy Service Worker or rate-limited gateway)
+        if (!payload || (typeof payload === 'object' && payload.error)) {
+          continue;
         }
+        if (validator && !validator(payload)) {
+          continue;
+        }
+        AppState.preferredProxyIdx = idx;
+        return payload;
       }
     } catch (e) {}
   }
   return null;
 }
 
-async function fetchYahooChartRaw(asset, range, interval, sinceSec = null) {
+function isValidYahooChartPayload(data) {
+  return Boolean(
+    data &&
+    data.chart &&
+    Array.isArray(data.chart.result) &&
+    data.chart.result[0] &&
+    (Array.isArray(data.chart.result[0].timestamp) || data.chart.result[0].meta)
+  );
+}
+
+async function fetchYahooChartRaw(asset, range, interval, isIncremental = false) {
   const yahooSym = getYahooSymbol(asset);
-  const nowSec = Math.floor(Date.now() / 1000);
+  // For incremental updates, only request the most recent window (1d for intraday, 5d for daily/weekly/monthly)
+  const effectiveRange = isIncremental
+    ? ((interval === '5m' || interval === '15m' || interval === '1h') ? '1d' : '5d')
+    : range;
 
   // 1. Try local server.py endpoint if available (zero CORS, persistent disk cache)
   if (AppState.localApiAvailable !== false) {
     try {
-      const localUrl = sinceSec != null
-        ? `/api/history?symbol=${encodeURIComponent(yahooSym)}&range=${range}&interval=${interval}&since=${sinceSec}`
-        : `/api/history?symbol=${encodeURIComponent(yahooSym)}&range=${range}&interval=${interval}`;
+      const localUrl = `/api/history?symbol=${encodeURIComponent(yahooSym)}&range=${effectiveRange}&interval=${interval}`;
       const localRes = await fetch(localUrl, { signal: AbortSignal.timeout(1500) });
       if (localRes.status === 404) {
         AppState.localApiAvailable = false;
       } else if (localRes.ok) {
         const data = await localRes.json();
-        if (data && data.chart && data.chart.result && data.chart.result[0]) {
+        if (isValidYahooChartPayload(data)) {
           AppState.localApiAvailable = true;
           return data;
         }
+        AppState.localApiAvailable = false;
       }
     } catch (e) {
       if (AppState.localApiAvailable === null) {
@@ -345,19 +380,63 @@ async function fetchYahooChartRaw(asset, range, interval, sinceSec = null) {
   }
 
   // 2. Keyless Yahoo Finance v8 chart API via multi-gateway CORS fallback
-  const queryPart = sinceSec != null
-    ? `period1=${sinceSec}&period2=${nowSec}&interval=${interval}&includePrePost=false`
-    : `range=${range}&interval=${interval}&includePrePost=false`;
+  const queryPart = `range=${effectiveRange}&interval=${interval}&includePrePost=false`;
 
   for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
     const targetUrl = `https://${host}/v8/finance/chart/${encodeURIComponent(yahooSym)}?${queryPart}`;
-    const data = await fetchUrlViaKeylessGateways(targetUrl, true);
-    if (data && data.chart && data.chart.result && data.chart.result[0]) {
+    const data = await fetchUrlViaKeylessGateways(targetUrl, true, isValidYahooChartPayload);
+    if (isValidYahooChartPayload(data)) {
       return data;
     }
   }
 
   return null;
+}
+
+async function fetchBatchStockQuotesSpark(stockAssets) {
+  if (!stockAssets || stockAssets.length === 0) return false;
+  const symMap = {};
+  const yahooSyms = [];
+  for (const asset of stockAssets) {
+    const ySym = getYahooSymbol(asset);
+    symMap[ySym.toUpperCase()] = asset;
+    yahooSyms.push(ySym);
+  }
+
+  const symbolsParam = yahooSyms.map(s => encodeURIComponent(s)).join(',');
+  const isValidSpark = (d) => d && typeof d === 'object' && !d.error && Object.keys(d).length > 0;
+
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    const targetUrl = `https://${host}/v8/finance/spark?symbols=${symbolsParam}&range=5d&interval=1d`;
+    const sparkData = await fetchUrlViaKeylessGateways(targetUrl, true, isValidSpark);
+    if (isValidSpark(sparkData)) {
+      let updatedCount = 0;
+      for (const [ySymKey, item] of Object.entries(sparkData)) {
+        const asset = symMap[ySymKey.toUpperCase()];
+        if (!asset || !item || !Array.isArray(item.close)) continue;
+        const validCloses = item.close.filter(c => c != null && !isNaN(c));
+        if (validCloses.length === 0) continue;
+
+        const lastClose = parseFloat(validCloses[validCloses.length - 1]);
+        const prevClose = (item.chartPreviousClose != null && item.chartPreviousClose > 0)
+          ? parseFloat(item.chartPreviousClose)
+          : (validCloses.length > 1 ? parseFloat(validCloses[validCloses.length - 2]) : null);
+
+        asset.price = lastClose;
+        if (prevClose != null && prevClose > 0) {
+          asset.change = ((lastClose - prevClose) / prevClose) * 100;
+        }
+        AppState.quoteLastUpdated[asset.symbol] = Date.now();
+        updateCachedBarsWithLivePrice(asset.symbol, asset.price);
+        updatedCount++;
+      }
+      if (updatedCount > 0) {
+        saveAssetsToStorage();
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function applyYahooMetaToAsset(asset, resObj, parsedBars = []) {
@@ -406,28 +485,23 @@ function applyYahooMetaToAsset(asset, resObj, parsedBars = []) {
 }
 
 async function fetchStockQuoteKeyless(asset) {
-  const data = await fetchYahooChartRaw(asset, '5d', '1d', null);
-  if (data && data.chart && data.chart.result && data.chart.result[0]) {
-    const resObj = data.chart.result[0];
-    const timestamps = resObj.timestamp || [];
-    const q = resObj.indicators?.quote?.[0] || {};
-    const parsed = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      if (q.open && q.open[i] != null && q.close[i] != null) {
-        parsed.push({
-          time: new Date(timestamps[i] * 1000),
-          open: parseFloat(q.open[i]),
-          high: parseFloat(q.high[i] ?? Math.max(q.open[i], q.close[i])),
-          low: parseFloat(q.low[i] ?? Math.min(q.open[i], q.close[i])),
-          close: parseFloat(q.close[i]),
-          volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
-        });
-      }
-    }
+  const cacheKey1M = `${asset.symbol}_1M`;
+  const existing1M = AppState.cachedBars[cacheKey1M];
+  const isIncremental = Boolean(existing1M && existing1M.length > 0);
+
+  const data = await fetchYahooChartRaw(asset, '1mo', '1d', isIncremental);
+  if (isValidYahooChartPayload(data)) {
+    const { resObj, parsed } = parseYahooBarsFromResponse(data);
     applyYahooMetaToAsset(asset, resObj, parsed);
     AppState.quoteLastUpdated[asset.symbol] = Date.now();
     saveAssetsToStorage();
-    if (asset.price != null) {
+
+    // Persist 1M daily candles so clicking this stock renders its chart immediately
+    if (parsed.length > 0) {
+      AppState.cachedBars[cacheKey1M] = mergeHistoricalBars(existing1M || [], parsed);
+      AppState.barsLastUpdated[cacheKey1M] = Date.now();
+      saveHistoryToStorage();
+    } else if (asset.price != null) {
       updateCachedBarsWithLivePrice(asset.symbol, asset.price);
     }
     return true;
@@ -466,31 +540,41 @@ async function pollLivePrices() {
     }
   } catch (e) {}
 
-  // 2. Fetch real Stock & ETF quotes from Yahoo Finance (keyless, no simulation)
+  // 2. Fetch real Stock & ETF quotes from Yahoo Finance (1 batch request via Spark, fallback to staggered)
   if (!AppState.stockPollInProgress) {
     AppState.stockPollInProgress = true;
     (async () => {
       try {
-        const now = Date.now();
+        // Give priority to the currently active chart load first
+        await new Promise(r => setTimeout(r, 1200));
+
         const stockAssets = AppState.assets.filter(a => a.type !== 'crypto');
-        // Prioritize currently selected asset first
-        stockAssets.sort((a, b) => {
-          if (AppState.selectedAsset && a.symbol === AppState.selectedAsset.symbol) return -1;
-          if (AppState.selectedAsset && b.symbol === AppState.selectedAsset.symbol) return 1;
-          return 0;
+        const needsUpdate = stockAssets.filter(a => {
+          const lastUpd = AppState.quoteLastUpdated[a.symbol] || 0;
+          return a.price == null || (Date.now() - lastUpd >= STOCK_QUOTE_POLL_COOLDOWN_MS);
         });
 
-        for (const asset of stockAssets) {
-          const lastUpd = AppState.quoteLastUpdated[asset.symbol] || 0;
-          if (asset.price != null && (now - lastUpd < STOCK_QUOTE_POLL_COOLDOWN_MS)) {
-            continue;
-          }
-          const updated = await fetchStockQuoteKeyless(asset);
-          if (updated) {
+        if (needsUpdate.length > 0) {
+          // Try single batch request for all stocks/ETFs first (avoids proxy rate-limiting!)
+          const batchOk = await fetchBatchStockQuotesSpark(needsUpdate);
+          if (batchOk) {
             renderAssetList();
-            if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
+            if (AppState.selectedAsset && AppState.selectedAsset.type !== 'crypto') {
               updateSelectedAssetHeader();
-              updateRiskCalculatorPreloads(asset);
+              updateRiskCalculatorPreloads(AppState.selectedAsset);
+            }
+          } else {
+            // Fallback: staggered single-ticker requests
+            for (const asset of needsUpdate) {
+              const updated = await fetchStockQuoteKeyless(asset);
+              if (updated) {
+                renderAssetList();
+                if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
+                  updateSelectedAssetHeader();
+                  updateRiskCalculatorPreloads(asset);
+                }
+              }
+              await new Promise(r => setTimeout(r, 1500));
             }
           }
         }
@@ -674,18 +758,17 @@ function updateBrokerLinks(asset) {
 }
 
 // --- Candlestick & Technical Indicators Generator ---
-async function fetchStooqBarsKeyless(asset, timeframe, sinceTimestampMs = null) {
+async function fetchStooqBarsKeyless(asset, timeframe, isIncremental = false) {
   try {
     const stooqSym = getStooqSymbol(asset);
     const invMap = { '1D': 'd', '1W': 'd', '1M': 'd', '3M': 'd', '1Y': 'w', 'ALL': 'm' };
     const stooqInv = invMap[timeframe] || 'd';
     const targetUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSym)}&i=${stooqInv}`;
-    const csvText = await fetchUrlViaKeylessGateways(targetUrl, false);
-    if (!csvText || typeof csvText !== 'string' || !csvText.includes(',')) return null;
+    const isValidCsv = (txt) => typeof txt === 'string' && txt.includes('Date,Open,High,Low,Close') && txt.trim().split(/\r?\n/).length > 2;
+    const csvText = await fetchUrlViaKeylessGateways(targetUrl, false, isValidCsv);
+    if (!isValidCsv(csvText)) return null;
 
     const lines = csvText.trim().split(/\r?\n/);
-    if (lines.length < 2) return null;
-
     const allBars = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',');
@@ -705,10 +788,8 @@ async function fetchStooqBarsKeyless(asset, timeframe, sinceTimestampMs = null) 
     if (allBars.length === 0) return null;
 
     const limitMap = { '1D': 30, '1W': 35, '1M': 35, '3M': 90, '1Y': 52, 'ALL': 60 };
-    const maxCount = limitMap[timeframe] || 60;
-    const sliced = sinceTimestampMs != null
-      ? allBars.filter(b => b.time.getTime() >= sinceTimestampMs)
-      : allBars.slice(-maxCount);
+    const maxCount = isIncremental ? 5 : (limitMap[timeframe] || 60);
+    const sliced = allBars.slice(-maxCount);
 
     if (allBars.length > 0) {
       const last = allBars[allBars.length - 1];
@@ -733,7 +814,28 @@ async function fetchStooqBarsKeyless(asset, timeframe, sinceTimestampMs = null) 
   }
 }
 
-async function fetchBarsFromSource(asset, timeframe, sinceTimestampMs = null) {
+function parseYahooBarsFromResponse(fetchedData) {
+  if (!isValidYahooChartPayload(fetchedData)) return { resObj: null, parsed: [] };
+  const resObj = fetchedData.chart.result[0];
+  const timestamps = resObj.timestamp || [];
+  const q = resObj.indicators?.quote?.[0] || {};
+  const parsed = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    if (q.open && q.open[i] != null && q.close[i] != null) {
+      parsed.push({
+        time: new Date(timestamps[i] * 1000),
+        open: parseFloat(q.open[i]),
+        high: parseFloat(q.high[i] ?? Math.max(q.open[i], q.close[i])),
+        low: parseFloat(q.low[i] ?? Math.min(q.open[i], q.close[i])),
+        close: parseFloat(q.close[i]),
+        volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
+      });
+    }
+  }
+  return { resObj, parsed };
+}
+
+async function fetchBarsFromSource(asset, timeframe, isIncremental = false) {
   let fetchedBars = null;
 
   // 1. If crypto, fetch real Binance klines directly (CORS supported natively, keyless)
@@ -741,9 +843,8 @@ async function fetchBarsFromSource(asset, timeframe, sinceTimestampMs = null) {
     try {
       const intervalMap = { '1D': '1h', '1W': '4h', '1M': '1d', '3M': '1d', '1Y': '1w', 'ALL': '1M' };
       const interval = intervalMap[timeframe] || '1d';
-      const url = sinceTimestampMs != null
-        ? `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&startTime=${sinceTimestampMs}`
-        : `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&limit=60`;
+      const limit = isIncremental ? 5 : 60;
+      const url = `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&limit=${limit}`;
       const res = await fetch(url);
       if (res.ok) {
         const raw = await res.json();
@@ -766,27 +867,21 @@ async function fetchBarsFromSource(asset, timeframe, sinceTimestampMs = null) {
       const intervalMap = { '1D': '5m', '1W': '15m', '1M': '1d', '3M': '1d', '1Y': '1wk', 'ALL': '1mo' };
       const r = rangeMap[timeframe] || '1mo';
       const inv = intervalMap[timeframe] || '1d';
-      const sinceSec = sinceTimestampMs != null ? Math.floor(sinceTimestampMs / 1000) : null;
 
-      const fetchedData = await fetchYahooChartRaw(asset, r, inv, sinceSec);
-      if (fetchedData && fetchedData.chart && fetchedData.chart.result && fetchedData.chart.result[0]) {
-        const resObj = fetchedData.chart.result[0];
-        const timestamps = resObj.timestamp || [];
-        const q = resObj.indicators?.quote?.[0] || {};
-        const parsed = [];
-        for (let i = 0; i < timestamps.length; i++) {
-          if (q.open && q.open[i] != null && q.close[i] != null) {
-            parsed.push({
-              time: new Date(timestamps[i] * 1000),
-              open: parseFloat(q.open[i]),
-              high: parseFloat(q.high[i] ?? Math.max(q.open[i], q.close[i])),
-              low: parseFloat(q.low[i] ?? Math.min(q.open[i], q.close[i])),
-              close: parseFloat(q.close[i]),
-              volume: q.volume && q.volume[i] > 0 ? parseFloat(q.volume[i]) : null
-            });
-          }
+      let fetchedData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
+      let { resObj, parsed } = parseYahooBarsFromResponse(fetchedData);
+
+      // If intraday (5m/15m) returned too few bars (e.g. market closed / holiday / European exchange), fallback to daily/hourly real bars
+      if ((timeframe === '1D' || timeframe === '1W') && (isIncremental ? parsed.length === 0 : parsed.length <= 2)) {
+        const fallbackData = await fetchYahooChartRaw(asset, '1mo', '1d', isIncremental);
+        const fb = parseYahooBarsFromResponse(fallbackData);
+        if (fb.parsed.length > 0) {
+          resObj = fb.resObj;
+          parsed = fb.parsed;
         }
+      }
 
+      if (resObj) {
         applyYahooMetaToAsset(asset, resObj, parsed);
         AppState.quoteLastUpdated[asset.symbol] = Date.now();
         saveAssetsToStorage();
@@ -796,8 +891,11 @@ async function fetchBarsFromSource(asset, timeframe, sinceTimestampMs = null) {
           updateRiskCalculatorPreloads(asset);
         }
 
-        if (sinceSec != null ? parsed.length > 0 : parsed.length > 2) {
+        if (isIncremental ? parsed.length > 0 : parsed.length > 2) {
           fetchedBars = parsed;
+          if (!isIncremental && timeframe === '1M' && parsed.length > 2) {
+            AppState.cachedBars[`${asset.symbol}_1M`] = parsed;
+          }
         }
       }
     } catch (e) {
@@ -806,7 +904,18 @@ async function fetchBarsFromSource(asset, timeframe, sinceTimestampMs = null) {
 
     // Secondary keyless real-data fallback (Stooq Historical Market Data)
     if (!fetchedBars || fetchedBars.length === 0) {
-      fetchedBars = await fetchStooqBarsKeyless(asset, timeframe, sinceTimestampMs);
+      fetchedBars = await fetchStooqBarsKeyless(asset, timeframe, isIncremental);
+    }
+
+    // If network is temporarily unreachable during initial load of a timeframe, check if we already have saved real bars for this asset
+    if ((!fetchedBars || fetchedBars.length === 0) && !isIncremental) {
+      for (const tf of ['1M', '3M', '1Y', '1W', '1D', 'ALL']) {
+        const existingOther = AppState.cachedBars[`${asset.symbol}_${tf}`];
+        if (existingOther && existingOther.length > 2) {
+          fetchedBars = existingOther.map(b => ({ ...b, time: new Date(b.time) }));
+          break;
+        }
+      }
     }
   }
 
@@ -835,11 +944,8 @@ async function loadAndRenderChart(asset, timeframe, options = {}) {
     const shouldSyncIncremental = options.forceIncremental || (Date.now() - lastUpdated >= INCREMENTAL_SYNC_COOLDOWN_MS);
     if (!shouldSyncIncremental) return;
 
-    const lastBar = bars[bars.length - 1];
-    const lastBarTimeMs = lastBar.time instanceof Date ? lastBar.time.getTime() : new Date(lastBar.time).getTime();
-
     AppState.barsLastUpdated[cacheKey] = Date.now();
-    const newBars = await fetchBarsFromSource(asset, timeframe, lastBarTimeMs);
+    const newBars = await fetchBarsFromSource(asset, timeframe, true);
     if (newBars && newBars.length > 0) {
       bars = mergeHistoricalBars(AppState.cachedBars[cacheKey] || bars, newBars);
       AppState.cachedBars[cacheKey] = bars;
@@ -854,7 +960,7 @@ async function loadAndRenderChart(asset, timeframe, options = {}) {
   }
 
   // First-time download for this asset & timeframe: fetch full history and save it persistently
-  bars = await fetchBarsFromSource(asset, timeframe, null);
+  bars = await fetchBarsFromSource(asset, timeframe, false);
 
   // No data available — do NOT simulate. Show error in chart instead.
   if (!bars || bars.length === 0) {
@@ -871,18 +977,26 @@ async function loadAndRenderChart(asset, timeframe, options = {}) {
 
 function showChartNoData(asset) {
   const canvas = document.getElementById('mainChartCanvas');
-  if (!canvas) return;
+  const wrapper = document.getElementById('chartWrapper');
+  if (!canvas || !wrapper) return;
+  const dpr = window.devicePixelRatio || 1;
+  const width = wrapper.clientWidth || 600;
+  const height = wrapper.clientHeight || 320;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
   ctx.font = '14px sans-serif';
   ctx.textAlign = 'center';
   const msg1 = 'Dati reali non disponibili al momento per ' + asset.symbol;
   const msg2 = asset.type === 'crypto'
     ? 'Server Binance temporaneamente non raggiungibile'
     : 'Server Yahoo Finance / Mercati temporaneamente non raggiungibile';
-  ctx.fillText(msg1, canvas.width / 2, canvas.height / 2 - 14);
-  ctx.fillText(msg2, canvas.width / 2, canvas.height / 2 + 10);
+  ctx.fillText(msg1, width / 2, height / 2 - 12);
+  ctx.fillText(msg2, width / 2, height / 2 + 12);
   ctx.textAlign = 'left';
 
   // Clear indicator canvases too
@@ -1954,6 +2068,7 @@ function setupPWA() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
+      reg.update().catch(() => {});
     }).catch(err => {
       console.log('[MarketPulse PWA] Service worker registration failed:', err);
     });

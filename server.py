@@ -119,12 +119,12 @@ def fetch_and_update_history(symbol, range_val='1mo', interval='1d', since_sec=N
     if entry and isinstance(entry.get('bars'), dict) and len(entry['bars']) > 0:
         bars = entry['bars']
         meta = entry.get('meta') or {}
-        last_saved_ts = max(int(k) for k in bars.keys())
+        inc_range = '1d' if interval in ('5m', '15m', '30m', '1h') else '5d'
 
-        # Fetch only new bars starting from last_saved_ts
+        # Fetch only the recent window of new bars and merge into saved history
         url = (
             f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-            f"?period1={last_saved_ts}&period2={now_sec}&interval={interval}"
+            f"?range={inc_range}&interval={interval}"
         )
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
         try:
