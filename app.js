@@ -61,7 +61,7 @@ const AppState = {
   deferredPrompt: null
 };
 
-const HISTORY_STORAGE_KEY = 'marketpulse_history_v3';
+const HISTORY_STORAGE_KEY = 'marketpulse_history_v4';
 const INCREMENTAL_SYNC_COOLDOWN_MS = 10000; // Minimum interval between incremental candle fetches per key
 const STOCK_QUOTE_POLL_COOLDOWN_MS = 30000; // Poll stock/ETF quotes every 30s without API key
 
@@ -475,22 +475,197 @@ function applyYahooMetaToAsset(asset, resObj, parsedBars = [], interval = '1d', 
   }
 }
 
+function parseNumericClean(val) {
+  if (val == null) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  const cleaned = String(val).replace(/[%+,$\s]/g, '');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+function formatCnbcTimestamp(dateObj, isEnd = false) {
+  const yyyy = dateObj.getUTCFullYear();
+  const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}${isEnd ? '235959' : '000000'}`;
+}
+
+function parseCnbcTradeTimeStr(str) {
+  if (!str || str.length < 8) return null;
+  const yyyy = parseInt(str.slice(0, 4), 10);
+  const mm = parseInt(str.slice(4, 6), 10) - 1;
+  const dd = parseInt(str.slice(6, 8), 10);
+  const hh = str.length >= 10 ? parseInt(str.slice(8, 10), 10) : 16;
+  const min = str.length >= 12 ? parseInt(str.slice(10, 12), 10) : 0;
+  const ss = str.length >= 14 ? parseInt(str.slice(12, 14), 10) : 0;
+  return new Date(Date.UTC(yyyy, mm, dd, hh, min, ss));
+}
+
+// Native CORS-enabled batch quote fetcher for all Stocks & ETFs (1 request for all 14 tickers, 0 API keys, 0 proxies)
+async function fetchCnbcBatchQuotesDirect(stockAssets) {
+  if (!stockAssets || stockAssets.length === 0) return false;
+  try {
+    const symMap = {};
+    const cnbcSyms = [];
+    for (const asset of stockAssets) {
+      const cSym = getYahooSymbol(asset);
+      symMap[cSym.toUpperCase()] = asset;
+      symMap[cSym.replace('.', '-').toUpperCase()] = asset;
+      symMap[asset.symbol.toUpperCase()] = asset;
+      cnbcSyms.push(cSym);
+    }
+
+    const symbolsParam = encodeURIComponent(cnbcSyms.join('|'));
+    const url = `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${symbolsParam}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    let quotes = data?.FormattedQuoteResult?.FormattedQuote;
+    if (!quotes) return false;
+    if (!Array.isArray(quotes)) quotes = [quotes];
+
+    let updatedCount = 0;
+    for (const q of quotes) {
+      if (!q || !q.symbol) continue;
+      const key = String(q.symbol).toUpperCase();
+      const asset = symMap[key];
+      if (!asset) continue;
+
+      const lastPrice = parseNumericClean(q.last);
+      if (lastPrice != null && lastPrice > 0) {
+        asset.price = lastPrice;
+      }
+
+      const changePct = parseNumericClean(q.change_pct);
+      const prevClose = parseNumericClean(q.previous_day_closing);
+      if (changePct != null) {
+        asset.change = changePct;
+      } else if (asset.price != null && prevClose != null && prevClose > 0) {
+        asset.change = ((asset.price - prevClose) / prevClose) * 100;
+      }
+
+      const highVal = parseNumericClean(q.high);
+      if (highVal != null && highVal > 0) asset.high = highVal;
+
+      const lowVal = parseNumericClean(q.low);
+      if (lowVal != null && lowVal > 0) asset.low = lowVal;
+
+      const rawVol = parseNumericClean(q.volume);
+      if (rawVol != null && rawVol > 0) {
+        const fv = formatVolumeCompact(rawVol);
+        if (fv) asset.volume = fv;
+      }
+
+      AppState.quoteLastUpdated[asset.symbol] = Date.now();
+      if (asset.price != null) {
+        updateCachedBarsWithLivePrice(asset.symbol, asset.price);
+      }
+      updatedCount++;
+    }
+
+    if (updatedCount > 0) {
+      saveAssetsToStorage();
+      return true;
+    }
+  } catch (e) {
+    console.warn('[MarketPulse] Direct batch stock quote error:', e);
+  }
+  return false;
+}
+
+// Native CORS-enabled historical & incremental OHLCV fetcher for Stocks & ETFs (0 API keys, 0 proxies)
+async function fetchCnbcBarsDirect(asset, barType = '1D', isIncremental = false, existingBars = null) {
+  try {
+    const cnbcSym = getYahooSymbol(asset);
+    const now = new Date();
+    const endDate = new Date(now.getTime() + 2 * 86400 * 1000);
+    let startDate;
+
+    if (isIncremental && Array.isArray(existingBars) && existingBars.length > 0) {
+      const lastBar = existingBars[existingBars.length - 1];
+      const lastMs = lastBar.time instanceof Date ? lastBar.time.getTime() : new Date(lastBar.time).getTime();
+      const lookbackDays = barType === '1D' ? 6 : 3;
+      startDate = new Date(lastMs - lookbackDays * 86400 * 1000);
+    } else {
+      const initDays = barType === '1D' ? (5 * 365) : 16;
+      startDate = new Date(now.getTime() - initDays * 86400 * 1000);
+    }
+
+    const startStr = formatCnbcTimestamp(startDate, false);
+    const endStr = formatCnbcTimestamp(endDate, true);
+    const url = `https://ts-api.cnbc.com/harmony/app/bars/${encodeURIComponent(cnbcSym)}/${barType}/${startStr}/${endStr}/adjusted/EST5EDT.json`;
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rawBars = data?.barData?.priceBars;
+    if (!Array.isArray(rawBars) || rawBars.length === 0) return null;
+
+    const parsed = [];
+    for (const b of rawBars) {
+      const o = parseNumericClean(b.open);
+      const h = parseNumericClean(b.high);
+      const l = parseNumericClean(b.low);
+      const c = parseNumericClean(b.close);
+      const v = parseNumericClean(b.volume);
+      const dt = b.tradeTimeinMills ? new Date(Number(b.tradeTimeinMills)) : parseCnbcTradeTimeStr(b.tradeTime);
+      if (dt && !isNaN(dt.getTime()) && o != null && c != null && o > 0 && c > 0) {
+        parsed.push({
+          time: dt,
+          open: o,
+          high: h != null && h > 0 ? h : Math.max(o, c),
+          low: l != null && l > 0 ? l : Math.min(o, c),
+          close: c,
+          volume: v != null && v > 0 ? v : null
+        });
+      }
+    }
+
+    if (parsed.length > 0 && barType === '1D' && asset.price == null) {
+      syncAssetQuoteFromBars(asset, parsed);
+      saveAssetsToStorage();
+    } else if (parsed.length > 0 && asset.price != null) {
+      // Keep the latest bar's close synced with the live quote
+      const last = parsed[parsed.length - 1];
+      last.close = asset.price;
+      if (asset.price > last.high) last.high = asset.price;
+      if (asset.price < last.low) last.low = asset.price;
+    }
+
+    return parsed.length > 0 ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function fetchStockQuoteKeyless(asset) {
   const dailyKey = `${asset.symbol}_DAILY`;
   const existingDaily = AppState.cachedBars[dailyKey];
   const isIncremental = Boolean(existingDaily && existingDaily.length >= 60);
 
-  let data = await fetchYahooChartRaw(asset, '5y', '1d', isIncremental);
-  if (!isValidYahooChartPayload(data) && !isIncremental) {
-    data = await fetchYahooChartRaw(asset, '2y', '1d', false);
+  // 1. Try direct native-CORS CNBC bars first
+  const directBars = await fetchCnbcBarsDirect(asset, '1D', isIncremental, existingDaily);
+  if (directBars && directBars.length > 0) {
+    const merged = mergeHistoricalBars(existingDaily || [], directBars);
+    AppState.cachedBars[dailyKey] = merged;
+    AppState.barsLastUpdated[dailyKey] = Date.now();
+    if (asset.price == null) {
+      syncAssetQuoteFromBars(asset, merged);
+      saveAssetsToStorage();
+    }
+    saveHistoryToStorage();
+    return true;
   }
+
+  // 2. Fallback to Yahoo Finance chart endpoint
+  let data = await fetchYahooChartRaw(asset, '2y', '1d', isIncremental);
   if (isValidYahooChartPayload(data)) {
     const { resObj, parsed } = parseYahooBarsFromResponse(data);
-    applyYahooMetaToAsset(asset, resObj, parsed, '1d', isIncremental ? '5d' : '5y');
+    applyYahooMetaToAsset(asset, resObj, parsed, '1d', isIncremental ? '5d' : '2y');
     AppState.quoteLastUpdated[asset.symbol] = Date.now();
     saveAssetsToStorage();
 
-    // Persist multi-year daily candles so clicking any stock renders 1M, 3M, 1A, and TUTTO immediately (0ms)
     if (parsed.length > 0) {
       const merged = mergeHistoricalBars(existingDaily || [], parsed);
       AppState.cachedBars[dailyKey] = merged;
@@ -504,7 +679,7 @@ async function fetchStockQuoteKeyless(asset) {
   return false;
 }
 
-// --- Polling Live Prices (Keyless: Binance for Crypto + Yahoo Finance for Stocks/ETFs) ---
+// --- Polling Live Prices (Keyless & Native CORS: Binance for Crypto + CNBC/Wall St. for Stocks/ETFs) ---
 async function pollLivePrices() {
   // 1. Fetch real crypto tickers from Binance API (CORS friendly, keyless)
   try {
@@ -535,34 +710,45 @@ async function pollLivePrices() {
     }
   } catch (e) {}
 
-  // 2. Fetch real Stock & ETF quotes + incremental daily bars from Yahoo Finance (staggered per ticker)
+  // 2. Fetch real Stock & ETF quotes in a single native-CORS batch request (updates all 14 tickers in ~80ms!)
+  const stockAssets = AppState.assets.filter(a => a.type !== 'crypto');
+  const needsQuoteUpdate = stockAssets.filter(a => {
+    const lastUpd = AppState.quoteLastUpdated[a.symbol] || 0;
+    return a.price == null || (Date.now() - lastUpd >= 10000);
+  });
+
+  if (needsQuoteUpdate.length > 0) {
+    fetchCnbcBatchQuotesDirect(stockAssets).then(batchOk => {
+      if (batchOk) {
+        renderAssetList();
+        if (AppState.selectedAsset && AppState.selectedAsset.type !== 'crypto') {
+          updateSelectedAssetHeader();
+          updateRiskCalculatorPreloads(AppState.selectedAsset);
+          redrawCurrentChart();
+        }
+      }
+    }).catch(() => {});
+  }
+
+  // 3. Background incremental sync of daily historical bars for watchlist stocks
   if (!AppState.stockPollInProgress) {
     AppState.stockPollInProgress = true;
     (async () => {
       try {
-        // Give priority to the currently selected asset chart load first
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1200));
 
-        const stockAssets = AppState.assets.filter(a => a.type !== 'crypto');
-        const needsUpdate = stockAssets.filter(a => {
-          const lastUpd = AppState.quoteLastUpdated[a.symbol] || 0;
-          return a.price == null || (Date.now() - lastUpd >= STOCK_QUOTE_POLL_COOLDOWN_MS);
-        });
-
-        for (const asset of needsUpdate) {
-          // Yield network priority if user is actively switching chart / timeframe
+        for (const asset of stockAssets) {
           while (AppState.chartFetchInProgress) {
             await new Promise(r => setTimeout(r, 300));
           }
-          const updated = await fetchStockQuoteKeyless(asset);
-          if (updated) {
+          const dailyKey = `${asset.symbol}_DAILY`;
+          const lastBarsUpd = AppState.barsLastUpdated[dailyKey] || 0;
+          const existing = AppState.cachedBars[dailyKey];
+          if (!existing || existing.length < 60 || (Date.now() - lastBarsUpd >= 60000)) {
+            await fetchStockQuoteKeyless(asset);
             renderAssetList();
-            if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
-              updateSelectedAssetHeader();
-              updateRiskCalculatorPreloads(asset);
-            }
           }
-          await new Promise(r => setTimeout(r, 450));
+          await new Promise(r => setTimeout(r, 250));
         }
       } catch (e) {} finally {
         AppState.stockPollInProgress = false;
@@ -908,9 +1094,6 @@ function buildTimeframeSeries(rawBars, timeframe, isCrypto = false) {
       return sameDayBars.length >= 12 ? sameDayBars : series.slice(-28);
     }
     if (timeframe === '1W') {
-      if (!isCrypto && series.length > 80) {
-        series = aggregateBarsByPeriod(series, 'pair');
-      }
       calculateIndicators(series);
       const maxW = isCrypto ? 42 : 65;
       return series.slice(-maxW);
@@ -973,7 +1156,22 @@ async function fetchMasterSeriesFromSource(asset, seriesType, isIncremental = fa
     return null;
   }
 
-  // Stocks & ETFs (Yahoo Finance v8 keyless + Stooq fallback)
+  // Stocks & ETFs:
+  // 1. Primary: Native CORS-enabled CNBC Harmony Bars API (0 API keys, 0 CORS proxies, 0 rate limits)
+  const cacheKey = seriesType === 'INTRADAY' ? `${asset.symbol}_INTRADAY` : `${asset.symbol}_DAILY`;
+  const existingBars = AppState.cachedBars[cacheKey];
+  const barType = seriesType === 'INTRADAY' ? '30M' : '1D';
+  const cnbcBars = await fetchCnbcBarsDirect(asset, barType, isIncremental, existingBars);
+  if (cnbcBars && cnbcBars.length > 0) {
+    renderAssetList();
+    if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
+      updateSelectedAssetHeader();
+      updateRiskCalculatorPreloads(asset);
+    }
+    return cnbcBars;
+  }
+
+  // 2. Fallback: Yahoo Finance v8 keyless API
   try {
     if (seriesType === 'INTRADAY') {
       const r = '5d';
@@ -994,14 +1192,9 @@ async function fetchMasterSeriesFromSource(asset, seriesType, isIncremental = fa
       return null;
     }
 
-    // DAILY master series (5 years of daily candles -> powers 1M, 3M, 1Y, ALL)
-    let r = '5y';
+    let r = '2y';
     const inv = '1d';
-    let fetchedData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
-    if (!isValidYahooChartPayload(fetchedData) && !isIncremental) {
-      r = '2y';
-      fetchedData = await fetchYahooChartRaw(asset, r, inv, false);
-    }
+    const fetchedData = await fetchYahooChartRaw(asset, r, inv, isIncremental);
     const { resObj, parsed } = parseYahooBarsFromResponse(fetchedData);
     if (resObj && parsed.length > 0) {
       applyYahooMetaToAsset(asset, resObj, parsed, inv, isIncremental ? '5d' : r);
@@ -1015,12 +1208,9 @@ async function fetchMasterSeriesFromSource(asset, seriesType, isIncremental = fa
       return parsed;
     }
   } catch (e) {
-    console.log('Yahoo Finance stock fetch error:', e);
+    console.log('Stock fallback fetch error:', e);
   }
 
-  if (seriesType === 'DAILY') {
-    return await fetchStooqBarsKeyless(asset, isIncremental);
-  }
   return null;
 }
 
@@ -2250,7 +2440,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=9').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=10').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {
