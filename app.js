@@ -281,23 +281,29 @@ async function fetchFearAndGreed() {
 }
 
 function renderFearGreed(val, label) {
+  AppState.fearGreedVal = val;
   const el = document.getElementById('fearGreedValue');
   if (!el) return;
   el.className = 'fear-greed-meter';
 
   if (val <= 25) {
+    AppState.fearGreedLabel = 'Paura Estrema';
     el.classList.add('fg-extreme-fear');
     el.textContent = `${val} • Paura Estrema`;
   } else if (val <= 45) {
+    AppState.fearGreedLabel = 'Paura';
     el.classList.add('fg-fear');
     el.textContent = `${val} • Paura`;
   } else if (val <= 55) {
+    AppState.fearGreedLabel = 'Neutrale';
     el.classList.add('fg-neutral');
     el.textContent = `${val} • Neutrale`;
   } else if (val <= 75) {
+    AppState.fearGreedLabel = 'Avidità';
     el.classList.add('fg-greed');
     el.textContent = `${val} • Avidità`;
   } else {
+    AppState.fearGreedLabel = 'Avidità Estrema';
     el.classList.add('fg-extreme-greed');
     el.textContent = `${val} • Avidità Estrema`;
   }
@@ -627,6 +633,29 @@ function parseCnbcTradeTimeStr(str) {
   return new Date(Date.UTC(yyyy, mm, dd, hh, min, ss));
 }
 
+function extractCnbcFundamentals(q) {
+  if (!q) return null;
+  return {
+    pe: parseNumericClean(q.pe),
+    fpe: parseNumericClean(q.fpe),
+    eps: parseNumericClean(q.eps),
+    feps: parseNumericClean(q.feps),
+    roe: parseNumericClean(q.ROETTM),
+    netMargin: parseNumericClean(q.NETPROFTTM),
+    grossMargin: parseNumericClean(q.GROSMGNTTM),
+    debtToEquity: parseNumericClean(q.DEBTEQTYQ),
+    divYield: parseNumericClean(q.dividendyield),
+    dividend: parseNumericClean(q.dividend),
+    beta: parseNumericClean(q.beta),
+    mktCap: q.mktcapView ? String(q.mktcapView).trim() : null,
+    yrHigh: parseNumericClean(q.yrhiprice),
+    yrLow: parseNumericClean(q.yrloprice),
+    pctTenDayVol: parseNumericClean(q.pcttendayvol),
+    tenDayAvgVol: q.tendayavgvol ? String(q.tendayavgvol).trim() : null,
+    revTtm: q.revenuettm ? String(q.revenuettm).trim() : null
+  };
+}
+
 // Native CORS-enabled batch quote fetcher for all Stocks & ETFs (1 request for all 14 tickers, 0 API keys, 0 proxies)
 async function fetchCnbcBatchQuotesDirect(stockAssets) {
   if (!stockAssets || stockAssets.length === 0) return false;
@@ -692,6 +721,11 @@ async function fetchCnbcBatchQuotesDirect(stockAssets) {
 
       if (q.exchange && (!asset.exchange || asset.exchange === 'Stock Exchange')) {
         asset.exchange = String(q.exchange).trim();
+      }
+
+      const fund = extractCnbcFundamentals(q);
+      if (fund) {
+        asset.fundamentals = Object.assign(asset.fundamentals || {}, fund);
       }
 
       AppState.quoteLastUpdated[asset.symbol] = Date.now();
@@ -2110,6 +2144,328 @@ function updateTechnicalDecisionBanner(bars) {
     ratingBadge.classList.add('rating-sell');
     ratingBadge.textContent = `VENDITA / CAUTELA (${score}%)`;
   }
+
+  // Trigger AI Multi-Factor Investment Evaluation
+  updateAiInvestmentEvaluation(AppState.selectedAsset, bars, score);
+}
+
+// --- AI Multi-Factor Investment Evaluation Engine (Trends, Curves, Indicators, Analysts & Fundamentals) ---
+function computeLinearRegressionSlopePct(closes) {
+  const n = closes.length;
+  if (n < 3) return { slopePct: 0, r2: 0 };
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+  for (let i = 0; i < n; i++) {
+    const y = closes[i];
+    sumX += i;
+    sumY += y;
+    sumXY += i * y;
+    sumX2 += i * i;
+    sumY2 += y * y;
+  }
+  const denom = (n * sumX2 - sumX * sumX);
+  if (denom === 0) return { slopePct: 0, r2: 0 };
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  const meanY = sumY / n;
+  const slopePct = meanY > 0 ? ((slope * n) / meanY) * 100 : 0;
+
+  const rDenom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+  const r = rDenom > 0 ? (n * sumXY - sumX * sumY) / rDenom : 0;
+  return { slopePct, r2: Math.min(1, Math.max(0, r * r)) };
+}
+
+function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
+  if (!asset || !bars || bars.length < 2) return;
+
+  const tagEl = document.getElementById('aiEvalAssetTag');
+  const riskBadgeEl = document.getElementById('aiRiskProfileBadge');
+  const verdictBadgeEl = document.getElementById('aiVerdictBadge');
+  const factorCurveEl = document.getElementById('aiFactorCurve');
+  const factorTechEl = document.getElementById('aiFactorTech');
+  const factorAnalystsEl = document.getElementById('aiFactorAnalysts');
+  const factorStrategyEl = document.getElementById('aiFactorStrategy');
+  const narrativeEl = document.getElementById('aiNarrativeText');
+  if (!verdictBadgeEl || !narrativeEl) return;
+
+  const tfLabels = { '1D': '1G', '1W': '1S', '1M': '1M', '3M': '3M', '1Y': '1A', 'ALL': 'TUTTO' };
+  const tfLabel = tfLabels[AppState.activeTimeframe] || AppState.activeTimeframe;
+  if (tagEl) tagEl.textContent = `${asset.symbol} • Orizzonte ${tfLabel}`;
+
+  const last = bars[bars.length - 1];
+  const prev = bars[bars.length - 2];
+  const currentPrice = asset.price != null ? asset.price : last.close;
+  const fund = asset.fundamentals || {};
+
+  // Use daily master series if available for multi-horizon performance & annualized volatility
+  const dailySeries = (AppState.cachedBars[`${asset.symbol}_DAILY`] && AppState.cachedBars[`${asset.symbol}_DAILY`].length >= 10)
+    ? AppState.cachedBars[`${asset.symbol}_DAILY`]
+    : bars;
+
+  const calcHorizonReturn = (series, lookback) => {
+    if (!series || series.length < 2) return null;
+    const idx = Math.max(0, series.length - 1 - lookback);
+    const refClose = series[idx]?.close;
+    return (refClose && refClose > 0) ? ((currentPrice - refClose) / refClose) * 100 : null;
+  };
+
+  const ret1W = calcHorizonReturn(dailySeries, 5);
+  const ret1M = calcHorizonReturn(dailySeries, 22);
+  const ret3M = calcHorizonReturn(dailySeries, 65);
+  const ret1Y = calcHorizonReturn(dailySeries, Math.min(252, dailySeries.length - 1));
+
+  // 1. Curve Geometry, Regression Slope, Volatility & 52-Week Range
+  const recentWindow = bars.slice(-Math.min(20, bars.length));
+  const recentCloses = recentWindow.map(b => b.close);
+  const shortCloses = bars.slice(-Math.min(7, bars.length)).map(b => b.close);
+  const { slopePct: slope20, r2: curveR2 } = computeLinearRegressionSlopePct(recentCloses);
+  const { slopePct: slope7 } = computeLinearRegressionSlopePct(shortCloses);
+
+  // Support & Resistance over active window
+  let supportLevel = Infinity, resistanceLevel = -Infinity;
+  for (const b of recentWindow) {
+    if (b.low < supportLevel) supportLevel = b.low;
+    if (b.high > resistanceLevel) resistanceLevel = b.high;
+  }
+  if (!isFinite(supportLevel) || supportLevel <= 0) supportLevel = currentPrice * 0.95;
+  if (!isFinite(resistanceLevel) || resistanceLevel <= 0) resistanceLevel = currentPrice * 1.05;
+
+  // 52-Week High/Low (from CNBC fundamentals or computed from up to 252 daily bars)
+  const yearSlice = dailySeries.slice(-252);
+  let histYrHigh = -Infinity, histYrLow = Infinity;
+  for (const b of yearSlice) {
+    if (b.high > histYrHigh) histYrHigh = b.high;
+    if (b.low < histYrLow) histYrLow = b.low;
+  }
+  const yrHigh = (fund.yrHigh && fund.yrHigh > 0) ? Math.max(fund.yrHigh, currentPrice) : histYrHigh;
+  const yrLow = (fund.yrLow && fund.yrLow > 0) ? Math.min(fund.yrLow, currentPrice) : histYrLow;
+  const range52WPos = (yrHigh > yrLow && yrLow > 0)
+    ? Math.max(0, Math.min(100, ((currentPrice - yrLow) / (yrHigh - yrLow)) * 100))
+    : 50;
+
+  // Daily volatility & Sharpe proxy
+  const dailyRets = [];
+  const volSlice = dailySeries.slice(-60);
+  for (let i = 1; i < volSlice.length; i++) {
+    if (volSlice[i - 1].close > 0) {
+      dailyRets.push((volSlice[i].close - volSlice[i - 1].close) / volSlice[i - 1].close);
+    }
+  }
+  let annVolPct = 22;
+  let sharpeProxy = 0;
+  if (dailyRets.length >= 5) {
+    const meanRet = dailyRets.reduce((a, b) => a + b, 0) / dailyRets.length;
+    const variance = dailyRets.reduce((a, b) => a + Math.pow(b - meanRet, 2), 0) / dailyRets.length;
+    const stdDaily = Math.sqrt(variance);
+    const tradingDays = asset.type === 'crypto' ? 365 : 252;
+    annVolPct = stdDaily * Math.sqrt(tradingDays) * 100;
+    if (stdDaily > 0) {
+      sharpeProxy = (meanRet / stdDaily) * Math.sqrt(tradingDays);
+    }
+  }
+
+  // Classify curve geometry
+  let curveState = 'Laterale';
+  let curveScore = 50;
+  if (slope20 > 2.0 && slope7 >= slope20 * 0.35) {
+    curveState = 'Accelerazione Rialzista';
+    curveScore = 78;
+  } else if (slope20 > 1.0 && slope7 < 0) {
+    curveState = 'Rialzista • Pullback Breve';
+    curveScore = 66;
+  } else if (slope20 < -2.0 && slope7 > 0.5) {
+    curveState = 'Inversione / Rimbalzo dal Fondo';
+    curveScore = 64;
+  } else if (slope20 < -2.0) {
+    curveState = 'Inclinazione Ribassista';
+    curveScore = 30;
+  } else {
+    curveState = 'Consolidamento / Accumulo';
+    curveScore = 52;
+  }
+  if (ret3M != null && ret3M > 8) curveScore += 8;
+  else if (ret3M != null && ret3M < -8) curveScore -= 8;
+
+  // 2. Technical Confluence & Volume Pressure
+  const rsi = last.rsi || 50;
+  const ema20 = last.ema20 || currentPrice;
+  const ema50 = last.ema50 || currentPrice;
+  const distEma20Pct = ema20 > 0 ? ((currentPrice - ema20) / ema20) * 100 : 0;
+
+  let bPct = 50;
+  if (last.upperBand && last.lowerBand && last.upperBand > last.lowerBand) {
+    bPct = ((currentPrice - last.lowerBand) / (last.upperBand - last.lowerBand)) * 100;
+  }
+
+  // Volume comparison vs 20-bar average
+  const vols = recentWindow.map(b => b.volume || 0).filter(v => v > 0);
+  const avgVol = vols.length > 0 ? (vols.reduce((a, b) => a + b, 0) / vols.length) : 0;
+  let volRatio = (avgVol > 0 && last.volume > 0) ? (last.volume / avgVol) : (fund.pctTenDayVol || 1.0);
+  if (!isFinite(volRatio) || volRatio <= 0) volRatio = 1.0;
+
+  let bullishIndicators = 0;
+  if (rsi >= 45 && rsi <= 68) bullishIndicators++;
+  else if (rsi < 33) bullishIndicators++; // oversold bounce signal
+  if (currentPrice >= ema20 && ema20 >= ema50) bullishIndicators++;
+  if (last.macdHist > 0 || (last.macdHist > prev.macdHist)) bullishIndicators++;
+  if (bPct >= 20 && bPct <= 82) bullishIndicators++;
+
+  // 3. Analysts Consensus & Fundamentals Score
+  let fundamentalScore = 55;
+  let epsGrowthEst = null;
+  if (fund.eps != null && fund.feps != null && Math.abs(fund.eps) > 0.01) {
+    epsGrowthEst = ((fund.feps - fund.eps) / Math.abs(fund.eps)) * 100;
+  }
+
+  if (asset.type === 'stock') {
+    if (epsGrowthEst != null) {
+      if (epsGrowthEst > 20) fundamentalScore += 18;
+      else if (epsGrowthEst > 5) fundamentalScore += 10;
+      else if (epsGrowthEst < -10) fundamentalScore -= 12;
+    }
+    if (fund.fpe != null && fund.pe != null && fund.fpe > 0 && fund.pe > 0) {
+      if (fund.fpe < fund.pe * 0.9) fundamentalScore += 10;
+      if (fund.fpe < 22) fundamentalScore += 6;
+      else if (fund.fpe > 45) fundamentalScore -= 6;
+    } else if (fund.pe != null && fund.pe > 0 && fund.pe < 20) {
+      fundamentalScore += 8;
+    }
+    if (fund.roe != null) {
+      if (fund.roe >= 20) fundamentalScore += 10;
+      else if (fund.roe >= 10) fundamentalScore += 5;
+      else if (fund.roe < 0) fundamentalScore -= 10;
+    }
+    if (fund.netMargin != null && fund.netMargin >= 15) {
+      fundamentalScore += 6;
+    }
+    if (fund.divYield != null && fund.divYield >= 2.5) {
+      fundamentalScore += 5;
+    }
+  } else {
+    // ETFs & Crypto: evaluate structural cycle, Sharpe efficiency & market sentiment
+    if (sharpeProxy > 1.0) fundamentalScore += 15;
+    else if (sharpeProxy > 0.3) fundamentalScore += 7;
+    else if (sharpeProxy < -0.5) fundamentalScore -= 10;
+
+    if (ret1Y != null && ret1Y > 12) fundamentalScore += 10;
+    if (range52WPos >= 35 && range52WPos <= 88) fundamentalScore += 6;
+  }
+  fundamentalScore = Math.max(15, Math.min(95, fundamentalScore));
+
+  // Combine into Composite AI Investment Score (35% Technical, 35% Curve/Trend, 30% Analysts/Fundamentals)
+  const compositeScore = Math.round(
+    Math.max(12, Math.min(96, (techScore * 0.35) + (curveScore * 0.35) + (fundamentalScore * 0.30)))
+  );
+
+  // Risk Profile Assessment
+  const betaVal = fund.beta || (asset.type === 'crypto' ? 2.4 : (asset.type === 'etf' ? 0.95 : 1.15));
+  let riskProfile = 'Moderato';
+  let riskColor = '#facc15';
+  if (asset.type === 'crypto' || annVolPct > 42 || betaVal >= 1.75) {
+    riskProfile = `Elevato (Volat. ${annVolPct.toFixed(0)}%${fund.beta ? ` • Beta ${fund.beta.toFixed(2)}` : ''})`;
+    riskColor = '#fb7185';
+  } else if (annVolPct < 18 && betaVal <= 1.05) {
+    riskProfile = `Basso / Difensivo (Volat. ${annVolPct.toFixed(0)}%${fund.beta ? ` • Beta ${fund.beta.toFixed(2)}` : ''})`;
+    riskColor = '#34d399';
+  } else {
+    riskProfile = `Moderato (Volat. ${annVolPct.toFixed(0)}%${fund.beta ? ` • Beta ${fund.beta.toFixed(2)}` : ''})`;
+    riskColor = '#38bdf8';
+  }
+  if (riskBadgeEl) {
+    riskBadgeEl.textContent = `Rischio: ${riskProfile}`;
+    riskBadgeEl.style.color = riskColor;
+  }
+
+  // AI Verdict Badge
+  verdictBadgeEl.className = 'ai-verdict-pill';
+  let verdictLabel = '';
+  let strategyAction = '';
+  if (compositeScore >= 74) {
+    verdictBadgeEl.classList.add('rating-strong-buy');
+    verdictLabel = `IA: FORTE CONVIZIONE BUY (${compositeScore}/100)`;
+    strategyAction = distEma20Pct > 4 ? 'Accumulo su ritracciamento verso EMA20' : 'Ingresso Graduale / Breakout';
+  } else if (compositeScore >= 58) {
+    verdictBadgeEl.classList.add('rating-buy');
+    verdictLabel = `IA: ACCUMULO / BUY MODERATO (${compositeScore}/100)`;
+    strategyAction = rsi < 42 ? 'Ingresso su Supporto (Pullback)' : 'Accumulo PAC / DCA a tranche';
+  } else if (compositeScore >= 42) {
+    verdictBadgeEl.classList.add('rating-neutral');
+    verdictLabel = `IA: MANTIENI / ATTENDI SETUP (${compositeScore}/100)`;
+    strategyAction = `Attendi tenuta supporto ${formatCurrency(supportLevel, asset)}`;
+  } else {
+    verdictBadgeEl.classList.add('rating-sell');
+    verdictLabel = `IA: CAUTELA / SOTTOPESARE (${compositeScore}/100)`;
+    strategyAction = `Protezione capitale • Stop < ${formatCurrency(supportLevel * 0.985, asset)}`;
+  }
+  verdictBadgeEl.textContent = verdictLabel;
+
+  // Populate the 4 Factor Boxes
+  const fmtSignedPct = (v) => (v == null || isNaN(v)) ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+
+  if (factorCurveEl) {
+    factorCurveEl.textContent = `${curveState} • 1M ${fmtSignedPct(ret1M)} | 3M ${fmtSignedPct(ret3M)} • Range 52S: ${range52WPos.toFixed(0)}%`;
+    factorCurveEl.style.color = slope20 >= 0 ? 'var(--color-up)' : (slope20 < -1.5 ? 'var(--color-down)' : 'var(--text-primary)');
+  }
+
+  if (factorTechEl) {
+    const volText = volRatio >= 1.3 ? `Volumi Forti (${volRatio.toFixed(1)}x)` : `Volumi Normali (${volRatio.toFixed(1)}x)`;
+    factorTechEl.textContent = `${bullishIndicators}/4 Segnali Pro-Trend • Dist. EMA20 ${fmtSignedPct(distEma20Pct)} • ${volText}`;
+    factorTechEl.style.color = bullishIndicators >= 3 ? 'var(--color-up)' : (bullishIndicators <= 1 ? 'var(--color-down)' : 'var(--text-primary)');
+  }
+
+  if (factorAnalystsEl) {
+    if (asset.type === 'stock' && (fund.pe || fund.fpe || epsGrowthEst != null || fund.roe || fund.divYield)) {
+      const parts = [];
+      if (epsGrowthEst != null) parts.push(`EPS Atteso ${fmtSignedPct(epsGrowthEst)}`);
+      if (fund.fpe) parts.push(`Fwd P/E ${fund.fpe.toFixed(1)}x`);
+      else if (fund.pe) parts.push(`P/E ${fund.pe.toFixed(1)}x`);
+      if (fund.roe) parts.push(`ROE ${fund.roe.toFixed(1)}%`);
+      if (fund.divYield) parts.push(`Div. ${fund.divYield.toFixed(2)}%`);
+      if (fund.mktCap && parts.length < 4) parts.push(`Cap ${fund.mktCap}`);
+      factorAnalystsEl.textContent = parts.join(' • ') || 'Multipli in linea col settore';
+      factorAnalystsEl.style.color = fundamentalScore >= 65 ? 'var(--color-up)' : 'var(--text-primary)';
+    } else if (asset.type === 'etf') {
+      factorAnalystsEl.textContent = `Indice Sharpe ${sharpeProxy.toFixed(2)} • Trend 1A ${fmtSignedPct(ret1Y)} • Range 52S ${formatCurrency(yrLow, asset)}–${formatCurrency(yrHigh, asset)}`;
+      factorAnalystsEl.style.color = sharpeProxy >= 0.6 ? 'var(--color-up)' : 'var(--text-primary)';
+    } else {
+      const fgVal = AppState.fearGreedVal || 54;
+      const fgLbl = AppState.fearGreedLabel || 'Neutrale';
+      factorAnalystsEl.textContent = `Sharpe ${sharpeProxy.toFixed(2)} • Sentiment Crypto: ${fgVal} (${fgLbl}) • 1A ${fmtSignedPct(ret1Y)}`;
+      factorAnalystsEl.style.color = sharpeProxy >= 0.5 ? 'var(--color-up)' : 'var(--text-primary)';
+    }
+  }
+
+  if (factorStrategyEl) {
+    factorStrategyEl.textContent = `Supp. ${formatCurrency(supportLevel, asset)} • Res. ${formatCurrency(resistanceLevel, asset)} • ${strategyAction}`;
+  }
+
+  // Build Detailed AI Narrative in Italian with Real Numbers
+  const curveSentence = `<strong>Analisi Curva & Trend:</strong> Su <strong>${asset.name} (${asset.symbol})</strong> a <strong>${formatCurrency(currentPrice, asset)}</strong> la curva di regressione mostra una fase di <strong>${curveState.toLowerCase()}</strong> (inclinazione 20p <strong>${fmtSignedPct(slope20)}</strong>, R² ${(curveR2 * 100).toFixed(0)}%), con rendimento a 1 mese di <strong>${fmtSignedPct(ret1M)}</strong> e a 3 mesi di <strong>${fmtSignedPct(ret3M)}</strong>, posizionandosi al <strong>${range52WPos.toFixed(0)}%</strong> del range a 52 settimane (${formatCurrency(yrLow, asset)} – ${formatCurrency(yrHigh, asset)}).`;
+
+  const techSentence = `<strong>Quadri Tecnici & Volumi:</strong> Gli oscillatori rilevano <strong>${bullishIndicators}/4 segnali favorevoli</strong> (RSI a <strong>${rsi.toFixed(1)}</strong>, scostamento da EMA20 <strong>${fmtSignedPct(distEma20Pct)}</strong>, posizione nel canale di Bollinger al <strong>${bPct.toFixed(0)}%</strong> e volumi pari a <strong>${volRatio.toFixed(1)}x</strong> la media).`;
+
+  let analystSentence = '';
+  if (asset.type === 'stock' && (epsGrowthEst != null || fund.pe || fund.roe)) {
+    const analystBits = [];
+    if (epsGrowthEst != null) {
+      analystBits.push(`le stime di consenso degli analisti proiettano una variazione degli utili (Forward EPS) del <strong>${fmtSignedPct(epsGrowthEst)}</strong>${fund.fpe ? ` con Forward P/E a <strong>${fund.fpe.toFixed(1)}x</strong>` : ''}${fund.pe ? ` (vs P/E attuale ${fund.pe.toFixed(1)}x)` : ''}`);
+    } else if (fund.pe) {
+      analystBits.push(`il titolo tratta a un multiplo P/E di <strong>${fund.pe.toFixed(1)}x</strong>`);
+    }
+    if (fund.roe != null) {
+      analystBits.push(`una redditività sul capitale (ROE) del <strong>${fund.roe.toFixed(1)}%</strong>${fund.netMargin ? ` e margine netto del <strong>${fund.netMargin.toFixed(1)}%</strong>` : ''}`);
+    }
+    if (fund.divYield != null && fund.divYield > 0) {
+      analystBits.push(`un dividend yield del <strong>${fund.divYield.toFixed(2)}%</strong>`);
+    }
+    analystSentence = ` <strong>Fondamentali & Consensus Analisti:</strong> Sul piano fondamentale, ${analystBits.join(', ')}.`;
+  } else if (asset.type === 'etf') {
+    analystSentence = ` <strong>Struttura & Efficienza ETF:</strong> Lo strumento presenta una volatilità annualizzata del <strong>${annVolPct.toFixed(1)}%</strong> con efficienza rischio/rendimento (Sharpe) pari a <strong>${sharpeProxy.toFixed(2)}</strong>, ideale per esposizione diversificata.`;
+  } else {
+    analystSentence = ` <strong>Ciclo On-Chain & Sentiment:</strong> L'asset registra una volatilità annualizzata del <strong>${annVolPct.toFixed(1)}%</strong> (Sharpe <strong>${sharpeProxy.toFixed(2)}</strong>) in un contesto di sentiment globale <strong>${AppState.fearGreedLabel || 'Neutrale'} (${AppState.fearGreedVal || 54}/100)</strong>.`;
+  }
+
+  const conclusionSentence = ` <strong>Sintesi Operativa IA (${compositeScore}/100):</strong> ${strategyAction}; area di supporto chiave a <strong>${formatCurrency(supportLevel, asset)}</strong> e primo target/resistenza in area <strong>${formatCurrency(resistanceLevel, asset)}</strong>.`;
+
+  narrativeEl.innerHTML = `${curveSentence} ${techSentence}${analystSentence}${conclusionSentence}`;
 }
 
 // --- Position Sizing & Risk Management Calculator ---
@@ -2820,7 +3176,8 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
         change: changePct ?? 0,
         high: parseNumericClean(chosen.high),
         low: parseNumericClean(chosen.low),
-        volume: formatVolumeCompact(rawVol)
+        volume: formatVolumeCompact(rawVol),
+        fundamentals: extractCnbcFundamentals(chosen)
       };
     }
   } catch (e) {}
@@ -3027,6 +3384,7 @@ function setupModals() {
         high: meta.high,
         low: meta.low,
         volume: meta.volume,
+        fundamentals: meta.fundamentals || null,
         favorite: true
       };
 
@@ -3154,7 +3512,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=12').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=13').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {
