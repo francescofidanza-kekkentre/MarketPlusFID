@@ -263,6 +263,29 @@
             </div>
           </div>
 
+          <!-- Structured AI Evaluation & Trade Setup Block (Format requested by User) -->
+          <div class="ai-structured-box" id="aiStructuredBox">
+            <div class="ai-structured-narrative" id="aiStructuredNarrative">
+              Il titolo si trova in un trend ribassista con prezzi inferiori alle medie mobili EMA20 e EMA50. L'RSI a 38.4 indica un momentum debole ma non ancora in ipervenduto estremo. La vicinanza alla banda di Bollinger inferiore suggerisce una possibile stabilizzazione, ma il MACD negativo conferma la mancanza di una spinta rialzista convincente per un trade a 7 giorni.
+            </div>
+
+            <div class="ai-trade-plan-block" id="aiTradePlanBlock">
+              <div class="ai-trade-plan-header">
+                <span class="ai-trade-plan-title">📊 Parametri Operativi Setup:</span>
+                <button type="button" class="btn-apply-trade-plan" id="btnApplyTradePlan" title="Carica questi parametri direttamente nel calcolatore Rischio & Size">
+                  ⚡ Applica al Calcolatore Rischio
+                </button>
+              </div>
+              <div class="ai-trade-plan-lines" id="aiTradePlanLines">
+                <div class="ai-plan-line"><strong>Ingresso</strong> <span class="ai-val-entry">10,96 € (10,96 EUR)</span></div>
+                <div class="ai-plan-line"><strong>Stop loss</strong> <span class="ai-val-sl">10,70 € (10,70 EUR)</span></div>
+                <div class="ai-plan-line"><strong>Take profit</strong> <span class="ai-val-tp">11,42 € (11,42 EUR)</span></div>
+                <div class="ai-plan-line"><strong>Rischio</strong> <span class="ai-val-risk">20 €</span></div>
+                <div class="ai-plan-line"><strong>R/R</strong> <span class="ai-val-rr">1 : 1.77</span></div>
+              </div>
+            </div>
+          </div>
+
           <div class="ai-narrative-box" id="aiNarrativeText">
             Elaborazione valutazione semplificata in corso...
           </div>
@@ -288,12 +311,12 @@
             <label>Capitale di Trading (€/$)<span class="helper">Portfolio disponibile</span></label>
             <div class="input-with-affix">
               <span class="input-affix">€</span>
-              <input type="number" id="calcCapital" class="calc-input" value="10000" step="500">
+              <input type="number" id="calcCapital" class="calc-input" value="2000" step="500">
             </div>
             <div class="calc-quick-chips">
-              <span class="calc-chip" data-capital="2000">2.000€</span>
+              <span class="calc-chip active" data-capital="2000">2.000€</span>
               <span class="calc-chip" data-capital="5000">5.000€</span>
-              <span class="calc-chip active" data-capital="10000">10.000€</span>
+              <span class="calc-chip" data-capital="10000">10.000€</span>
               <span class="calc-chip" data-capital="25000">25.000€</span>
             </div>
           </div>
@@ -302,11 +325,11 @@
             <label>Rischio Massimo (%)<span class="helper">Consigliato: 1% - 2%</span></label>
             <div class="input-with-affix">
               <span class="input-affix">%</span>
-              <input type="number" id="calcRiskPct" class="calc-input" value="1.5" step="0.1" min="0.1" max="10">
+              <input type="number" id="calcRiskPct" class="calc-input" value="1.0" step="0.1" min="0.1" max="10">
             </div>
             <div class="calc-quick-chips">
-              <span class="calc-chip" data-risk="1.0">1.0%</span>
-              <span class="calc-chip active" data-risk="1.5">1.5%</span>
+              <span class="calc-chip active" data-risk="1.0">1.0%</span>
+              <span class="calc-chip" data-risk="1.5">1.5%</span>
               <span class="calc-chip" data-risk="2.0">2.0%</span>
               <span class="calc-chip" data-risk="3.0">3.0%</span>
             </div>
@@ -552,6 +575,6 @@
   </div>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

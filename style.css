@@ -938,6 +938,127 @@ body {
   color: var(--text-primary);
 }
 
+/* Structured AI Evaluation & Trade Setup Block */
+.ai-structured-box {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-structured-narrative {
+  font-size: 0.82rem;
+  line-height: 1.58;
+  color: #e2e8f0;
+  border-left: 3px solid var(--accent-blue);
+  padding-left: 10px;
+}
+
+.ai-structured-narrative strong {
+  color: #ffffff;
+}
+
+.ai-trade-plan-block {
+  background: rgba(9, 13, 22, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-trade-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 6px;
+}
+
+.ai-trade-plan-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.btn-apply-trade-plan {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-apply-trade-plan:hover {
+  background: rgba(56, 189, 248, 0.28);
+  color: #ffffff;
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+.ai-trade-plan-lines {
+  font-family: var(--font-mono);
+  font-size: 0.83rem;
+  line-height: 1.75;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  user-select: text;
+}
+
+.ai-plan-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-plan-line strong {
+  min-width: 86px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.ai-plan-line span {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.ai-plan-line span.ai-val-entry {
+  color: #38bdf8;
+}
+
+.ai-plan-line span.ai-val-sl {
+  color: #f43f5e;
+}
+
+.ai-plan-line span.ai-val-tp {
+  color: #10b981;
+}
+
+.ai-plan-line span.ai-val-risk {
+  color: #fbbf24;
+}
+
+.ai-plan-line span.ai-val-rr {
+  color: #a78bfa;
+}
+
 .ai-narrative-box {
   font-size: 0.78rem;
   line-height: 1.52;
