@@ -1005,12 +1005,21 @@ function renderAssetList() {
     `;
   }).join('');
 
+  // Render mobile horizontal quick ticker carousel if on mobile
+  renderMobileTickerCarousel();
+
   // Attach click events
   container.querySelectorAll('.asset-item').forEach(el => {
       el.addEventListener('click', () => {
         const sym = el.getAttribute('data-symbol');
         const found = AppState.assets.find(a => a.symbol === sym);
-        if (found) selectAsset(found);
+        if (found) {
+          selectAsset(found);
+          if (window.innerWidth <= 900) {
+            const chartSection = document.getElementById('section-chart');
+            if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+          }
+        }
       });
       // Delete button handler
       const deleteBtn = el.querySelector('.delete-btn');
@@ -1051,6 +1060,7 @@ function selectAsset(asset) {
   loadNotesForAsset(asset);
   const cached = AppState.cachedBars[`${asset.symbol}_${AppState.activeTimeframe}`] || AppState.cachedBars[`${asset.symbol}_DAILY`];
   updateAiInvestmentEvaluation(asset, cached);
+  updateMobileTickerCarouselActive(asset.symbol);
   loadAndRenderChart(asset, AppState.activeTimeframe);
 }
 
@@ -2707,6 +2717,11 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
 
       calculateRiskOutput();
 
+      if (window.innerWidth <= 900) {
+        const toolsSection = document.getElementById('section-tools');
+        if (toolsSection) toolsSection.scrollIntoView({ behavior: 'smooth' });
+      }
+
       const origHtml = btnApplyTradePlan.innerHTML;
       btnApplyTradePlan.innerHTML = '✅ Parametri Applicati!';
       btnApplyTradePlan.style.background = 'rgba(16, 185, 129, 0.3)';
@@ -2996,11 +3011,103 @@ function setupEventListeners() {
   window.addEventListener('resize', debounce(() => {
     redrawCurrentChart();
   }, 100));
+
+  // Mobile Bottom Navigation
+  setupMobileBottomNav();
 }
 
 function redrawCurrentChart() {
   if (AppState.selectedAsset) {
     loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe, { renderOnly: true });
+  }
+}
+
+// --- Mobile Specific Features & Vertical Scrolling Optimization ---
+function renderMobileTickerCarousel() {
+  const container = document.getElementById('mobileTickerCarousel');
+  if (!container) return;
+
+  const html = AppState.assets.map(asset => {
+    const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
+    const isUp = (asset.change ?? 0) >= 0;
+    const curSym = getCurrencySymbol(asset).trim();
+    const priceStr = asset.price != null ? `${curSym}${asset.price.toFixed(2)}` : '—';
+    const changeStr = asset.change != null ? `${isUp ? '+' : ''}${asset.change.toFixed(1)}%` : '—';
+    const changeClass = isUp ? 'mob-up' : 'mob-down';
+
+    return `
+      <div class="mob-ticker-chip ${isSelected ? 'active' : ''}" data-symbol="${asset.symbol}">
+        <span class="mob-ticker-sym">${asset.symbol}</span>
+        <span class="mob-ticker-price">${priceStr}</span>
+        <span class="mob-ticker-chg ${changeClass}">${changeStr}</span>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('.mob-ticker-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const sym = chip.getAttribute('data-symbol');
+      const asset = AppState.assets.find(a => a.symbol === sym);
+      if (asset) {
+        selectAsset(asset);
+      }
+    });
+  });
+}
+
+function updateMobileTickerCarouselActive(activeSymbol) {
+  const container = document.getElementById('mobileTickerCarousel');
+  if (!container) return;
+  const chips = container.querySelectorAll('.mob-ticker-chip');
+  chips.forEach(chip => {
+    const sym = chip.getAttribute('data-symbol');
+    const isTarget = (sym === activeSymbol);
+    chip.classList.toggle('active', isTarget);
+    if (isTarget) {
+      chip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  });
+}
+
+function setupMobileBottomNav() {
+  const navBtns = document.querySelectorAll('.mob-nav-btn');
+  if (!navBtns || navBtns.length === 0) return;
+
+  navBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-target');
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        navBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    });
+  });
+
+  // Track active section as user scrolls vertically on mobile
+  if ('IntersectionObserver' in window) {
+    const sectionIds = ['section-chart', 'section-ai', 'section-tools', 'section-watchlist'];
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.id;
+          navBtns.forEach(btn => {
+            if (btn.getAttribute('data-target') === id) {
+              navBtns.forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+            }
+          });
+        }
+      });
+    }, { threshold: 0.25 });
+
+    sectionIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
   }
 }
 
@@ -3778,7 +3885,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=15').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=16').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {

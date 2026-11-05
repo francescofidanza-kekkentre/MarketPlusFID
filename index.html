@@ -24,7 +24,7 @@
         <img src="icons/icon.svg" onerror="this.src='icon.svg'" alt="MarketPulse" width="34" height="34">
       </div>
       <div class="brand-title">
-        MarketPulse <span class="badge">CHROMEBOOK</span>
+        MarketPulse <span class="badge badge-desktop">CHROMEBOOK</span>
       </div>
     </div>
 
@@ -67,7 +67,10 @@
   <main class="app-main">
 
     <!-- LEFT PANEL: Watchlist & Multi-Asset Explorer -->
-    <aside class="app-panel-left">
+    <aside class="app-panel-left" id="section-watchlist">
+      <div class="mobile-section-header">
+        <span>📋 Watchlist & Monitoraggio Asset</span>
+      </div>
       <div class="watchlist-controls">
         <div class="category-chips">
           <button class="chip-btn active" data-filter="all">Tutti</button>
@@ -93,9 +96,12 @@
 
     <!-- CENTER PANEL: Charting & Technical Decision Support -->
     <section class="app-panel-center">
+
+      <!-- Mobile Quick Ticker Carousel (Visible only on mobile <= 900px) -->
+      <div class="mobile-ticker-carousel" id="mobileTickerCarousel"></div>
       
       <!-- Selected Asset Bar -->
-      <div class="asset-header-bar">
+      <div class="asset-header-bar" id="section-chart">
         <div class="ticker-identity">
           <button id="favoriteToggleBtn" class="fav-toggle-btn" title="Aggiungi/Rimuovi dai preferiti">★</button>
           <div class="ticker-titles">
@@ -194,7 +200,7 @@
       </div>
 
       <!-- Technical Decision Support & Signals Box -->
-      <div class="decision-support-banner">
+      <div class="decision-support-banner" id="section-ai">
         <div class="decision-header">
           <div class="decision-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
@@ -295,7 +301,10 @@
     </section>
 
     <!-- RIGHT PANEL: Trading Tools, Position Sizer, Checklist & Journal -->
-    <aside class="app-panel-right">
+    <aside class="app-panel-right" id="section-tools">
+      <div class="mobile-section-header">
+        <span>📊 Calcolatore Rischio & Strumenti</span>
+      </div>
       <nav class="tools-nav">
         <button class="tools-tab active" data-tool="calculator">Rischio & Size</button>
         <button class="tools-tab" data-tool="checklist">Checklist Trade</button>
@@ -574,7 +583,27 @@
     </div>
   </div>
 
+  <!-- Sticky Mobile Bottom Navigation Bar (Visible only on mobile <= 900px) -->
+  <nav class="mobile-bottom-nav" id="mobileBottomNav">
+    <button class="mob-nav-btn active" data-target="section-chart" title="Grafico e Prezzo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>Grafico</span>
+    </button>
+    <button class="mob-nav-btn" data-target="section-ai" title="Valutazione IA e Setup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      <span>Valutazione IA</span>
+    </button>
+    <button class="mob-nav-btn" data-target="section-tools" title="Calcolatore Rischio & Size">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><path d="M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01"/></svg>
+      <span>Rischio</span>
+    </button>
+    <button class="mob-nav-btn" data-target="section-watchlist" title="Tutti gli Asset & Preferiti">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      <span>Watchlist</span>
+    </button>
+  </nav>
+
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>
