@@ -303,34 +303,95 @@ function renderFearGreed(val, label) {
   }
 }
 
-// --- Keyless Symbol & Market Helpers (Yahoo Finance & Stooq) ---
+// --- Keyless Symbol & Market Helpers (Yahoo Finance, CNBC & Stooq) ---
+function getCnbcSymbol(asset) {
+  const raw = (asset && asset.marketSymbol && asset.type !== 'crypto')
+    ? String(asset.marketSymbol).trim().toUpperCase()
+    : String(asset?.symbol || '').trim().toUpperCase();
+  if (!raw) return '';
+  if (raw === 'VWCE' || (!raw.includes('.') && !raw.includes('-') && asset?.exchange && asset.exchange.toUpperCase().includes('XETRA'))) {
+    return `${raw}.DE`;
+  }
+  // Convert Yahoo dot suffixes to CNBC hyphen suffixes where needed
+  const dotMap = {
+    '.MI': '-IT',
+    '.PA': '-FR',
+    '.AS': '-NL',
+    '.L': '-GB',
+    '.SW': '-CH',
+    '.MC': '-ES',
+    '.BR': '-BE',
+    '.TO': '-CA',
+    '.AX': '-AU',
+    '.HK': '-HK',
+    '.T': '-JP'
+  };
+  for (const [dotSuf, cnbcSuf] of Object.entries(dotMap)) {
+    if (raw.endsWith(dotSuf)) {
+      return raw.slice(0, -dotSuf.length) + cnbcSuf;
+    }
+  }
+  return raw;
+}
+
 function getYahooSymbol(asset) {
-  if (asset && asset.marketSymbol && asset.type !== 'crypto') {
-    return String(asset.marketSymbol).trim().toUpperCase();
+  const raw = (asset && asset.marketSymbol && asset.type !== 'crypto')
+    ? String(asset.marketSymbol).trim().toUpperCase()
+    : String(asset?.symbol || '').trim().toUpperCase();
+  if (!raw) return '';
+  const hyphenMap = {
+    '-IT': '.MI',
+    '-DE': '.DE',
+    '-FF': '.DE',
+    '-FR': '.PA',
+    '-NL': '.AS',
+    '-GB': '.L',
+    '-CH': '.SW',
+    '-ES': '.MC',
+    '-BE': '.BR',
+    '-CA': '.TO',
+    '-AU': '.AX',
+    '-HK': '.HK',
+    '-JP': '.T'
+  };
+  for (const [cnbcSuf, yahooSuf] of Object.entries(hyphenMap)) {
+    if (raw.endsWith(cnbcSuf)) {
+      return raw.slice(0, -cnbcSuf.length).replace(/\^$/, '') + yahooSuf;
+    }
   }
-  const sym = (asset.symbol || '').trim().toUpperCase();
-  if (sym.includes('.')) return sym;
-  if (sym === 'VWCE' || (asset.exchange && asset.exchange.toUpperCase().includes('XETRA'))) {
-    return `${sym}.DE`;
+  if (raw.includes('.')) return raw;
+  if (raw === 'VWCE' || (asset?.exchange && asset.exchange.toUpperCase().includes('XETRA'))) {
+    return `${raw}.DE`;
   }
-  return sym;
+  return raw;
 }
 
 function inferCurrencyFromSymbolOrExchange(sym = '', exchange = '') {
   const s = String(sym || '').trim().toUpperCase();
   const ex = String(exchange || '').trim().toUpperCase();
-  if (s === 'VWCE' || /\.(DE|MI|PA|AS|MC|BR|VI|HE|LS|IR)$/.test(s)) return 'EUR';
-  if (s.endsWith('.L')) return 'GBP';
-  if (s.endsWith('.SW')) return 'CHF';
-  if (s.endsWith('.TO')) return 'CAD';
-  if (s.endsWith('.AX')) return 'AUD';
-  if (s.endsWith('.HK')) return 'HKD';
-  if (s.endsWith('.T')) return 'JPY';
-  if (ex.includes('XETRA') || ex.includes('MILAN') || ex.includes('BORSA ITALIANA') || ex.includes('EURONEXT') || ex.includes('PARIS') || ex.includes('AMSTERDAM') || ex.includes('FRANKFURT') || ex.includes('MADRID')) {
+  if (
+    s === 'VWCE' ||
+    /\.(DE|MI|PA|AS|MC|BR|VI|HE|LS|IR)$/.test(s) ||
+    /-(IT|DE|FF|FR|NL|ES|BE|AT|FI|PT|IE|GR)$/.test(s)
+  ) {
+    return 'EUR';
+  }
+  if (s.endsWith('.L') || s.endsWith('-GB')) return 'GBP';
+  if (s.endsWith('.SW') || s.endsWith('-CH')) return 'CHF';
+  if (s.endsWith('.TO') || s.endsWith('-CA')) return 'CAD';
+  if (s.endsWith('.AX') || s.endsWith('-AU')) return 'AUD';
+  if (s.endsWith('.HK') || s.endsWith('-HK')) return 'HKD';
+  if (s.endsWith('.T') || s.endsWith('-JP')) return 'JPY';
+  if (
+    ex.includes('XETRA') || ex.includes('MILAN') || ex.includes('BORSA ITALIANA') ||
+    ex.includes('EURONEXT') || ex.includes('PARIS') || ex.includes('AMSTERDAM') ||
+    ex.includes('FRANKFURT') || ex.includes('MADRID') || ex.includes('BRUSSELS')
+  ) {
     return 'EUR';
   }
   if (ex.includes('LONDON') || ex.includes('LSE')) return 'GBP';
   if (ex.includes('SWISS') || ex.includes('SIX') || ex.includes('ZURICH')) return 'CHF';
+  if (ex.includes('TORONTO') || ex.includes('TSX')) return 'CAD';
   return 'USD';
 }
 
@@ -573,9 +634,10 @@ async function fetchCnbcBatchQuotesDirect(stockAssets) {
     const symMap = {};
     const cnbcSyms = [];
     for (const asset of stockAssets) {
-      const cSym = getYahooSymbol(asset);
+      const cSym = getCnbcSymbol(asset);
       symMap[cSym.toUpperCase()] = asset;
       symMap[cSym.replace('.', '-').toUpperCase()] = asset;
+      symMap[cSym.replace('-', '.').toUpperCase()] = asset;
       symMap[asset.symbol.toUpperCase()] = asset;
       cnbcSyms.push(cSym);
     }
@@ -652,7 +714,7 @@ async function fetchCnbcBatchQuotesDirect(stockAssets) {
 // Native CORS-enabled historical & incremental OHLCV fetcher for Stocks & ETFs (0 API keys, 0 proxies)
 async function fetchCnbcBarsDirect(asset, barType = '1D', isIncremental = false, existingBars = null) {
   try {
-    const cnbcSym = getYahooSymbol(asset);
+    const cnbcSym = getCnbcSymbol(asset);
     const now = new Date();
     const endDate = new Date(now.getTime() + 2 * 86400 * 1000);
     let startDate;
@@ -2416,6 +2478,12 @@ const KNOWN_CRYPTO_NAMES = {
   KAS: 'Kaspa'
 };
 
+function fetchWithTimeout(url, timeoutMs = 5500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 function normalizeAssetNameTokens(str) {
   if (!str) return [];
   const stopwords = new Set([
@@ -2433,7 +2501,7 @@ function normalizeAssetNameTokens(str) {
     .replace(/\s+/g, ' ')
     .trim();
   if (!cleaned) return [];
-  const rawTokens = cleaned.split(' ').filter(t => t.length >= 2);
+  const rawTokens = cleaned.split(' ').filter(t => t.length >= 2 || /\d/.test(t));
   const coreTokens = rawTokens.filter(t => !stopwords.has(t));
   return coreTokens.length > 0 ? coreTokens : rawTokens;
 }
@@ -2448,7 +2516,7 @@ function isAssetNameCoherent(enteredName, officialName, symbol = '') {
   if (userTokens.length === 0 || officialTokens.length === 0) return false;
 
   // Expand well-known brand/rebrand synonyms
-  const symUpper = String(symbol || '').toUpperCase().split('.')[0];
+  const symUpper = String(symbol || '').toUpperCase().split(/[.\-^]/)[0];
   const expandedOfficial = new Set(officialTokens);
   if (symUpper === 'GOOGL' || symUpper === 'GOOG' || expandedOfficial.has('alphabet')) {
     expandedOfficial.add('google');
@@ -2479,12 +2547,26 @@ function isAssetNameCoherent(enteredName, officialName, symbol = '') {
     return true;
   }
 
-  // Count how many user tokens match official tokens (exact match or prefix match >= 4 chars)
+  // Space-stripped compact comparison (handles e.g. "JP Morgan" vs "JPMorgan", "United Health" vs "UnitedHealth", "Coca Cola" vs "CocaCola")
+  const userCompact = userTokens.join('');
+  const officialCompact = officialTokens.join('');
+  if (userCompact.length >= 3 && officialCompact.length >= 3) {
+    if (officialCompact.includes(userCompact) || userCompact.includes(officialCompact)) {
+      return true;
+    }
+  }
+
+  // Count how many user tokens match official tokens (exact match, prefix match >= 3 chars, or substring match >= 4 chars)
   let matchedCount = 0;
   for (const ut of userTokens) {
     let tokenMatched = false;
     for (const ot of expandedOfficial) {
-      if (ut === ot || (ut.length >= 4 && ot.startsWith(ut)) || (ot.length >= 4 && ut.startsWith(ot))) {
+      if (
+        ut === ot ||
+        (ut.length >= 3 && (ot.startsWith(ut) || ut.startsWith(ot))) ||
+        (ut.length >= 4 && ot.includes(ut)) ||
+        (ot.length >= 4 && ut.includes(ot))
+      ) {
         tokenMatched = true;
         break;
       }
@@ -2513,9 +2595,7 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
 
     for (const pair of candidatePairs) {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(pair)}`, {
-          signal: AbortSignal.timeout(5000)
-        });
+        const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(pair)}`, 5000);
         if (!res.ok) continue;
         const data = await res.json();
         const lastPrice = parseFloat(data?.lastPrice);
@@ -2525,11 +2605,10 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
         const currency = isEurPair ? 'EUR' : 'USD';
         let officialBaseName = KNOWN_CRYPTO_NAMES[baseSym] || null;
 
-        // Also check CNBC crypto quote for official name if not in KNOWN_CRYPTO_NAMES
         if (!officialBaseName) {
           try {
             const cnbcUrl = `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${encodeURIComponent(baseSym + '.CM=')}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`;
-            const cRes = await fetch(cnbcUrl, { signal: AbortSignal.timeout(3500) });
+            const cRes = await fetchWithTimeout(cnbcUrl, 3500);
             if (cRes.ok) {
               const cData = await cRes.json();
               let q = cData?.FormattedQuoteResult?.FormattedQuote;
@@ -2564,63 +2643,185 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
     return { exists: false };
   }
 
-  // 2. Stock & ETF validation via CNBC Native-CORS Quote API (including major European exchanges)
-  const candidateSymbols = cleanSym.includes('.')
-    ? [cleanSym]
-    : [cleanSym, `${cleanSym}.DE`, `${cleanSym}.MI`, `${cleanSym}.PA`, `${cleanSym}.AS`, `${cleanSym}.L`, `${cleanSym}.SW`];
+  // 2. Stock & ETF validation via CNBC Native-CORS Symbol Lookup + Quote API (US, Italy, Europe, UK, Global)
+  const baseSym = cleanSym.split(/[.\-^]/)[0].trim();
+  const cands = [];
+  const addCand = (s) => {
+    const u = String(s || '').trim().toUpperCase();
+    if (u && !cands.includes(u)) cands.push(u);
+  };
+
+  // If user provided an exchange suffix (Yahoo .MI/.DE/.PA/.AS/.L/.SW or CNBC -IT/-DE/-FR/-NL/-GB/-CH), expand both formats first
+  if (cleanSym.includes('.') || cleanSym.includes('-')) {
+    const parts = cleanSym.replace('.', '-').split('-');
+    const b = parts[0];
+    const suf = parts[parts.length - 1];
+    const sufPairs = {
+      MI: ['-IT', '.MI'], IT: ['-IT', '.MI'],
+      DE: ['-DE', '.DE', '-FF'], FF: ['-FF', '-DE', '.DE'],
+      PA: ['-FR', '.PA'], FR: ['-FR', '.PA'],
+      AS: ['-NL', '.AS'], NL: ['-NL', '.AS'],
+      L: ['-GB', '.L'], GB: ['-GB', '.L'],
+      SW: ['-CH', '.SW'], CH: ['-CH', '.SW'],
+      MC: ['-ES', '.MC'], ES: ['-ES', '.MC'],
+      BR: ['-BE', '.BR'], BE: ['-BE', '.BR'],
+      TO: ['-CA', '.TO'], CA: ['-CA', '.TO'],
+      AX: ['-AU', '.AX'], AU: ['-AU', '.AX']
+    };
+    const mapped = sufPairs[suf] || [`-${suf}`, `.${suf}`];
+    for (const m of mapped) addCand(`${b}${m}`);
+    addCand(cleanSym);
+  }
+
+  // Standard ticker candidates across US, Milan (-IT/.MI), XETRA (-DE/.DE), Paris (-FR/.PA), Amsterdam (-NL/.AS), London (-GB/.L), SIX (-CH), Madrid (-ES)
+  if (baseSym && baseSym.length <= 7 && !baseSym.includes(' ')) {
+    [
+      cleanSym, baseSym,
+      `${baseSym}-IT`, `${baseSym}.MI`,
+      `${baseSym}-DE`, `${baseSym}.DE`,
+      `${baseSym}-FR`, `${baseSym}.PA`,
+      `${baseSym}-NL`, `${baseSym}.AS`,
+      `${baseSym}-GB`, `${baseSym}.L`,
+      `${baseSym}-CH`, `${baseSym}-ES`, `${baseSym}-CA`
+    ].forEach(addCand);
+  } else {
+    addCand(cleanSym);
+  }
+
+  // Query CNBC Symbol Lookup (native CORS *) for both symbol and enteredName to catch any global listing or company name
+  const searchPrefixes = [];
+  if (baseSym && baseSym.length >= 1) searchPrefixes.push(baseSym);
+  const trimmedName = (enteredName || '').trim();
+  if (trimmedName.length >= 2 && trimmedName.toUpperCase() !== baseSym) {
+    searchPrefixes.push(trimmedName);
+    const firstWord = normalizeAssetNameTokens(trimmedName)[0];
+    if (firstWord && firstWord.length >= 3 && firstWord.toLowerCase() !== trimmedName.toLowerCase()) {
+      searchPrefixes.push(firstWord);
+    }
+  }
 
   try {
-    const symbolsParam = encodeURIComponent(candidateSymbols.join('|'));
-    const url = `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${symbolsParam}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-    if (res.ok) {
-      const data = await res.json();
-      let quotes = data?.FormattedQuoteResult?.FormattedQuote;
-      if (quotes) {
-        if (!Array.isArray(quotes)) quotes = [quotes];
-        const validQuotes = quotes.filter(q => {
-          if (!q || !q.symbol || String(q.code) === '1') return false;
-          const p = parseNumericClean(q.last) || parseNumericClean(q.previous_day_closing);
-          return p != null && p > 0 && Boolean(q.name || q.shortName);
-        });
-
-        if (validQuotes.length > 0) {
-          // If the user entered a name that specifically matches one of the exchange listings (e.g. ISP.MI "Intesa Sanpaolo" vs US ticker), pick that listing
-          let chosen = validQuotes[0];
-          if (enteredName && enteredName.trim().length >= 2) {
-            const nameMatched = validQuotes.find(q => isAssetNameCoherent(enteredName, q.name || q.shortName, cleanSym));
-            if (nameMatched) chosen = nameMatched;
+    await Promise.all(searchPrefixes.slice(0, 3).map(async (prefix) => {
+      try {
+        const lookupUrl = `https://symlookup.cnbc.com/symlookup.do?output=json&prefix=${encodeURIComponent(prefix)}`;
+        const lRes = await fetchWithTimeout(lookupUrl, 4000);
+        if (lRes.ok) {
+          const arr = await lRes.json();
+          if (Array.isArray(arr) && arr.length > 1) {
+            for (const item of arr.slice(1, 10)) {
+              if (item && item.symbolName) {
+                addCand(item.symbolName);
+              }
+            }
           }
+        }
+      } catch (e) {}
+    }));
+  } catch (e) {}
 
-          const matchedSym = String(chosen.symbol).trim().toUpperCase();
-          const lastPrice = parseNumericClean(chosen.last) || parseNumericClean(chosen.previous_day_closing);
-          const prevClose = parseNumericClean(chosen.previous_day_closing);
-          let changePct = parseNumericClean(chosen.change_pct);
-          if (changePct == null && lastPrice != null && prevClose != null && prevClose > 0) {
-            changePct = ((lastPrice - prevClose) / prevClose) * 100;
+  // Fetch live quotes from quote.cnbc.com for all candidate symbols
+  try {
+    const validQuotes = [];
+    const maxCands = cands.slice(0, 30);
+    for (let i = 0; i < maxCands.length; i += 20) {
+      const batch = maxCands.slice(i, i + 20);
+      const symbolsParam = encodeURIComponent(batch.join('|'));
+      const url = `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${symbolsParam}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`;
+      const res = await fetchWithTimeout(url, 5500);
+      if (res.ok) {
+        const data = await res.json();
+        let quotes = data?.FormattedQuoteResult?.FormattedQuote;
+        if (quotes) {
+          if (!Array.isArray(quotes)) quotes = [quotes];
+          for (const q of quotes) {
+            if (!q || !q.symbol || String(q.code) === '1') continue;
+            const p = parseNumericClean(q.last) || parseNumericClean(q.previous_day_closing);
+            if (p != null && p > 0 && Boolean(q.name || q.shortName)) {
+              validQuotes.push(q);
+            }
           }
-
-          const exchangeName = chosen.exchange ? String(chosen.exchange).trim() : 'Stock Exchange';
-          const currency = chosen.currencyCode
-            ? String(chosen.currencyCode).trim().toUpperCase()
-            : inferCurrencyFromSymbolOrExchange(matchedSym, exchangeName);
-
-          const rawVol = parseNumericClean(chosen.volume);
-          return {
-            exists: true,
-            symbol: cleanSym,
-            marketSymbol: matchedSym,
-            officialName: String(chosen.name || chosen.shortName).trim(),
-            exchange: exchangeName,
-            currency,
-            price: lastPrice,
-            change: changePct ?? 0,
-            high: parseNumericClean(chosen.high),
-            low: parseNumericClean(chosen.low),
-            volume: formatVolumeCompact(rawVol)
-          };
         }
       }
+    }
+
+    if (validQuotes.length > 0) {
+      // Score each valid quote to select the exact best match for the user's symbol, name, and asset type
+      const scoreQuote = (q) => {
+        let score = 0;
+        const qSym = String(q.symbol).trim().toUpperCase();
+        const qBase = qSym.split(/[.\-^]/)[0];
+        const qName = String(q.name || q.shortName || '').trim();
+        const qExch = String(q.exchange || '').toUpperCase();
+        const qPrice = parseNumericClean(q.last) || parseNumericClean(q.previous_day_closing) || 0;
+
+        // 1. Strongest signal: coherence with user-entered name
+        if (trimmedName.length >= 2 && isAssetNameCoherent(trimmedName, qName, qBase)) {
+          score += 250;
+        }
+
+        // 2. If user typed company name into the Symbol box by mistake (e.g. "FERRARI" or "UNICREDIT")
+        if (cleanSym.length >= 4 && isAssetNameCoherent(cleanSym, qName, '')) {
+          score += 90;
+        }
+
+        // 3. Exact symbol or base ticker match
+        if (qSym === cleanSym) score += 100;
+        if (qBase === baseSym) score += 60;
+
+        // 4. Asset Type (Stock vs ETF) alignment
+        const looksLikeEtf = String(q.type || '').toUpperCase() === 'ETF' ||
+          String(q.issueType || '').toUpperCase() === 'ETF' ||
+          /\b(ETF|UCITS|ETC|ETN|SPDR|ISHARES|VANGUARD|INVESCO|XTRACKERS|AMUNDI|LYXOR|WISDOMTREE|PROSHARES)\b/i.test(qName);
+        if (type === 'etf') {
+          score += looksLikeEtf ? 35 : -25;
+        } else if (type === 'stock') {
+          score += looksLikeEtf ? -25 : 35;
+        }
+
+        // 5. Primary Exchange preference & avoid delisted/sub-penny OTC stubs
+        if (qPrice < 0.005) score -= 50;
+        if (/NASDAQ|NYSE|MILAN|XETRA|EURONEXT|LONDON|TORONTO/.test(qExch)) {
+          score += 15;
+        } else if (qSym.endsWith('-CH') && !cleanSym.endsWith('CH') && !cleanSym.endsWith('SW')) {
+          score -= 5;
+        }
+
+        return score;
+      };
+
+      validQuotes.sort((a, b) => scoreQuote(b) - scoreQuote(a));
+      const chosen = validQuotes[0];
+
+      const matchedSym = String(chosen.symbol).trim().toUpperCase();
+      const matchedBase = matchedSym.split(/[.\-^]/)[0];
+      const displaySymbol = (baseSym.length <= 6 && matchedBase === baseSym) ? cleanSym : matchedBase;
+
+      const lastPrice = parseNumericClean(chosen.last) || parseNumericClean(chosen.previous_day_closing);
+      const prevClose = parseNumericClean(chosen.previous_day_closing);
+      let changePct = parseNumericClean(chosen.change_pct);
+      if (changePct == null && lastPrice != null && prevClose != null && prevClose > 0) {
+        changePct = ((lastPrice - prevClose) / prevClose) * 100;
+      }
+
+      const exchangeName = chosen.exchange ? String(chosen.exchange).trim() : 'Stock Exchange';
+      const currency = chosen.currencyCode
+        ? String(chosen.currencyCode).trim().toUpperCase()
+        : inferCurrencyFromSymbolOrExchange(matchedSym, exchangeName);
+
+      const rawVol = parseNumericClean(chosen.volume);
+      return {
+        exists: true,
+        symbol: displaySymbol,
+        marketSymbol: matchedSym,
+        officialName: String(chosen.name || chosen.shortName).trim(),
+        exchange: exchangeName,
+        currency,
+        price: lastPrice,
+        change: changePct ?? 0,
+        high: parseNumericClean(chosen.high),
+        low: parseNumericClean(chosen.low),
+        volume: formatVolumeCompact(rawVol)
+      };
     }
   } catch (e) {}
 
@@ -2706,31 +2907,51 @@ function setupModals() {
     hideAddFeedback();
   });
 
-  // Live preview when user finishes typing symbol or changes type
+  // Live preview when user types symbol, name, or changes asset type
   const triggerSymbolPreview = debounce(async () => {
     const rawSym = symInput.value.trim().toUpperCase();
+    const enteredName = nameInput.value.trim();
     const type = typeSelect.value;
     if (!rawSym || rawSym.length < 1) {
       hideAddFeedback();
       return;
     }
-    const meta = await verifyAndFetchAssetMetadata(rawSym, type, nameInput.value.trim());
+    const meta = await verifyAndFetchAssetMetadata(rawSym, type, enteredName);
     if (symInput.value.trim().toUpperCase() !== rawSym) return;
     if (meta.exists) {
       const curSym = getCurrencySymbol(meta.currency);
+      const safeOfficial = meta.officialName.replace(/"/g, '&quot;');
+      const needsNameFill = !enteredName || !isAssetNameCoherent(enteredName, meta.officialName, meta.symbol);
       showAddFeedback(
-        `✓ Asset rilevato sui mercati: <strong>${meta.officialName}</strong> (${meta.exchange} • Valuta: <strong>${meta.currency} ${curSym.trim()}</strong> • Prezzo: <strong>${formatCurrency(meta.price, meta.currency)}</strong>)`,
+        `✓ Asset rilevato sui mercati: <strong>${meta.officialName}</strong> (${meta.marketSymbol} • ${meta.exchange} • Valuta: <strong>${meta.currency} ${curSym.trim()}</strong> • Prezzo: <strong>${formatCurrency(meta.price, meta.currency)}</strong>)` +
+        (needsNameFill
+          ? `<br><button type="button" id="previewApplyNameBtn" style="margin-top: 6px; padding: 3px 9px; border-radius: 5px; border: 1px solid rgba(56, 189, 248, 0.5); background: rgba(56, 189, 248, 0.18); color: #fff; font-size: 0.72rem; cursor: pointer; font-weight: 600;">Imposta nome: "${safeOfficial}"</button>`
+          : ''),
         'info'
       );
+      const previewBtn = document.getElementById('previewApplyNameBtn');
+      if (previewBtn) {
+        previewBtn.addEventListener('click', () => {
+          nameInput.value = meta.officialName;
+          if (symInput.value.trim().toUpperCase() !== meta.symbol) {
+            symInput.value = meta.symbol;
+          }
+          showAddFeedback(
+            `✓ Nome impostato a <strong>${meta.officialName}</strong> (${meta.exchange} • Valuta: <strong>${meta.currency} ${curSym.trim()}</strong>). Clicca su "Aggiungi a MarketPulse" per confermare.`,
+            'success'
+          );
+        });
+      }
     } else {
       showAddFeedback(
-        `✗ Nessun asset reale trovato per il simbolo <strong>${rawSym}</strong> nella categoria selezionata.`,
+        `✗ Nessun asset reale trovato per <strong>${rawSym}</strong> nella categoria selezionata.`,
         'error'
       );
     }
-  }, 450);
+  }, 400);
 
   symInput.addEventListener('input', triggerSymbolPreview);
+  nameInput.addEventListener('input', triggerSymbolPreview);
   typeSelect.addEventListener('change', triggerSymbolPreview);
 
   submitBtn.addEventListener('click', async () => {
@@ -2933,7 +3154,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=11').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=12').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {

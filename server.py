@@ -117,6 +117,12 @@ def get_canonical_cache_key(symbol, interval):
 
 def fetch_cnbc_bars(symbol, is_intraday=False, is_incremental=False):
     """Fetches real OHLCV bars from CNBC Harmony API (keyless, rate-limit free)."""
+    cnbc_sym = symbol.upper()
+    dot_map = {'.MI': '-IT', '.PA': '-FR', '.AS': '-NL', '.L': '-GB', '.SW': '-CH', '.MC': '-ES', '.TO': '-CA'}
+    for dot_s, cnbc_s in dot_map.items():
+        if cnbc_sym.endswith(dot_s):
+            cnbc_sym = cnbc_sym[:-len(dot_s)] + cnbc_s
+            break
     bar_type = '30M' if is_intraday else '1D'
     now_dt = datetime.datetime.now(datetime.timezone.utc)
     end_dt = now_dt + datetime.timedelta(days=2)
@@ -128,7 +134,7 @@ def fetch_cnbc_bars(symbol, is_intraday=False, is_incremental=False):
 
     start_str = start_dt.strftime('%Y%m%d000000')
     end_str = end_dt.strftime('%Y%m%d235959')
-    url = f"https://ts-api.cnbc.com/harmony/app/bars/{symbol}/{bar_type}/{start_str}/{end_str}/adjusted/EST5EDT.json"
+    url = f"https://ts-api.cnbc.com/harmony/app/bars/{cnbc_sym}/{bar_type}/{start_str}/{end_str}/adjusted/EST5EDT.json"
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     with urllib.request.urlopen(req, timeout=8, context=SSL_CTX) as response:
         data = json.loads(response.read().decode('utf-8'))
