@@ -865,16 +865,52 @@ body {
 }
 
 .ai-verdict-pill {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 800;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border-radius: 14px;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
+}
+
+.ai-score-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(9, 13, 22, 0.55);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.ai-score-caption {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ai-score-caption strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.ai-score-track {
+  flex: 1;
+  height: 7px;
+  background: rgba(30, 41, 59, 0.9);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.ai-score-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.35s ease, background 0.35s ease;
+  background: linear-gradient(90deg, #0ea5e9, #10b981);
 }
 
 .ai-factors-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 8px;
 }
 
@@ -882,35 +918,37 @@ body {
   background: rgba(9, 13, 22, 0.65);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 7px 10px;
+  padding: 8px 11px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .ai-factor-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.2px;
 }
 
 .ai-factor-val {
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.77rem;
+  font-weight: 600;
+  line-height: 1.38;
   color: var(--text-primary);
-  font-family: var(--font-mono);
 }
 
 .ai-narrative-box {
-  font-size: 0.77rem;
-  line-height: 1.5;
+  font-size: 0.78rem;
+  line-height: 1.52;
   color: #cbd5e1;
-  background: rgba(9, 13, 22, 0.5);
+  background: rgba(9, 13, 22, 0.55);
   border-left: 3px solid var(--accent-blue);
-  padding: 8px 12px;
+  padding: 9px 12px;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .ai-narrative-box strong {

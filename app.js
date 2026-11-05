@@ -2355,18 +2355,18 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     Math.max(12, Math.min(96, (techScore * 0.35) + (curveScore * 0.35) + (fundamentalScore * 0.30)))
   );
 
-  // Risk Profile Assessment
+  // Risk Profile Assessment (Plain Italian)
   const betaVal = fund.beta || (asset.type === 'crypto' ? 2.4 : (asset.type === 'etf' ? 0.95 : 1.15));
-  let riskProfile = 'Moderato';
-  let riskColor = '#facc15';
+  let riskProfile = 'Medio';
+  let riskColor = '#38bdf8';
   if (asset.type === 'crypto' || annVolPct > 42 || betaVal >= 1.75) {
-    riskProfile = `Elevato (Volat. ${annVolPct.toFixed(0)}%${fund.beta ? ` • Beta ${fund.beta.toFixed(2)}` : ''})`;
+    riskProfile = 'Alto (oscilla molto)';
     riskColor = '#fb7185';
   } else if (annVolPct < 18 && betaVal <= 1.05) {
-    riskProfile = `Basso / Difensivo (Volat. ${annVolPct.toFixed(0)}%${fund.beta ? ` • Beta ${fund.beta.toFixed(2)}` : ''})`;
+    riskProfile = 'Basso / Stabile';
     riskColor = '#34d399';
   } else {
-    riskProfile = `Moderato (Volat. ${annVolPct.toFixed(0)}%${fund.beta ? ` • Beta ${fund.beta.toFixed(2)}` : ''})`;
+    riskProfile = 'Medio / Equilibrato';
     riskColor = '#38bdf8';
   }
   if (riskBadgeEl) {
@@ -2374,98 +2374,173 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     riskBadgeEl.style.color = riskColor;
   }
 
-  // AI Verdict Badge
+  // Visual Score Bar & Verdict Badge (Plain Italian)
+  const scoreTextEl = document.getElementById('aiScoreTextLabel');
+  const scoreFillEl = document.getElementById('aiScoreBarFill');
+  if (scoreFillEl) {
+    scoreFillEl.style.width = `${compositeScore}%`;
+    if (compositeScore >= 70) {
+      scoreFillEl.style.background = 'linear-gradient(90deg, #10b981, #34d399)';
+    } else if (compositeScore >= 56) {
+      scoreFillEl.style.background = 'linear-gradient(90deg, #0ea5e9, #10b981)';
+    } else if (compositeScore >= 42) {
+      scoreFillEl.style.background = 'linear-gradient(90deg, #f59e0b, #facc15)';
+    } else {
+      scoreFillEl.style.background = 'linear-gradient(90deg, #e11d48, #f43f5e)';
+    }
+  }
+
   verdictBadgeEl.className = 'ai-verdict-pill';
   let verdictLabel = '';
-  let strategyAction = '';
+  let scoreMeaning = '';
+  let plainStrategy = '';
   if (compositeScore >= 74) {
     verdictBadgeEl.classList.add('rating-strong-buy');
-    verdictLabel = `IA: FORTE CONVIZIONE BUY (${compositeScore}/100)`;
-    strategyAction = distEma20Pct > 4 ? 'Accumulo su ritracciamento verso EMA20' : 'Ingresso Graduale / Breakout';
+    verdictLabel = `🟢 OTTIMO PER INVESTIRE (${compositeScore}/100)`;
+    scoreMeaning = 'Molto favorevole';
+    plainStrategy = distEma20Pct > 4
+      ? `Entra a piccoli passi (oppure attendi un lieve calo verso ${formatCurrency(ema20, asset)})`
+      : 'Buon momento per acquistare o iniziare un accumulo';
   } else if (compositeScore >= 58) {
     verdictBadgeEl.classList.add('rating-buy');
-    verdictLabel = `IA: ACCUMULO / BUY MODERATO (${compositeScore}/100)`;
-    strategyAction = rsi < 42 ? 'Ingresso su Supporto (Pullback)' : 'Accumulo PAC / DCA a tranche';
+    verdictLabel = `🟢 CONVIENE ACCUMULARE (${compositeScore}/100)`;
+    scoreMeaning = 'Favorevole';
+    plainStrategy = rsi < 42
+      ? `Buona occasione per comprare a sconto vicino a ${formatCurrency(supportLevel, asset)}`
+      : 'Compra gradualmente a piccole quote nel tempo (PAC)';
   } else if (compositeScore >= 42) {
     verdictBadgeEl.classList.add('rating-neutral');
-    verdictLabel = `IA: MANTIENI / ATTENDI SETUP (${compositeScore}/100)`;
-    strategyAction = `Attendi tenuta supporto ${formatCurrency(supportLevel, asset)}`;
+    verdictLabel = `🟡 MEGLIO ATTENDERE (${compositeScore}/100)`;
+    scoreMeaning = 'Incerto / Neutro';
+    plainStrategy = `Non avere fretta: attendi un prezzo più conveniente vicino a ${formatCurrency(supportLevel, asset)}`;
   } else {
     verdictBadgeEl.classList.add('rating-sell');
-    verdictLabel = `IA: CAUTELA / SOTTOPESARE (${compositeScore}/100)`;
-    strategyAction = `Protezione capitale • Stop < ${formatCurrency(supportLevel * 0.985, asset)}`;
+    verdictLabel = `🔴 SCONSIGLIATO ORA (${compositeScore}/100)`;
+    scoreMeaning = 'Sfavorevole / Rischioso';
+    plainStrategy = `Meglio restare alla finestra finché non smette di scendere (sotto ${formatCurrency(supportLevel, asset)} aumenta il rischio)`;
   }
   verdictBadgeEl.textContent = verdictLabel;
-
-  // Populate the 4 Factor Boxes
-  const fmtSignedPct = (v) => (v == null || isNaN(v)) ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
-
-  if (factorCurveEl) {
-    factorCurveEl.textContent = `${curveState} • 1M ${fmtSignedPct(ret1M)} | 3M ${fmtSignedPct(ret3M)} • Range 52S: ${range52WPos.toFixed(0)}%`;
-    factorCurveEl.style.color = slope20 >= 0 ? 'var(--color-up)' : (slope20 < -1.5 ? 'var(--color-down)' : 'var(--text-primary)');
+  if (scoreTextEl) {
+    scoreTextEl.innerHTML = `Punteggio complessivo IA: <strong>${compositeScore}/100</strong> (${scoreMeaning})`;
   }
 
+  const fmtSignedPct = (v) => (v == null || isNaN(v)) ? '0%' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+
+  // Box 1: Come va il prezzo? (Plain language)
+  if (factorCurveEl) {
+    let priceTrendDesc = '';
+    if (slope20 > 2.0) priceTrendDesc = 'In salita decisa';
+    else if (slope20 > 0.5) priceTrendDesc = 'In crescita moderata';
+    else if (slope20 < -2.0 && slope7 > 0.5) priceTrendDesc = 'In recupero dopo i cali';
+    else if (slope20 < -1.5) priceTrendDesc = 'In fase di discesa';
+    else priceTrendDesc = 'Stabile / Laterale';
+
+    let yearPosDesc = '';
+    if (range52WPos >= 80) yearPosDesc = 'vicino ai massimi dell\'anno';
+    else if (range52WPos <= 25) yearPosDesc = 'vicino ai minimi dell\'anno (a sconto)';
+    else yearPosDesc = 'a metà strada tra minimi e massimi annui';
+
+    const m1Text = ret1M != null ? `Ultimo mese: ${fmtSignedPct(ret1M)}` : `Ultimi 3 mesi: ${fmtSignedPct(ret3M)}`;
+    factorCurveEl.textContent = `${priceTrendDesc} (${m1Text}) • Prezzo ${yearPosDesc}`;
+    factorCurveEl.style.color = slope20 >= 0.5 ? 'var(--color-up)' : (slope20 < -1.5 ? 'var(--color-down)' : 'var(--text-primary)');
+  }
+
+  // Box 2: È un buon momento? (Plain language)
   if (factorTechEl) {
-    const volText = volRatio >= 1.3 ? `Volumi Forti (${volRatio.toFixed(1)}x)` : `Volumi Normali (${volRatio.toFixed(1)}x)`;
-    factorTechEl.textContent = `${bullishIndicators}/4 Segnali Pro-Trend • Dist. EMA20 ${fmtSignedPct(distEma20Pct)} • ${volText}`;
+    let timingDesc = '';
+    if (rsi > 70) {
+      timingDesc = `Salito molto di recente: possibile piccola pausa prima di ripartire (${bullishIndicators}/4 indicatori positivi)`;
+    } else if (rsi < 33) {
+      timingDesc = `Prezzo molto scontato dopo le vendite: possibile rimbalzo a breve (${bullishIndicators}/4 indicatori positivi)`;
+    } else if (bullishIndicators >= 3) {
+      timingDesc = `Sì, la spinta degli acquisti è positiva (${bullishIndicators} indicatori su 4 favorevoli)`;
+    } else if (bullishIndicators === 2) {
+      timingDesc = `Fase di equilibrio tra compratori e venditori (2 indicatori su 4 favorevoli)`;
+    } else {
+      timingDesc = `Momento debole: prevalgono ancora le vendite (${bullishIndicators} indicatori su 4 favorevoli)`;
+    }
+    factorTechEl.textContent = timingDesc;
     factorTechEl.style.color = bullishIndicators >= 3 ? 'var(--color-up)' : (bullishIndicators <= 1 ? 'var(--color-down)' : 'var(--text-primary)');
   }
 
+  // Box 3: Analisti e Solidità (Plain language)
   if (factorAnalystsEl) {
-    if (asset.type === 'stock' && (fund.pe || fund.fpe || epsGrowthEst != null || fund.roe || fund.divYield)) {
-      const parts = [];
-      if (epsGrowthEst != null) parts.push(`EPS Atteso ${fmtSignedPct(epsGrowthEst)}`);
-      if (fund.fpe) parts.push(`Fwd P/E ${fund.fpe.toFixed(1)}x`);
-      else if (fund.pe) parts.push(`P/E ${fund.pe.toFixed(1)}x`);
-      if (fund.roe) parts.push(`ROE ${fund.roe.toFixed(1)}%`);
-      if (fund.divYield) parts.push(`Div. ${fund.divYield.toFixed(2)}%`);
-      if (fund.mktCap && parts.length < 4) parts.push(`Cap ${fund.mktCap}`);
-      factorAnalystsEl.textContent = parts.join(' • ') || 'Multipli in linea col settore';
+    if (asset.type === 'stock') {
+      const simpleParts = [];
+      if (epsGrowthEst != null) {
+        if (epsGrowthEst > 10) simpleParts.push(`Analisti ottimisti: utili previsti in crescita (${fmtSignedPct(epsGrowthEst)})`);
+        else if (epsGrowthEst >= 0) simpleParts.push(`Analisti prevedono utili stabili (${fmtSignedPct(epsGrowthEst)})`);
+        else simpleParts.push(`Analisti prudenti: utili attesi in calo (${fmtSignedPct(epsGrowthEst)})`);
+      }
+      if (fund.roe != null) {
+        if (fund.roe >= 20) simpleParts.push(`Azienda molto profittevole`);
+        else if (fund.roe >= 8) simpleParts.push(`Bilancio solido`);
+      }
+      if (fund.divYield != null && fund.divYield >= 2.0) {
+        simpleParts.push(`Paga un buon dividendo (${fund.divYield.toFixed(1)}% annuo)`);
+      }
+      if (simpleParts.length === 0) {
+        if (fund.pe && fund.pe < 22) simpleParts.push(`Prezzo equilibrato rispetto agli utili aziendali (P/E ${fund.pe.toFixed(0)})`);
+        else simpleParts.push(`Azienda quotata sui mercati principali (${asset.exchange})`);
+      }
+      factorAnalystsEl.textContent = simpleParts.slice(0, 2).join(' • ');
       factorAnalystsEl.style.color = fundamentalScore >= 65 ? 'var(--color-up)' : 'var(--text-primary)';
     } else if (asset.type === 'etf') {
-      factorAnalystsEl.textContent = `Indice Sharpe ${sharpeProxy.toFixed(2)} • Trend 1A ${fmtSignedPct(ret1Y)} • Range 52S ${formatCurrency(yrLow, asset)}–${formatCurrency(yrHigh, asset)}`;
+      const y1Text = ret1Y != null ? `Rendimento a 1 anno: ${fmtSignedPct(ret1Y)}` : `Rendimento a 3 mesi: ${fmtSignedPct(ret3M)}`;
+      const effText = sharpeProxy >= 0.7 ? 'Ottimo rapporto crescita/stabilità' : 'Fondo diversificato su più aziende';
+      factorAnalystsEl.textContent = `${effText} • ${y1Text}`;
       factorAnalystsEl.style.color = sharpeProxy >= 0.6 ? 'var(--color-up)' : 'var(--text-primary)';
     } else {
       const fgVal = AppState.fearGreedVal || 54;
       const fgLbl = AppState.fearGreedLabel || 'Neutrale';
-      factorAnalystsEl.textContent = `Sharpe ${sharpeProxy.toFixed(2)} • Sentiment Crypto: ${fgVal} (${fgLbl}) • 1A ${fmtSignedPct(ret1Y)}`;
+      factorAnalystsEl.textContent = `Umore del mercato Crypto: ${fgLbl} (${fgVal}/100) • Andamento 1 anno: ${fmtSignedPct(ret1Y)}`;
       factorAnalystsEl.style.color = sharpeProxy >= 0.5 ? 'var(--color-up)' : 'var(--text-primary)';
     }
   }
 
+  // Box 4: Prezzi Chiave Consigliati (Plain language)
   if (factorStrategyEl) {
-    factorStrategyEl.textContent = `Supp. ${formatCurrency(supportLevel, asset)} • Res. ${formatCurrency(resistanceLevel, asset)} • ${strategyAction}`;
+    factorStrategyEl.textContent = `Buon prezzo d'ingresso: ${formatCurrency(supportLevel, asset)} • Obiettivo di crescita: ${formatCurrency(resistanceLevel, asset)}`;
   }
 
-  // Build Detailed AI Narrative in Italian with Real Numbers
-  const curveSentence = `<strong>Analisi Curva & Trend:</strong> Su <strong>${asset.name} (${asset.symbol})</strong> a <strong>${formatCurrency(currentPrice, asset)}</strong> la curva di regressione mostra una fase di <strong>${curveState.toLowerCase()}</strong> (inclinazione 20p <strong>${fmtSignedPct(slope20)}</strong>, R² ${(curveR2 * 100).toFixed(0)}%), con rendimento a 1 mese di <strong>${fmtSignedPct(ret1M)}</strong> e a 3 mesi di <strong>${fmtSignedPct(ret3M)}</strong>, posizionandosi al <strong>${range52WPos.toFixed(0)}%</strong> del range a 52 settimane (${formatCurrency(yrLow, asset)} – ${formatCurrency(yrHigh, asset)}).`;
+  // Build Simple 3-Point Summary in Everyday Italian (PRO, CONTRO, CONSIGLIO PRATICO)
+  const pros = [];
+  const cons = [];
 
-  const techSentence = `<strong>Quadri Tecnici & Volumi:</strong> Gli oscillatori rilevano <strong>${bullishIndicators}/4 segnali favorevoli</strong> (RSI a <strong>${rsi.toFixed(1)}</strong>, scostamento da EMA20 <strong>${fmtSignedPct(distEma20Pct)}</strong>, posizione nel canale di Bollinger al <strong>${bPct.toFixed(0)}%</strong> e volumi pari a <strong>${volRatio.toFixed(1)}x</strong> la media).`;
+  if (slope20 > 0.5) pros.push(`il prezzo segue una tendenza positiva (${fmtSignedPct(ret1M)} nell'ultimo mese)`);
+  else if (slope20 < -1.5) cons.push(`il prezzo è ancora in fase di discesa (${fmtSignedPct(ret1M)} nell'ultimo mese)`);
 
-  let analystSentence = '';
-  if (asset.type === 'stock' && (epsGrowthEst != null || fund.pe || fund.roe)) {
-    const analystBits = [];
-    if (epsGrowthEst != null) {
-      analystBits.push(`le stime di consenso degli analisti proiettano una variazione degli utili (Forward EPS) del <strong>${fmtSignedPct(epsGrowthEst)}</strong>${fund.fpe ? ` con Forward P/E a <strong>${fund.fpe.toFixed(1)}x</strong>` : ''}${fund.pe ? ` (vs P/E attuale ${fund.pe.toFixed(1)}x)` : ''}`);
-    } else if (fund.pe) {
-      analystBits.push(`il titolo tratta a un multiplo P/E di <strong>${fund.pe.toFixed(1)}x</strong>`);
-    }
-    if (fund.roe != null) {
-      analystBits.push(`una redditività sul capitale (ROE) del <strong>${fund.roe.toFixed(1)}%</strong>${fund.netMargin ? ` e margine netto del <strong>${fund.netMargin.toFixed(1)}%</strong>` : ''}`);
-    }
-    if (fund.divYield != null && fund.divYield > 0) {
-      analystBits.push(`un dividend yield del <strong>${fund.divYield.toFixed(2)}%</strong>`);
-    }
-    analystSentence = ` <strong>Fondamentali & Consensus Analisti:</strong> Sul piano fondamentale, ${analystBits.join(', ')}.`;
+  if (range52WPos <= 35) pros.push(`si compra a un prezzo scontato rispetto al massimo dell'anno (${formatCurrency(yrHigh, asset)})`);
+  else if (range52WPos >= 88) cons.push(`il prezzo è già molto vicino ai massimi dell'anno (${formatCurrency(yrHigh, asset)}), quindi c'è meno sconto`);
+
+  if (bullishIndicators >= 3) pros.push(`la maggioranza degli indicatori tecnici (${bullishIndicators} su 4) segnala forza degli acquirenti`);
+  else if (bullishIndicators <= 1) cons.push(`gli indicatori tecnici di breve periodo sono ancora deboli`);
+
+  if (volRatio >= 1.25 && last.close >= prev.close) pros.push(`i volumi di scambio sono elevati (${volRatio.toFixed(1)} volte il normale), segno di forte interesse`);
+
+  if (asset.type === 'stock') {
+    if (epsGrowthEst != null && epsGrowthEst > 8) pros.push(`gli analisti stimano utili aziendali in crescita del ${fmtSignedPct(epsGrowthEst)}`);
+    else if (epsGrowthEst != null && epsGrowthEst < -5) cons.push(`gli analisti prevedono un rallentamento degli utili (${fmtSignedPct(epsGrowthEst)})`);
+    if (fund.roe != null && fund.roe >= 18) pros.push(`l'azienda ha un'alta capacità di generare profitti`);
+    if (fund.divYield != null && fund.divYield >= 2.5) pros.push(`offre una rendita da dividendo del ${fund.divYield.toFixed(1)}% annuo`);
   } else if (asset.type === 'etf') {
-    analystSentence = ` <strong>Struttura & Efficienza ETF:</strong> Lo strumento presenta una volatilità annualizzata del <strong>${annVolPct.toFixed(1)}%</strong> con efficienza rischio/rendimento (Sharpe) pari a <strong>${sharpeProxy.toFixed(2)}</strong>, ideale per esposizione diversificata.`;
-  } else {
-    analystSentence = ` <strong>Ciclo On-Chain & Sentiment:</strong> L'asset registra una volatilità annualizzata del <strong>${annVolPct.toFixed(1)}%</strong> (Sharpe <strong>${sharpeProxy.toFixed(2)}</strong>) in un contesto di sentiment globale <strong>${AppState.fearGreedLabel || 'Neutrale'} (${AppState.fearGreedVal || 54}/100)</strong>.`;
+    pros.push(`essendo un ETF distribuisce il rischio su un intero paniere di titoli`);
   }
 
-  const conclusionSentence = ` <strong>Sintesi Operativa IA (${compositeScore}/100):</strong> ${strategyAction}; area di supporto chiave a <strong>${formatCurrency(supportLevel, asset)}</strong> e primo target/resistenza in area <strong>${formatCurrency(resistanceLevel, asset)}</strong>.`;
+  if (annVolPct > 38 || asset.type === 'crypto') {
+    cons.push(`il prezzo può subire oscillazioni ampie in poco tempo (volatilità annua ~${annVolPct.toFixed(0)}%)`);
+  }
+  if (rsi > 70) {
+    cons.push(`nel brevissimo termine ha corso molto e potrebbe fare una piccola pausa`);
+  }
 
-  narrativeEl.innerHTML = `${curveSentence} ${techSentence}${analystSentence}${conclusionSentence}`;
+  if (pros.length === 0) pros.push(`il prezzo sta cercando una base stabile intorno a ${formatCurrency(supportLevel, asset)}`);
+  if (cons.length === 0) cons.push(`nessuna criticità evidente, ma resta sempre valido il normale rischio di mercato`);
+
+  narrativeEl.innerHTML =
+    `<div>✅ <strong>Perché può convenire:</strong> ${pros.slice(0, 3).join('; ')}.</div>` +
+    `<div>⚠️ <strong>A cosa fare attenzione:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
+    `<div>💡 <strong>In conclusione (cosa fare):</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(resistanceLevel, asset)}</strong>.</div>`;
 }
 
 // --- Position Sizing & Risk Management Calculator ---
@@ -3512,7 +3587,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=13').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=14').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {

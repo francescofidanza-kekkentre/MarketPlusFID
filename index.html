@@ -222,12 +222,12 @@
           </div>
         </div>
 
-        <!-- AI Multi-Factor Investment Evaluation (Trends, Curves, Indicators, Analysts & Fundamentals) -->
+        <!-- AI Multi-Factor Investment Evaluation (Simple, Clear & Actionable) -->
         <div class="ai-evaluation-card" id="aiEvaluationCard">
           <div class="ai-eval-header">
             <div class="ai-eval-title">
               <span class="ai-spark-icon">✦</span>
-              <span>Valutazione IA sull'Investimento</span>
+              <span>Valutazione IA: Conviene Investire?</span>
               <span class="ai-asset-tag" id="aiEvalAssetTag">NVDA • 1M</span>
             </div>
             <div class="ai-eval-badges">
@@ -236,27 +236,35 @@
             </div>
           </div>
 
+          <!-- Visual Score Bar (0 - 100) -->
+          <div class="ai-score-meter-row">
+            <span class="ai-score-caption" id="aiScoreTextLabel">Grado di fiducia IA: <strong>74/100</strong></span>
+            <div class="ai-score-track">
+              <div class="ai-score-fill" id="aiScoreBarFill" style="width: 74%;"></div>
+            </div>
+          </div>
+
           <div class="ai-factors-grid">
             <div class="ai-factor-item">
-              <span class="ai-factor-label">📈 Andamento & Curva</span>
+              <span class="ai-factor-label">📈 1. Come va il prezzo?</span>
               <span class="ai-factor-val" id="aiFactorCurve">—</span>
             </div>
             <div class="ai-factor-item">
-              <span class="ai-factor-label">🎛️ Indicatori & Volumi</span>
+              <span class="ai-factor-label">⏱️ 2. È un buon momento?</span>
               <span class="ai-factor-val" id="aiFactorTech">—</span>
             </div>
             <div class="ai-factor-item">
-              <span class="ai-factor-label">🏦 Analisti & Fondamentali</span>
+              <span class="ai-factor-label">🏦 3. Analisti e Solidità</span>
               <span class="ai-factor-val" id="aiFactorAnalysts">—</span>
             </div>
             <div class="ai-factor-item">
-              <span class="ai-factor-label">🎯 Supporto / Resistenza & Piano</span>
+              <span class="ai-factor-label">🎯 4. Prezzi Chiave Consigliati</span>
               <span class="ai-factor-val" id="aiFactorStrategy">—</span>
             </div>
           </div>
 
           <div class="ai-narrative-box" id="aiNarrativeText">
-            Elaborazione modelli quantitativi su storico prezzi, pendenza curva, oscillatori e consensus fondamentale...
+            Elaborazione valutazione semplificata in corso...
           </div>
         </div>
       </div>
@@ -544,6 +552,6 @@
   </div>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
