@@ -6,30 +6,30 @@
 // --- Default Asset Database ---
 const DEFAULT_ASSETS = [
   // Stocks
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'AAPL', name: 'Apple Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'TSLA', name: 'Tesla Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'META', name: 'Meta Platforms Inc.', type: 'stock', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'ASML', name: 'ASML Holding N.V.', type: 'stock', exchange: 'EURONEXT', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'NVDA', name: 'NVIDIA Corporation', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'AAPL', name: 'Apple Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'TSLA', name: 'Tesla Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'META', name: 'Meta Platforms Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'ASML', name: 'ASML Holding N.V.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
 
   // ETFs
-  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'etf', exchange: 'NYSE Arca', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', type: 'etf', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'VWCE', name: 'Vanguard FTSE All-World UCITS', type: 'etf', exchange: 'XETRA', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'SOXX', name: 'iShares Semiconductor ETF', type: 'etf', exchange: 'NASDAQ', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'GLD', name: 'SPDR Gold Shares ETF', type: 'etf', exchange: 'NYSE Arca', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'URTH', name: 'iShares MSCI World ETF', type: 'etf', exchange: 'NYSE Arca', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'etf', exchange: 'NYSE Arca', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', type: 'etf', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'VWCE', name: 'Vanguard FTSE All-World UCITS', type: 'etf', exchange: 'XETRA', currency: 'EUR', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'SOXX', name: 'iShares Semiconductor ETF', type: 'etf', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'GLD', name: 'SPDR Gold Shares ETF', type: 'etf', exchange: 'NYSE Arca', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'URTH', name: 'iShares MSCI World ETF', type: 'etf', exchange: 'NYSE Arca', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
 
   // Crypto
-  { symbol: 'BTC', name: 'Bitcoin (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'ETH', name: 'Ethereum (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'SOL', name: 'Solana (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: true },
-  { symbol: 'BNB', name: 'BNB (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'XRP', name: 'Ripple (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', price: null, change: null, high: null, low: null, volume: null, favorite: false }
+  { symbol: 'BTC', name: 'Bitcoin (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'ETH', name: 'Ethereum (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'SOL', name: 'Solana (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
+  { symbol: 'BNB', name: 'BNB (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'XRP', name: 'Ripple (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+  { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false }
 ];
 
 // --- State Management ---
@@ -134,14 +134,22 @@ function loadStoredData() {
     }
   }
 
-  // Hydrate asset quotes immediately from any saved daily history
+  // Hydrate asset quotes immediately from any saved daily history & ensure currency is populated
+  let migratedCurrency = false;
   for (const asset of AppState.assets) {
+    if (!asset.currency) {
+      asset.currency = inferCurrencyFromSymbolOrExchange(asset.marketSymbol || asset.symbol, asset.exchange);
+      migratedCurrency = true;
+    }
     const dailyBars = AppState.cachedBars[`${asset.symbol}_DAILY`] ||
                       AppState.cachedBars[`${asset.symbol}_1M`] ||
                       AppState.cachedBars[`${asset.symbol}_3M`];
     if (dailyBars && dailyBars.length >= 2) {
       syncAssetQuoteFromBars(asset, dailyBars);
     }
+  }
+  if (migratedCurrency) {
+    saveAssetsToStorage();
   }
 }
 
@@ -297,12 +305,62 @@ function renderFearGreed(val, label) {
 
 // --- Keyless Symbol & Market Helpers (Yahoo Finance & Stooq) ---
 function getYahooSymbol(asset) {
+  if (asset && asset.marketSymbol && asset.type !== 'crypto') {
+    return String(asset.marketSymbol).trim().toUpperCase();
+  }
   const sym = (asset.symbol || '').trim().toUpperCase();
   if (sym.includes('.')) return sym;
   if (sym === 'VWCE' || (asset.exchange && asset.exchange.toUpperCase().includes('XETRA'))) {
     return `${sym}.DE`;
   }
   return sym;
+}
+
+function inferCurrencyFromSymbolOrExchange(sym = '', exchange = '') {
+  const s = String(sym || '').trim().toUpperCase();
+  const ex = String(exchange || '').trim().toUpperCase();
+  if (s === 'VWCE' || /\.(DE|MI|PA|AS|MC|BR|VI|HE|LS|IR)$/.test(s)) return 'EUR';
+  if (s.endsWith('.L')) return 'GBP';
+  if (s.endsWith('.SW')) return 'CHF';
+  if (s.endsWith('.TO')) return 'CAD';
+  if (s.endsWith('.AX')) return 'AUD';
+  if (s.endsWith('.HK')) return 'HKD';
+  if (s.endsWith('.T')) return 'JPY';
+  if (ex.includes('XETRA') || ex.includes('MILAN') || ex.includes('BORSA ITALIANA') || ex.includes('EURONEXT') || ex.includes('PARIS') || ex.includes('AMSTERDAM') || ex.includes('FRANKFURT') || ex.includes('MADRID')) {
+    return 'EUR';
+  }
+  if (ex.includes('LONDON') || ex.includes('LSE')) return 'GBP';
+  if (ex.includes('SWISS') || ex.includes('SIX') || ex.includes('ZURICH')) return 'CHF';
+  return 'USD';
+}
+
+function getCurrencySymbol(assetOrCurrency) {
+  let code = 'USD';
+  if (typeof assetOrCurrency === 'string') {
+    const upper = assetOrCurrency.trim().toUpperCase();
+    if (upper && upper !== 'STOCK' && upper !== 'ETF' && upper !== 'CRYPTO') {
+      code = upper;
+    }
+  } else if (assetOrCurrency && typeof assetOrCurrency === 'object') {
+    if (assetOrCurrency.currency) {
+      code = String(assetOrCurrency.currency).trim().toUpperCase();
+    } else {
+      code = inferCurrencyFromSymbolOrExchange(assetOrCurrency.marketSymbol || assetOrCurrency.symbol, assetOrCurrency.exchange);
+    }
+  }
+  const map = {
+    'USD': '$',
+    'USDT': '$',
+    'EUR': '€',
+    'GBP': '£',
+    'GBX': 'p',
+    'JPY': '¥',
+    'CHF': 'CHF ',
+    'CAD': 'CA$',
+    'AUD': 'A$',
+    'HKD': 'HK$'
+  };
+  return map[code] || (code && code.length <= 4 ? `${code} ` : '$');
 }
 
 function getStooqSymbol(asset) {
@@ -473,6 +531,13 @@ function applyYahooMetaToAsset(asset, resObj, parsedBars = [], interval = '1d', 
   if (formattedVol) {
     asset.volume = formattedVol;
   }
+
+  if (meta.currency) {
+    asset.currency = String(meta.currency).trim().toUpperCase();
+  }
+  if (meta.exchangeName && (!asset.exchange || asset.exchange === 'Stock Exchange')) {
+    asset.exchange = String(meta.exchangeName).trim();
+  }
 }
 
 function parseNumericClean(val) {
@@ -555,6 +620,16 @@ async function fetchCnbcBatchQuotesDirect(stockAssets) {
       if (rawVol != null && rawVol > 0) {
         const fv = formatVolumeCompact(rawVol);
         if (fv) asset.volume = fv;
+      }
+
+      if (q.currencyCode) {
+        asset.currency = String(q.currencyCode).trim().toUpperCase();
+      } else if (!asset.currency) {
+        asset.currency = inferCurrencyFromSymbolOrExchange(key, q.exchange || asset.exchange);
+      }
+
+      if (q.exchange && (!asset.exchange || asset.exchange === 'Stock Exchange')) {
+        asset.exchange = String(q.exchange).trim();
       }
 
       AppState.quoteLastUpdated[asset.symbol] = Date.now();
@@ -685,7 +760,7 @@ async function pollLivePrices() {
   try {
     const cryptoSymbols = AppState.assets.filter(a => a.type === 'crypto');
     for (const asset of cryptoSymbols) {
-      const pair = `${asset.symbol}USDT`;
+      const pair = asset.marketSymbol || `${asset.symbol}USDT`;
       fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`)
         .then(res => res.json())
         .then(data => {
@@ -694,6 +769,9 @@ async function pollLivePrices() {
             asset.change = parseFloat(data.priceChangePercent);
             asset.high = parseFloat(data.highPrice);
             asset.low = parseFloat(data.lowPrice);
+            if (!asset.currency) {
+              asset.currency = pair.endsWith('EUR') ? 'EUR' : 'USD';
+            }
             if (data.quoteVolume) {
               const volFormatted = formatVolumeCompact(parseFloat(data.quoteVolume));
               if (volFormatted) asset.volume = volFormatted;
@@ -789,7 +867,7 @@ function renderAssetList() {
     const isUp = (asset.change ?? 0) >= 0;
     const changeBadgeClass = isUp ? 'badge-up' : 'badge-down';
     const changeSign = isUp ? '+' : '';
-    const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset.type) : '—';
+    const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset) : '—';
     const formattedChange = asset.change != null ? `${changeSign}${asset.change.toFixed(2)}%` : '—';
 
     return `
@@ -839,11 +917,12 @@ function renderAssetList() {
   });
 }
 
-function formatCurrency(val, type) {
-  if (val === undefined || isNaN(val)) return '-';
-  if (val < 1) return `$${val.toFixed(4)}`;
-  if (val > 1000) return `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  return `$${val.toFixed(2)}`;
+function formatCurrency(val, assetOrCurrency) {
+  if (val === undefined || val === null || isNaN(val)) return '-';
+  const sym = getCurrencySymbol(assetOrCurrency);
+  if (val < 1) return `${sym}${val.toFixed(4)}`;
+  if (val > 1000) return `${sym}${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${sym}${val.toFixed(2)}`;
 }
 
 // --- Select Asset ---
@@ -874,9 +953,9 @@ function updateSelectedAssetHeader() {
     changeEl.textContent = '—';
   }
 
-  document.getElementById('activePrice').textContent = asset.price != null ? formatCurrency(asset.price, asset.type) : '—';
-  document.getElementById('activeHigh').textContent = asset.high ? formatCurrency(asset.high, asset.type) : '—';
-  document.getElementById('activeLow').textContent = asset.low ? formatCurrency(asset.low, asset.type) : '—';
+  document.getElementById('activePrice').textContent = asset.price != null ? formatCurrency(asset.price, asset) : '—';
+  document.getElementById('activeHigh').textContent = asset.high ? formatCurrency(asset.high, asset) : '—';
+  document.getElementById('activeLow').textContent = asset.low ? formatCurrency(asset.low, asset) : '—';
   document.getElementById('activeVolume').textContent = asset.volume || '—';
 
   const favBtn = document.getElementById('favoriteToggleBtn');
@@ -1137,7 +1216,8 @@ async function fetchMasterSeriesFromSource(asset, seriesType, isIncremental = fa
         interval = '4h';
         limit = isIncremental ? 6 : 110;
       }
-      const url = `https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${interval}&limit=${limit}`;
+      const pair = asset.marketSymbol || `${asset.symbol}USDT`;
+      const url = `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}`;
       const res = await fetch(url);
       if (res.ok) {
         const raw = await res.json();
@@ -1521,6 +1601,7 @@ function renderMainChart(bars) {
   const stepX = chartWidth / bars.length;
 
   // Grid Lines
+  const curSym = getCurrencySymbol(AppState.selectedAsset);
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
@@ -1539,7 +1620,7 @@ function renderMainChart(bars) {
     ctx.fillStyle = '#64748b';
     ctx.font = '10px JetBrains Mono, monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`$${priceVal.toFixed(2)}`, chartWidth + 8, y + 3);
+    ctx.fillText(`${curSym}${priceVal.toFixed(2)}`, chartWidth + 8, y + 3);
   }
   ctx.setLineDash([]);
 
@@ -1725,7 +1806,7 @@ function renderMainChart(bars) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '10px JetBrains Mono, monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`$${b.close.toFixed(2)}`, chartWidth + 6, y + 4);
+    ctx.fillText(`${curSym}${b.close.toFixed(2)}`, chartWidth + 6, y + 4);
   }
 }
 
@@ -1974,6 +2055,12 @@ function updateRiskCalculatorPreloads(asset) {
   const entryInput = document.getElementById('calcEntryPrice');
   const slInput = document.getElementById('calcStopLoss');
   const tpInput = document.getElementById('calcTakeProfit');
+
+  const curSym = getCurrencySymbol(asset).trim();
+  [entryInput, slInput, tpInput].forEach(inp => {
+    const affix = inp?.parentElement?.querySelector('.input-affix');
+    if (affix) affix.textContent = curSym;
+  });
 
   if (asset && asset.price != null && !isNaN(asset.price)) {
     entryInput.value = asset.price.toFixed(2);
@@ -2258,11 +2345,12 @@ function setupChartCrosshair() {
 
       // Tooltip values
       const b = bars[index];
+      const curSym = getCurrencySymbol(AppState.selectedAsset);
       tooltip.style.display = 'flex';
-      document.getElementById('ttO').textContent = `$${b.open.toFixed(2)}`;
-      document.getElementById('ttH').textContent = `$${b.high.toFixed(2)}`;
-      document.getElementById('ttL').textContent = `$${b.low.toFixed(2)}`;
-      document.getElementById('ttC').textContent = `$${b.close.toFixed(2)}`;
+      document.getElementById('ttO').textContent = `${curSym}${b.open.toFixed(2)}`;
+      document.getElementById('ttH').textContent = `${curSym}${b.high.toFixed(2)}`;
+      document.getElementById('ttL').textContent = `${curSym}${b.low.toFixed(2)}`;
+      document.getElementById('ttC').textContent = `${curSym}${b.close.toFixed(2)}`;
       document.getElementById('ttV').textContent = b.volume != null ? b.volume.toLocaleString() : '—';
     }
   };
@@ -2285,51 +2373,456 @@ function setupChartCrosshair() {
   canvas.addEventListener('touchend', hideCrosshair);
 }
 
+// --- Asset Verification & Name Coherence Check ---
+const KNOWN_CRYPTO_NAMES = {
+  BTC: 'Bitcoin',
+  ETH: 'Ethereum',
+  SOL: 'Solana',
+  BNB: 'BNB / Binance Coin',
+  XRP: 'Ripple / XRP',
+  ADA: 'Cardano',
+  DOGE: 'Dogecoin',
+  AVAX: 'Avalanche',
+  DOT: 'Polkadot',
+  LINK: 'Chainlink',
+  TON: 'Toncoin',
+  SHIB: 'Shiba Inu',
+  SUI: 'Sui',
+  LTC: 'Litecoin',
+  BCH: 'Bitcoin Cash',
+  UNI: 'Uniswap',
+  PEPE: 'Pepe',
+  NEAR: 'NEAR Protocol',
+  APT: 'Aptos',
+  ICP: 'Internet Computer',
+  TRX: 'TRON',
+  XLM: 'Stellar',
+  ATOM: 'Cosmos',
+  ARB: 'Arbitrum',
+  OP: 'Optimism',
+  FIL: 'Filecoin',
+  HBAR: 'Hedera',
+  INJ: 'Injective',
+  AAVE: 'Aave',
+  MATIC: 'Polygon',
+  POL: 'Polygon',
+  RNDR: 'Render',
+  RENDER: 'Render',
+  XMR: 'Monero',
+  ETC: 'Ethereum Classic',
+  ALGO: 'Algorand',
+  VET: 'VeChain',
+  FTM: 'Fantom',
+  KAS: 'Kaspa'
+};
+
+function normalizeAssetNameTokens(str) {
+  if (!str) return [];
+  const stopwords = new Set([
+    'inc', 'incorporated', 'corp', 'corporation', 'ltd', 'limited', 'plc', 'nv',
+    'spa', 'sa', 'ag', 'se', 'oyj', 'ab', 'group', 'gruppo', 'holding', 'holdings',
+    'company', 'co', 'the', 'and', 'etf', 'ucits', 'acc', 'dist', 'accumulation',
+    'distributing', 'usd', 'eur', 'gbp', 'chf', 'usdt', 'trust', 'fund', 'shares',
+    'class', 'common', 'stock', 'ordinary', 'adr', 'sponsored', 'index', 'token', 'coin'
+  ]);
+  const cleaned = String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['’.,\/\-_()&+:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return [];
+  const rawTokens = cleaned.split(' ').filter(t => t.length >= 2);
+  const coreTokens = rawTokens.filter(t => !stopwords.has(t));
+  return coreTokens.length > 0 ? coreTokens : rawTokens;
+}
+
+function isAssetNameCoherent(enteredName, officialName, symbol = '') {
+  if (!enteredName || !officialName) return false;
+  const trimmedUser = enteredName.trim();
+  if (trimmedUser.length < 2) return false;
+
+  const userTokens = normalizeAssetNameTokens(trimmedUser);
+  const officialTokens = normalizeAssetNameTokens(officialName);
+  if (userTokens.length === 0 || officialTokens.length === 0) return false;
+
+  // Expand well-known brand/rebrand synonyms
+  const symUpper = String(symbol || '').toUpperCase().split('.')[0];
+  const expandedOfficial = new Set(officialTokens);
+  if (symUpper === 'GOOGL' || symUpper === 'GOOG' || expandedOfficial.has('alphabet')) {
+    expandedOfficial.add('google');
+    expandedOfficial.add('alphabet');
+  }
+  if (symUpper === 'META' || expandedOfficial.has('meta')) {
+    expandedOfficial.add('facebook');
+    expandedOfficial.add('meta');
+  }
+  if (symUpper === 'XRP' || expandedOfficial.has('ripple')) {
+    expandedOfficial.add('ripple');
+    expandedOfficial.add('xrp');
+  }
+  if (symUpper === 'BNB' || expandedOfficial.has('bnb')) {
+    expandedOfficial.add('binance');
+    expandedOfficial.add('bnb');
+  }
+
+  // If the user only typed the raw ticker symbol (e.g. "AAPL") and the official name ("Apple Inc.") does not contain "aapl",
+  // require the actual company/asset name instead of just repeating the ticker code.
+  if (userTokens.length === 1 && userTokens[0] === symUpper.toLowerCase() && !expandedOfficial.has(userTokens[0])) {
+    return false;
+  }
+
+  const userJoined = userTokens.join(' ');
+  const officialJoined = Array.from(expandedOfficial).join(' ');
+  if (userJoined.length >= 3 && (officialJoined.includes(userJoined) || userJoined.includes(officialTokens.join(' ')))) {
+    return true;
+  }
+
+  // Count how many user tokens match official tokens (exact match or prefix match >= 4 chars)
+  let matchedCount = 0;
+  for (const ut of userTokens) {
+    let tokenMatched = false;
+    for (const ot of expandedOfficial) {
+      if (ut === ot || (ut.length >= 4 && ot.startsWith(ut)) || (ot.length >= 4 && ut.startsWith(ot))) {
+        tokenMatched = true;
+        break;
+      }
+    }
+    if (tokenMatched) matchedCount++;
+  }
+
+  const matchRatio = matchedCount / userTokens.length;
+  return matchedCount >= 1 && matchRatio >= 0.6;
+}
+
+async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
+  const cleanSym = String(rawSymbol || '').trim().toUpperCase();
+  if (!cleanSym) return { exists: false };
+
+  // 1. Cryptocurrency validation via Binance Spot API + CNBC crypto metadata
+  if (type === 'crypto') {
+    const wantsEur = /([-/_]EUR|EUR)$/i.test(cleanSym) && cleanSym.length > 3;
+    const baseSym = cleanSym
+      .replace(/[-/_](USDT|USD|EUR|BUSD)$/i, '')
+      .replace(/(USDT|USD|EUR)$/i, '') || cleanSym;
+
+    const candidatePairs = wantsEur
+      ? [`${baseSym}EUR`, `${baseSym}USDT`]
+      : [`${baseSym}USDT`, `${baseSym}EUR`];
+
+    for (const pair of candidatePairs) {
+      try {
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(pair)}`, {
+          signal: AbortSignal.timeout(5000)
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const lastPrice = parseFloat(data?.lastPrice);
+        if (!data || isNaN(lastPrice) || lastPrice <= 0) continue;
+
+        const isEurPair = pair.endsWith('EUR');
+        const currency = isEurPair ? 'EUR' : 'USD';
+        let officialBaseName = KNOWN_CRYPTO_NAMES[baseSym] || null;
+
+        // Also check CNBC crypto quote for official name if not in KNOWN_CRYPTO_NAMES
+        if (!officialBaseName) {
+          try {
+            const cnbcUrl = `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${encodeURIComponent(baseSym + '.CM=')}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`;
+            const cRes = await fetch(cnbcUrl, { signal: AbortSignal.timeout(3500) });
+            if (cRes.ok) {
+              const cData = await cRes.json();
+              let q = cData?.FormattedQuoteResult?.FormattedQuote;
+              if (Array.isArray(q)) q = q[0];
+              if (q && q.name && String(q.code) !== '1') {
+                officialBaseName = String(q.name).replace(/\s*\/?\s*USD.*$/i, '').trim();
+              }
+            }
+          } catch (e) {}
+        }
+
+        const officialName = officialBaseName
+          ? `${officialBaseName} (${isEurPair ? 'EUR' : 'USDT'})`
+          : `${baseSym} (${isEurPair ? 'EUR' : 'USDT'})`;
+
+        const rawVol = parseFloat(data.quoteVolume);
+        return {
+          exists: true,
+          symbol: baseSym,
+          marketSymbol: pair,
+          officialName,
+          exchange: 'Binance / Global',
+          currency,
+          price: lastPrice,
+          change: parseFloat(data.priceChangePercent) || 0,
+          high: parseFloat(data.highPrice) || null,
+          low: parseFloat(data.lowPrice) || null,
+          volume: formatVolumeCompact(rawVol)
+        };
+      } catch (e) {}
+    }
+    return { exists: false };
+  }
+
+  // 2. Stock & ETF validation via CNBC Native-CORS Quote API (including major European exchanges)
+  const candidateSymbols = cleanSym.includes('.')
+    ? [cleanSym]
+    : [cleanSym, `${cleanSym}.DE`, `${cleanSym}.MI`, `${cleanSym}.PA`, `${cleanSym}.AS`, `${cleanSym}.L`, `${cleanSym}.SW`];
+
+  try {
+    const symbolsParam = encodeURIComponent(candidateSymbols.join('|'));
+    const url = `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${symbolsParam}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const data = await res.json();
+      let quotes = data?.FormattedQuoteResult?.FormattedQuote;
+      if (quotes) {
+        if (!Array.isArray(quotes)) quotes = [quotes];
+        const validQuotes = quotes.filter(q => {
+          if (!q || !q.symbol || String(q.code) === '1') return false;
+          const p = parseNumericClean(q.last) || parseNumericClean(q.previous_day_closing);
+          return p != null && p > 0 && Boolean(q.name || q.shortName);
+        });
+
+        if (validQuotes.length > 0) {
+          // If the user entered a name that specifically matches one of the exchange listings (e.g. ISP.MI "Intesa Sanpaolo" vs US ticker), pick that listing
+          let chosen = validQuotes[0];
+          if (enteredName && enteredName.trim().length >= 2) {
+            const nameMatched = validQuotes.find(q => isAssetNameCoherent(enteredName, q.name || q.shortName, cleanSym));
+            if (nameMatched) chosen = nameMatched;
+          }
+
+          const matchedSym = String(chosen.symbol).trim().toUpperCase();
+          const lastPrice = parseNumericClean(chosen.last) || parseNumericClean(chosen.previous_day_closing);
+          const prevClose = parseNumericClean(chosen.previous_day_closing);
+          let changePct = parseNumericClean(chosen.change_pct);
+          if (changePct == null && lastPrice != null && prevClose != null && prevClose > 0) {
+            changePct = ((lastPrice - prevClose) / prevClose) * 100;
+          }
+
+          const exchangeName = chosen.exchange ? String(chosen.exchange).trim() : 'Stock Exchange';
+          const currency = chosen.currencyCode
+            ? String(chosen.currencyCode).trim().toUpperCase()
+            : inferCurrencyFromSymbolOrExchange(matchedSym, exchangeName);
+
+          const rawVol = parseNumericClean(chosen.volume);
+          return {
+            exists: true,
+            symbol: cleanSym,
+            marketSymbol: matchedSym,
+            officialName: String(chosen.name || chosen.shortName).trim(),
+            exchange: exchangeName,
+            currency,
+            price: lastPrice,
+            change: changePct ?? 0,
+            high: parseNumericClean(chosen.high),
+            low: parseNumericClean(chosen.low),
+            volume: formatVolumeCompact(rawVol)
+          };
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 3. Fallback check via Yahoo Finance chart metadata
+  try {
+    const tempAsset = { symbol: cleanSym, type };
+    const data = await fetchYahooChartRaw(tempAsset, '5d', '1d', true);
+    if (isValidYahooChartPayload(data)) {
+      const { resObj, parsed } = parseYahooBarsFromResponse(data);
+      const meta = resObj?.meta || {};
+      const price = meta.regularMarketPrice || (parsed.length > 0 ? parsed[parsed.length - 1].close : null);
+      const officialName = meta.longName || meta.shortName || meta.symbol;
+      if (price != null && price > 0 && officialName) {
+        applyYahooMetaToAsset(tempAsset, resObj, parsed, '1d', '5d');
+        return {
+          exists: true,
+          symbol: cleanSym,
+          marketSymbol: meta.symbol || cleanSym,
+          officialName: String(officialName).trim(),
+          exchange: tempAsset.exchange || meta.exchangeName || 'Stock Exchange',
+          currency: tempAsset.currency || inferCurrencyFromSymbolOrExchange(cleanSym, meta.exchangeName),
+          price: tempAsset.price,
+          change: tempAsset.change ?? 0,
+          high: tempAsset.high || null,
+          low: tempAsset.low || null,
+          volume: tempAsset.volume || null
+        };
+      }
+    }
+  } catch (e) {}
+
+  return { exists: false };
+}
+
 // --- Modals Setup ---
 function setupModals() {
   // Add Ticker Modal
   const modalAdd = document.getElementById('modalAddTicker');
+  const symInput = document.getElementById('newTickerSymbol');
+  const nameInput = document.getElementById('newTickerName');
+  const typeSelect = document.getElementById('newTickerType');
+  const feedbackEl = document.getElementById('addTickerFeedback');
+  const submitBtn = document.getElementById('submitNewTickerBtn');
+
+  const showAddFeedback = (html, variant = 'info') => {
+    if (!feedbackEl) return;
+    feedbackEl.style.display = 'block';
+    if (variant === 'error') {
+      feedbackEl.style.background = 'rgba(244, 63, 94, 0.14)';
+      feedbackEl.style.border = '1px solid rgba(244, 63, 94, 0.4)';
+      feedbackEl.style.color = '#fda4af';
+    } else if (variant === 'warning') {
+      feedbackEl.style.background = 'rgba(245, 158, 11, 0.14)';
+      feedbackEl.style.border = '1px solid rgba(245, 158, 11, 0.45)';
+      feedbackEl.style.color = '#fde68a';
+    } else if (variant === 'success') {
+      feedbackEl.style.background = 'rgba(16, 185, 129, 0.14)';
+      feedbackEl.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+      feedbackEl.style.color = '#6ee7b7';
+    } else {
+      feedbackEl.style.background = 'rgba(56, 189, 248, 0.12)';
+      feedbackEl.style.border = '1px solid rgba(56, 189, 248, 0.35)';
+      feedbackEl.style.color = '#bae6fd';
+    }
+    feedbackEl.innerHTML = html;
+  };
+
+  const hideAddFeedback = () => {
+    if (feedbackEl) {
+      feedbackEl.style.display = 'none';
+      feedbackEl.innerHTML = '';
+    }
+  };
+
   document.getElementById('addCustomTickerBtn').addEventListener('click', () => {
+    hideAddFeedback();
     modalAdd.classList.add('open');
-    document.getElementById('newTickerSymbol').focus();
+    symInput.focus();
   });
+
   document.getElementById('closeAddTickerModal').addEventListener('click', () => {
     modalAdd.classList.remove('open');
+    hideAddFeedback();
   });
 
-  document.getElementById('submitNewTickerBtn').addEventListener('click', () => {
-    const sym = document.getElementById('newTickerSymbol').value.trim().toUpperCase();
-    const name = document.getElementById('newTickerName').value.trim();
-    const type = document.getElementById('newTickerType').value;
-    const price = parseFloat(document.getElementById('newTickerPrice').value) || 100.0;
+  // Live preview when user finishes typing symbol or changes type
+  const triggerSymbolPreview = debounce(async () => {
+    const rawSym = symInput.value.trim().toUpperCase();
+    const type = typeSelect.value;
+    if (!rawSym || rawSym.length < 1) {
+      hideAddFeedback();
+      return;
+    }
+    const meta = await verifyAndFetchAssetMetadata(rawSym, type, nameInput.value.trim());
+    if (symInput.value.trim().toUpperCase() !== rawSym) return;
+    if (meta.exists) {
+      const curSym = getCurrencySymbol(meta.currency);
+      showAddFeedback(
+        `✓ Asset rilevato sui mercati: <strong>${meta.officialName}</strong> (${meta.exchange} • Valuta: <strong>${meta.currency} ${curSym.trim()}</strong> • Prezzo: <strong>${formatCurrency(meta.price, meta.currency)}</strong>)`,
+        'info'
+      );
+    } else {
+      showAddFeedback(
+        `✗ Nessun asset reale trovato per il simbolo <strong>${rawSym}</strong> nella categoria selezionata.`,
+        'error'
+      );
+    }
+  }, 450);
 
-    if (!sym || !name) {
-      alert('Inserisci il simbolo e il nome del ticker.');
+  symInput.addEventListener('input', triggerSymbolPreview);
+  typeSelect.addEventListener('change', triggerSymbolPreview);
+
+  submitBtn.addEventListener('click', async () => {
+    const rawSym = symInput.value.trim().toUpperCase();
+    const enteredName = nameInput.value.trim();
+    const type = typeSelect.value;
+
+    if (!rawSym || !enteredName) {
+      showAddFeedback('⚠️ Inserisci sia il <strong>Simbolo Ticker</strong> sia il <strong>Nome dell\'asset</strong>.', 'warning');
       return;
     }
 
-    const newAsset = {
-      symbol: sym,
-      name: name,
-      type: type,
-      exchange: type === 'crypto' ? 'Crypto' : 'Stock Exchange',
-      price: price,
-      change: 0.0,
-      high: null,
-      low: null,
-      volume: null,
-      favorite: true
-    };
+    const origBtnText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifica esistenza e coerenza sui mercati...';
 
-    AppState.assets.unshift(newAsset);
-    saveAssetsToStorage();
-    modalAdd.classList.remove('open');
-    selectAsset(newAsset);
+    try {
+      const meta = await verifyAndFetchAssetMetadata(rawSym, type, enteredName);
 
-    // Clear form
-    document.getElementById('newTickerSymbol').value = '';
-    document.getElementById('newTickerName').value = '';
-    document.getElementById('newTickerPrice').value = '';
+      // 1. Check asset existence on real markets
+      if (!meta.exists) {
+        showAddFeedback(
+          `❌ <strong>Asset inesistente:</strong> il simbolo <strong>${rawSym}</strong> non esiste sui mercati (${type.toUpperCase()}). Verifica il ticker inserito.`,
+          'error'
+        );
+        return;
+      }
+
+      // Check duplicate symbol
+      const existingAsset = AppState.assets.find(
+        a => a.symbol.toUpperCase() === meta.symbol.toUpperCase() ||
+             (a.marketSymbol && a.marketSymbol.toUpperCase() === meta.marketSymbol.toUpperCase())
+      );
+      if (existingAsset) {
+        showAddFeedback(
+          `ℹ️ L'asset <strong>${meta.symbol}</strong> (${existingAsset.name}) è già presente nella tua lista.`,
+          'warning'
+        );
+        return;
+      }
+
+      // 2. Check coherence between user-entered name and official asset name
+      if (!isAssetNameCoherent(enteredName, meta.officialName, meta.symbol)) {
+        const safeOfficial = meta.officialName.replace(/"/g, '&quot;');
+        showAddFeedback(
+          `⚠️ <strong>Nome non coerente con l'asset:</strong> il ticker <strong>${meta.marketSymbol}</strong> esiste sui mercati (${meta.exchange}, valuta <strong>${meta.currency}</strong>), ma corrisponde a <strong>"${meta.officialName}"</strong> e non a <em>"${enteredName}"</em>.<br>` +
+          `<button type="button" id="applyOfficialNameBtn" style="margin-top: 7px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.2); color: #fff; font-size: 0.74rem; cursor: pointer; font-weight: 600;">Usa nome ufficiale: "${safeOfficial}"</button>`,
+          'warning'
+        );
+        const applyBtn = document.getElementById('applyOfficialNameBtn');
+        if (applyBtn) {
+          applyBtn.addEventListener('click', () => {
+            nameInput.value = meta.officialName;
+            showAddFeedback(
+              `✓ Nome aggiornato a <strong>${meta.officialName}</strong> (Valuta: <strong>${meta.currency}</strong>). Clicca di nuovo su "Aggiungi a MarketPulse" per confermare.`,
+              'success'
+            );
+          });
+        }
+        return;
+      }
+
+      // 3. Create asset with real market price, exchange, and imported currency
+      const newAsset = {
+        symbol: meta.symbol,
+        marketSymbol: meta.marketSymbol,
+        name: enteredName,
+        type: type,
+        exchange: meta.exchange,
+        currency: meta.currency,
+        price: meta.price,
+        change: meta.change,
+        high: meta.high,
+        low: meta.low,
+        volume: meta.volume,
+        favorite: true
+      };
+
+      AppState.quoteLastUpdated[newAsset.symbol] = Date.now();
+      AppState.assets.unshift(newAsset);
+      saveAssetsToStorage();
+      modalAdd.classList.remove('open');
+      hideAddFeedback();
+      selectAsset(newAsset);
+
+      // Clear form
+      symInput.value = '';
+      nameInput.value = '';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = origBtnText;
+    }
   });
 
   // Shortcuts Modal
@@ -2440,7 +2933,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=10').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=11').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {
