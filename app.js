@@ -302,6 +302,13 @@ function loadStoredData() {
       AppState.settings = Object.assign(AppState.settings, JSON.parse(storedSettings));
     } catch (e) {}
   }
+  // Enforce EUR as base reference currency
+  if (!AppState.settings.currency || AppState.settings.currency === 'USD') {
+    AppState.settings.currency = 'EUR';
+    try {
+      localStorage.setItem('marketpulse_settings', JSON.stringify(AppState.settings));
+    } catch (e) {}
+  }
 
   // Load persisted historical bars from localStorage so once downloaded they remain saved
   const storedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -1344,10 +1351,10 @@ function updatePortfolioModalPreview(asset) {
   const nativeInvested = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(invested, curAsset)})</span>` : '';
   const nativeCurVal = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(curVal, curAsset)})</span>` : '';
 
-  if (elInvested) elInvested.innerHTML = `${formatCurrency(investedEur, 'EUR')}${nativeInvested}`;
-  if (elCurVal) elCurVal.innerHTML = `${formatCurrency(curValEur, 'EUR')}${nativeCurVal}`;
+  if (elInvested) elInvested.innerHTML = `€ ${investedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${nativeInvested}`;
+  if (elCurVal) elCurVal.innerHTML = `€ ${curValEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${nativeCurVal}`;
   if (elPnl) {
-    elPnl.innerHTML = `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${pnlPct.toFixed(2)}% (${isUp ? '+' : ''}${formatCurrency(pnlCashEur, 'EUR')})</span>`;
+    elPnl.innerHTML = `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${pnlPct.toFixed(2)}% (${isUp ? '+€ ' : '-€ '}${Math.abs(pnlCashEur).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>`;
   }
 }
 
@@ -1464,17 +1471,17 @@ function renderAssetList() {
         <div class="port-sum-row">
           <div>
             <div class="port-sum-label">Valore Totale Portafoglio</div>
-            <div class="port-sum-val">${formatCurrency(totalCurrentValueEur, 'EUR')}</div>
+            <div class="port-sum-val">€ ${totalCurrentValueEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div style="text-align: right;">
             <div class="port-sum-label">P&L Totale</div>
             <div class="port-sum-pnl ${isTotalPnlUp ? 'badge-up' : 'badge-down'}">
-              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+' : ''}${formatCurrency(totalPnlCashEur, 'EUR')})
+              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+€ ' : '-€ '}${Math.abs(totalPnlCashEur).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
             </div>
           </div>
         </div>
         <div class="port-sum-sub">
-          <span>Capitale Investito: <strong>${formatCurrency(totalInvestedEur, 'EUR')}</strong></span>
+          <span>Capitale Investito: <strong>€ ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
           <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
         </div>
       </div>
@@ -1517,11 +1524,11 @@ function renderAssetList() {
           <div class="port-card-metrics">
             <div>
               <div class="port-metric-sub">PMC: ${formattedPmc} • Attuale: ${formattedPrice}</div>
-              <div class="port-metric-val">Valore: <strong>${formatCurrency(currentValEur, 'EUR')}</strong> ${nativeValHtml}</div>
+              <div class="port-metric-val">Valore: <strong>€ ${currentValEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ${nativeValHtml}</div>
             </div>
             <div class="port-metric-right">
               <div class="port-pnl-pill ${isPnlUp ? 'badge-up' : 'badge-down'}">
-                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(pnlPct).toFixed(2)}% (${isPnlUp ? '+' : ''}${formatCurrency(pnlCashEur, 'EUR')})
+                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(pnlPct).toFixed(2)}% (${isPnlUp ? '+€ ' : '-€ '}${Math.abs(pnlCashEur).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
               </div>
             </div>
           </div>
@@ -1673,9 +1680,12 @@ function renderAssetList() {
 function formatCurrency(val, assetOrCurrency) {
   if (val === undefined || val === null || isNaN(val)) return '-';
   const sym = getCurrencySymbol(assetOrCurrency);
-  if (val < 1) return `${sym}${val.toFixed(4)}`;
-  if (val > 1000) return `${sym}${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  return `${sym}${val.toFixed(2)}`;
+  const absVal = Math.abs(val);
+  const sign = val < 0 ? '-' : '';
+  const formattedNum = absVal >= 1000
+    ? absVal.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : (absVal < 0.01 && absVal > 0 ? absVal.toFixed(4) : absVal.toFixed(2));
+  return `${sign}${sym} ${formattedNum}`;
 }
 
 // --- Select Asset ---
@@ -4832,7 +4842,7 @@ function setupPWA() {
       window.location.reload();
     });
 
-    navigator.serviceWorker.register('./sw.js?v=24').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=25').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});

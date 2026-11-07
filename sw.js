@@ -1,12 +1,12 @@
 // Service Worker for MarketPulse Pro (Desktop & Mobile Trading PWA)
-const CACHE_NAME = 'marketpulse-cache-v24';
+const CACHE_NAME = 'marketpulse-cache-v25';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=24',
+  './style.css?v=25',
   './app.js',
-  './app.js?v=24',
+  './app.js?v=25',
   './manifest.webmanifest',
   './icon.svg',
   './icon-192.png',
@@ -26,7 +26,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Pre-caching static assets v24');
+      console.log('[SW] Pre-caching static assets v25');
       return cache.addAll(STATIC_ASSETS);
     })
   );
