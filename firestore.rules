@@ -1,0 +1,389 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures for
+// MarketPulse Pro multi-user Cloud Sync:
+//
+// Root Collections:
+// All user data is strictly scoped under `/users/{userId}`.
+// Any collection outside `/users/{userId}` is denied by default.
+//
+// 1. User Root Document: /users/{userId}
+//    Document ID: userId (matches request.auth.uid)
+//    Fields:
+//      - uid: string (required, 1-128 chars, matches request.auth.uid, immutable)
+//      - email: string (optional, valid email format, max 128 chars)
+//      - displayName: string (optional, 1-100 chars)
+//      - photoURL: string (optional, valid URL format, max 500 chars)
+//      - settings: map (optional, preferences map, validated keys & types)
+//      - portfolio: map (optional, inline portfolio map, max 500 entries)
+//      - watchlist: list (optional, list of ticker symbols, max 200 items)
+//      - customAssets: list (optional, list of custom asset objects, max 100 items)
+//      - lastSync: timestamp/number (optional, sync timestamp)
+//      - createdAt: timestamp (optional, immutable once set)
+//      - updatedAt: timestamp/number (optional, last modified timestamp)
+//
+// 2. Settings Subcollection: /users/{userId}/settings/{settingId}
+//    Document ID: settingId (e.g. 'preferences', 'general', max 50 chars)
+//    Fields:
+//      - currency: string (optional, 2-10 chars, e.g. 'EUR', 'USD')
+//      - refreshRate: number (optional, 1000-3600000 ms)
+//      - theme: string (optional, max 20 chars, e.g. 'dark', 'light')
+//      - portfolioSort: string (optional, max 20 chars, e.g. 'pnl', 'alpha')
+//      - chartType: string (optional, max 20 chars, e.g. 'candles', 'line')
+//      - activeTimeframe: string (optional, max 10 chars, e.g. '1M', '1D')
+//      - indicators: map (optional, indicator booleans, max 10 keys)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp/number (optional)
+//
+// 3. Custom Assets Subcollection: /users/{userId}/customAssets/{assetId} (and /custom_assets/{assetId})
+//    Document ID: assetId (e.g. 'ALO.PA', 'CUSTOM1', max 50 chars)
+//    Fields:
+//      - symbol: string (required, 1-30 chars)
+//      - name: string (required, 1-100 chars)
+//      - type: string (required, in ['stock', 'etf', 'crypto', 'certificate', 'commodity', 'index', 'forex', 'custom'])
+//      - marketSymbol: string (optional, 1-30 chars)
+//      - exchange: string (optional, max 100 chars)
+//      - currency: string (optional, 2-10 chars)
+//      - price: number (optional, >= 0, <= 10^9)
+//      - change: number (optional)
+//      - high: number (optional, >= 0, <= 10^9)
+//      - low: number (optional, >= 0, <= 10^9)
+//      - volume: string (optional, max 30 chars)
+//      - fundamentals: map/null (optional, max 50 keys)
+//      - favorite: bool (optional)
+//      - notes: string (optional, max 5000 chars)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp/number (optional)
+//
+// 4. Watchlist Subcollection: /users/{userId}/watchlist/{symbol}
+//    Document ID: symbol (ticker symbol or item ID, max 50 chars)
+//    Fields:
+//      - symbol: string (required, 1-30 chars)
+//      - name: string (optional, 1-100 chars)
+//      - type: string (optional, max 30 chars)
+//      - exchange: string (optional, max 100 chars)
+//      - currency: string (optional, 2-10 chars)
+//      - price: number (optional, >= 0, <= 10^9)
+//      - change: number (optional)
+//      - notes: string (optional, max 5000 chars)
+//      - order: number (optional)
+//      - favorite: bool (optional)
+//      - addedAt: timestamp/number (optional)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp/number (optional)
+//
+// 5. Notes Subcollection: /users/{userId}/notes/{noteId}
+//    Document ID: noteId (asset symbol e.g. 'NVDA' or note ID, max 50 chars)
+//    Fields:
+//      - symbol: string (required, 1-30 chars)
+//      - content: string (required, max 50000 chars)
+//      - title: string (optional, max 200 chars)
+//      - tags: list (optional, max 20 items)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp/number (optional)
+//
+// 6. Portfolio Subcollection: /users/{userId}/portfolio/{symbol}
+//    Document ID: symbol (ticker symbol e.g. 'NVDA', 'BTC', max 50 chars)
+//    Fields:
+//      - shares: number (required, > 0, <= 10^9)
+//      - buyPrice: number (required, > 0, <= 10^9)
+//      - symbol: string (optional, 1-30 chars)
+//      - currency: string (optional, 2-10 chars)
+//      - notes: string (optional, max 2000 chars)
+//      - targetPrice: number (optional, >= 0, <= 10^9)
+//      - stopLoss: number (optional, >= 0, <= 10^9)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp/number (optional)
+//
+// 7. Sync Subcollection: /users/{userId}/sync/{syncId}
+//    Document ID: syncId (e.g. 'status', 'backup', max 50 chars)
+//    Fields:
+//      - status: string (optional, max 30 chars)
+//      - version: string (optional, max 30 chars)
+//      - deviceId: string (optional, max 100 chars)
+//      - lastSync: timestamp/number (optional)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp/number (optional)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated with Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user owns the document path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check that immutable fields have not been modified during an update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate optional string: if present, must be string and within length bounds
+    function isOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() >= minLen && data[field].size() <= maxLen);
+    }
+
+    // Validate required string: must exist, be string, and within length bounds
+    function isRequiredString(data, field, minLen, maxLen) {
+      return (field in data) &&
+        (data[field] is string && data[field].size() >= minLen && data[field].size() <= maxLen);
+    }
+
+    // Validate optional numeric range
+    function isOptionalNumber(data, field, minVal, maxVal) {
+      return !(field in data) ||
+        (data[field] is number && data[field] >= minVal && data[field] <= maxVal);
+    }
+
+    // Validate strictly positive number within bounds
+    function isPositiveNumber(data, field, maxVal) {
+      return (field in data) &&
+        (data[field] is number && data[field] > 0 && data[field] <= maxVal);
+    }
+
+    // Validate optional boolean
+    function isOptionalBool(data, field) {
+      return !(field in data) || (data[field] is bool);
+    }
+
+    // Validate timestamp or numeric milliseconds (e.g. Date.now())
+    function isOptionalTimestampOrMs(data, field) {
+      return !(field in data) ||
+        (data[field] is timestamp) ||
+        (data[field] is number && data[field] > 0);
+    }
+
+    // Validate email format
+    function isOptionalEmail(data, field) {
+      return !(field in data) ||
+        (data[field] is string &&
+         data[field].size() <= 128 &&
+         data[field].matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
+    }
+
+    // Validate URL format (http:// or https://)
+    function isOptionalUrl(data, field) {
+      return !(field in data) ||
+        (data[field] is string &&
+         data[field].size() <= 500 &&
+         (data[field].matches("^https://.*") || data[field].matches("^http://.*")));
+    }
+
+    // Validate settings map structure
+    function isValidSettingsMap(settingsMap) {
+      return settingsMap is map &&
+        settingsMap.keys().hasOnly(['currency', 'refreshRate', 'theme', 'portfolioSort', 'chartType', 'activeTimeframe', 'indicators']) &&
+        isOptionalString(settingsMap, 'currency', 2, 10) &&
+        isOptionalNumber(settingsMap, 'refreshRate', 1000, 3600000) &&
+        isOptionalString(settingsMap, 'theme', 1, 20) &&
+        isOptionalString(settingsMap, 'portfolioSort', 1, 20) &&
+        isOptionalString(settingsMap, 'chartType', 1, 20) &&
+        isOptionalString(settingsMap, 'activeTimeframe', 1, 10) &&
+        (!('indicators' in settingsMap) || (settingsMap.indicators is map && settingsMap.indicators.size() <= 10));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    // Validator for root user document
+    function isValidUserDoc(data, userId) {
+      return data.keys().hasAll(['uid']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'settings', 'portfolio', 'watchlist', 'customAssets', 'lastSync', 'createdAt', 'updatedAt']) &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        isOptionalEmail(data, 'email') &&
+        isOptionalString(data, 'displayName', 1, 100) &&
+        isOptionalUrl(data, 'photoURL') &&
+        (!('settings' in data) || isValidSettingsMap(data.settings)) &&
+        (!('portfolio' in data) || (data.portfolio is map && data.portfolio.size() <= 500)) &&
+        (!('watchlist' in data) || (data.watchlist is list && data.watchlist.size() <= 200)) &&
+        (!('customAssets' in data) || (data.customAssets is list && data.customAssets.size() <= 100)) &&
+        isOptionalTimestampOrMs(data, 'lastSync') &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // Validator for settings document
+    function isValidSettingDoc(data) {
+      return data.keys().hasOnly(['currency', 'refreshRate', 'theme', 'portfolioSort', 'chartType', 'activeTimeframe', 'indicators', 'createdAt', 'updatedAt']) &&
+        isOptionalString(data, 'currency', 2, 10) &&
+        isOptionalNumber(data, 'refreshRate', 1000, 3600000) &&
+        isOptionalString(data, 'theme', 1, 20) &&
+        isOptionalString(data, 'portfolioSort', 1, 20) &&
+        isOptionalString(data, 'chartType', 1, 20) &&
+        isOptionalString(data, 'activeTimeframe', 1, 10) &&
+        (!('indicators' in data) || (data.indicators is map && data.indicators.size() <= 10)) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // Validator for portfolio position document
+    function isValidPortfolioDoc(data) {
+      return data.keys().hasAll(['shares', 'buyPrice']) &&
+        data.keys().hasOnly(['shares', 'buyPrice', 'symbol', 'currency', 'notes', 'targetPrice', 'stopLoss', 'createdAt', 'updatedAt']) &&
+        isPositiveNumber(data, 'shares', 1000000000) &&
+        isPositiveNumber(data, 'buyPrice', 1000000000) &&
+        isOptionalString(data, 'symbol', 1, 30) &&
+        isOptionalString(data, 'currency', 2, 10) &&
+        isOptionalString(data, 'notes', 0, 2000) &&
+        isOptionalNumber(data, 'targetPrice', 0, 1000000000) &&
+        isOptionalNumber(data, 'stopLoss', 0, 1000000000) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // Validator for watchlist item document
+    function isValidWatchlistDoc(data) {
+      return data.keys().hasAll(['symbol']) &&
+        data.keys().hasOnly(['symbol', 'name', 'type', 'exchange', 'currency', 'price', 'change', 'notes', 'order', 'favorite', 'addedAt', 'createdAt', 'updatedAt']) &&
+        isRequiredString(data, 'symbol', 1, 30) &&
+        isOptionalString(data, 'name', 1, 100) &&
+        isOptionalString(data, 'type', 1, 30) &&
+        isOptionalString(data, 'exchange', 1, 100) &&
+        isOptionalString(data, 'currency', 2, 10) &&
+        isOptionalNumber(data, 'price', 0, 1000000000) &&
+        (!('change' in data) || data.change is number) &&
+        isOptionalString(data, 'notes', 0, 5000) &&
+        (!('order' in data) || data.order is number) &&
+        isOptionalBool(data, 'favorite') &&
+        isOptionalTimestampOrMs(data, 'addedAt') &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // Validator for notes document
+    function isValidNoteDoc(data) {
+      return data.keys().hasAll(['symbol', 'content']) &&
+        data.keys().hasOnly(['symbol', 'content', 'title', 'tags', 'createdAt', 'updatedAt']) &&
+        isRequiredString(data, 'symbol', 1, 30) &&
+        isRequiredString(data, 'content', 0, 50000) &&
+        isOptionalString(data, 'title', 0, 200) &&
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // Validator for custom asset document
+    function isValidCustomAssetDoc(data) {
+      return data.keys().hasAll(['symbol', 'name', 'type']) &&
+        data.keys().hasOnly(['symbol', 'name', 'type', 'marketSymbol', 'exchange', 'currency', 'price', 'change', 'high', 'low', 'volume', 'fundamentals', 'favorite', 'notes', 'createdAt', 'updatedAt']) &&
+        isRequiredString(data, 'symbol', 1, 30) &&
+        isRequiredString(data, 'name', 1, 100) &&
+        (data.type in ['stock', 'etf', 'crypto', 'certificate', 'commodity', 'index', 'forex', 'custom']) &&
+        isOptionalString(data, 'marketSymbol', 1, 30) &&
+        isOptionalString(data, 'exchange', 1, 100) &&
+        isOptionalString(data, 'currency', 2, 10) &&
+        isOptionalNumber(data, 'price', 0, 1000000000) &&
+        (!('change' in data) || data.change is number) &&
+        isOptionalNumber(data, 'high', 0, 1000000000) &&
+        isOptionalNumber(data, 'low', 0, 1000000000) &&
+        isOptionalString(data, 'volume', 0, 30) &&
+        (!('fundamentals' in data) || data.fundamentals == null || (data.fundamentals is map && data.fundamentals.size() <= 50)) &&
+        isOptionalBool(data, 'favorite') &&
+        isOptionalString(data, 'notes', 0, 5000) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // Validator for sync status/metadata document
+    function isValidSyncDoc(data) {
+      return data.keys().hasOnly(['status', 'version', 'deviceId', 'lastSync', 'createdAt', 'updatedAt']) &&
+        isOptionalString(data, 'status', 1, 30) &&
+        isOptionalString(data, 'version', 1, 30) &&
+        isOptionalString(data, 'deviceId', 1, 100) &&
+        isOptionalTimestampOrMs(data, 'lastSync') &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'updatedAt');
+    }
+
+    // ===============================================================
+    // Collection Match Rules
+    // ===============================================================
+
+    // Default Deny: All access to documents outside explicitly defined paths is forbidden
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Root Document & Subcollections
+    match /users/{userId} {
+      // Strict per-user isolation: Only the authenticated owner can access their user document
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserDoc(request.resource.data, userId);
+      allow update: if isOwner(userId) && isValidUserDoc(request.resource.data, userId) && areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if isOwner(userId);
+
+      // Settings subcollection
+      match /settings/{settingId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSettingDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidSettingDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // Portfolio subcollection (positions keyed by symbol or position ID)
+      match /portfolio/{symbol} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPortfolioDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidPortfolioDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // Watchlist subcollection
+      match /watchlist/{symbol} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidWatchlistDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidWatchlistDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // Notes & Trade Journal subcollection
+      match /notes/{noteId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidNoteDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidNoteDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // Custom Assets subcollection (supports both camelCase and snake_case naming)
+      match /customAssets/{assetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCustomAssetDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidCustomAssetDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      match /custom_assets/{assetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCustomAssetDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidCustomAssetDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
+      // Sync metadata & state subcollection
+      match /sync/{syncId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSyncDoc(request.resource.data);
+        allow update: if isOwner(userId) && isValidSyncDoc(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

@@ -12,6 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MarketPulse">
+  <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="manifest" href="manifest.webmanifest">
 
   <!-- Favicon and App Icons for Desktop, Android & iOS -->
@@ -24,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=26">
+  <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
 
@@ -70,6 +71,11 @@
 
       <button id="settingsBtn" class="btn-icon" title="Impostazioni & Valuta">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+
+      <button id="authBtn" class="btn-icon" title="Account & Sincronizzazione Cloud" style="position: relative;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span id="authIndicatorDot" style="position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: #64748b; border: 1.5px solid var(--bg-primary);"></span>
       </button>
     </div>
   </header>
@@ -798,7 +804,144 @@
         </div>
       </div>
 
+      <div class="calc-field-group">
+        <label>Sincronizzazione Desktop ⇄ Mobile & Backup</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button type="button" id="exportDataBtn" class="btn-secondary" style="font-size: 0.76rem; padding: 8px 10px; display: flex; align-items: center; justify-content: center; gap: 5px; font-weight: 600;">
+            <span>📥 Esporta Dati</span>
+          </button>
+          <button type="button" id="importDataBtn" class="btn-secondary" style="font-size: 0.76rem; padding: 8px 10px; display: flex; align-items: center; justify-content: center; gap: 5px; font-weight: 600;">
+            <span>📤 Importa Dati</span>
+          </button>
+        </div>
+        <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;">
+        <span class="helper" style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; display: block; line-height: 1.35;">
+          Esporta un file con portafoglio, preferiti e impostazioni e importalo su smartphone (via WhatsApp, AirDrop o Drive).
+        </span>
+        <div id="syncFeedbackMsg" style="display: none; margin-top: 6px; font-size: 0.72rem; padding: 6px 10px; border-radius: 6px;"></div>
+
+        <!-- Cloud Account Shortcut -->
+        <div style="margin-top: 10px; padding: 10px; background: rgba(30, 41, 59, 0.5); border: 1px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: 0.74rem; font-weight: 600;" id="settingsAuthLabel">☁️ Sincronizzazione Cloud</div>
+            <div style="font-size: 0.68rem; color: var(--text-muted);" id="settingsAuthSub">Accedi per sincronizzare in automatico</div>
+          </div>
+          <button type="button" id="openAuthModalFromSettings" class="btn-primary" style="font-size: 0.72rem; padding: 5px 10px;">Gestisci Account</button>
+        </div>
+      </div>
+
       <button id="saveSettingsBtn" class="btn-primary" style="width: 100%; margin-top: 8px;">Salva Preferenze</button>
+    </div>
+  </div>
+
+  <!-- MODAL: User Account & Cloud Sync (Firebase) -->
+  <div class="modal-backdrop" id="modalAuth">
+    <div class="modal-window" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="authModalTitle" style="font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+          <span>👤 Account & Cloud Sync</span>
+        </h3>
+        <button class="modal-close" id="closeAuthModal">&times;</button>
+      </div>
+
+      <!-- State 1: When user is NOT logged in -->
+      <div id="authLoggedOutView">
+        <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">
+          Accedi con il tuo account per ritrovare automaticamente portafoglio, preferiti e impostazioni su tutti i tuoi dispositivi (PC, Mac, iPhone, Android).
+        </p>
+
+        <!-- Tabs: Accedi / Registrati -->
+        <div style="display: flex; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 3px; margin-bottom: 14px;">
+          <button type="button" id="authTabLogin" class="view-btn active" style="flex: 1; text-align: center; font-size: 0.78rem; padding: 6px;">Accedi</button>
+          <button type="button" id="authTabRegister" class="view-btn" style="flex: 1; text-align: center; font-size: 0.78rem; padding: 6px;">Crea Account</button>
+        </div>
+
+        <form id="authForm" onsubmit="return false;" style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="calc-field-group">
+            <label for="authEmail">Email</label>
+            <input type="email" id="authEmail" class="calc-input" placeholder="nome@esempio.com" required autocomplete="email" style="padding-left: 10px;">
+          </div>
+
+          <div class="calc-field-group">
+            <label for="authPassword">Password</label>
+            <input type="password" id="authPassword" class="calc-input" placeholder="Minimo 6 caratteri" required autocomplete="current-password" style="padding-left: 10px;">
+          </div>
+
+          <div id="authRegisterExtra" style="display: none;">
+            <div class="calc-field-group">
+              <label for="authPasswordConfirm">Conferma Password</label>
+              <input type="password" id="authPasswordConfirm" class="calc-input" placeholder="Ripeti password" autocomplete="new-password" style="padding-left: 10px;">
+            </div>
+          </div>
+
+          <div id="authFeedback" style="display: none; font-size: 0.75rem; padding: 8px 12px; border-radius: 6px; line-height: 1.4;"></div>
+
+          <button type="submit" id="authSubmitBtn" class="btn-primary" style="width: 100%; padding: 10px; font-weight: 600; margin-top: 4px;">
+            Accedi
+          </button>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; margin-top: 2px;">
+            <a href="#" id="authForgotPasswordLink" style="color: var(--accent-blue); text-decoration: none;">Password dimenticata?</a>
+          </div>
+
+          <div style="display: flex; align-items: center; margin: 10px 0; gap: 10px;">
+            <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+            <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">oppure</span>
+            <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+          </div>
+
+          <button type="button" id="authGoogleBtn" class="btn-secondary" style="width: 100%; padding: 9px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 600; font-size: 0.8rem; background: rgba(255, 255, 255, 0.06);">
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3h3.88c2.27-2.09 3.665-5.17 3.665-9.09z"/>
+              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.09C3.25 21.36 7.31 24 12 24z"/>
+              <path fill="#FBBC05" d="M5.28 14.32c-.25-.72-.38-1.49-.38-2.32s.13-1.6.38-2.32V6.59H1.26C.46 8.18 0 9.99 0 12s.46 3.82 1.26 5.41l4.02-3.09z"/>
+              <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.64 1.26 6.59l4.02 3.09c.95-2.83 3.6-4.93 6.72-4.93z"/>
+            </svg>
+            <span>Continua con Google</span>
+          </button>
+        </form>
+
+        <!-- Firebase Config Accordion -->
+        <div style="margin-top: 14px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+          <button type="button" id="toggleFirebaseConfigBtn" style="background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 0;">
+            <span>⚙️ Configurazione Progetto Firebase</span>
+            <span id="configChevron">▼</span>
+          </button>
+          <div id="firebaseConfigSection" style="display: none; margin-top: 8px;">
+            <span style="font-size: 0.68rem; color: var(--text-muted); display: block; margin-bottom: 6px; line-height: 1.3;">
+              Incolla qui la configurazione del tuo progetto Firebase (da console.firebase.google.com &gt; Impostazioni progetto &gt; Le tue app &gt; Web SDK):
+            </span>
+            <textarea id="firebaseConfigInput" class="calc-input" rows="4" style="font-family: monospace; font-size: 0.68rem; padding: 8px; width: 100%; resize: vertical;" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }'></textarea>
+            <button type="button" id="saveFirebaseConfigBtn" class="btn-secondary" style="margin-top: 6px; width: 100%; font-size: 0.72rem; padding: 6px;">Salva Configurazione Firebase</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- State 2: When user is LOGGED IN -->
+      <div id="authLoggedInView" style="display: none;">
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px;">
+          <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: 700; color: #38bdf8;" id="authUserAvatar">
+            U
+          </div>
+          <div style="flex: 1; overflow: hidden;">
+            <div id="authUserName" style="font-weight: 700; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Utente</div>
+            <div id="authUserEmail" style="font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">utente@email.com</div>
+            <div style="font-size: 0.68rem; color: #10b981; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span>
+              <span id="authCloudStatusText">Sincronizzazione Cloud Attiva</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button type="button" id="authSyncNowBtn" class="btn-primary" style="width: 100%; font-size: 0.8rem; padding: 9px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span>🔄 Sincronizza Adesso (Forza Salvataggio)</span>
+          </button>
+          <button type="button" id="authLogoutBtn" class="btn-secondary" style="width: 100%; font-size: 0.8rem; padding: 9px; display: flex; align-items: center; justify-content: center; gap: 6px; color: #fda4af;">
+            <span>🚪 Disconnetti (Logout)</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -823,6 +966,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>

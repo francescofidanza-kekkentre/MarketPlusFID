@@ -219,6 +219,48 @@ const AppState = {
   deferredPrompt: null
 };
 
+// --- Firebase Cloud Sync Global Helpers ---
+let FirebaseModule = null;
+let isRemoteUpdateInProgress = false;
+
+async function getFirebaseModule() {
+  if (FirebaseModule) return FirebaseModule;
+  try {
+    FirebaseModule = await import('./firebase-sync.js');
+    return FirebaseModule;
+  } catch (err) {
+    console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
+    return null;
+  }
+}
+
+function triggerCloudSync(immediate = false) {
+  if (isRemoteUpdateInProgress) return;
+  getFirebaseModule().then(mod => {
+    if (!mod) return;
+    const user = mod.getCurrentUser();
+    if (!user) return;
+
+    const notesObj = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('marketpulse_notes_')) {
+        notesObj[key] = localStorage.getItem(key);
+      }
+    }
+
+    const payload = {
+      settings: AppState.settings,
+      portfolio: AppState.portfolio,
+      portfolioSort: AppState.portfolioSort || localStorage.getItem('marketpulse_portfolio_sort') || 'best',
+      assets: AppState.assets,
+      notes: notesObj
+    };
+
+    mod.saveUserDataToCloud(payload, immediate);
+  });
+}
+
 const DEFAULT_PORTFOLIO = {
   'NVDA': { shares: 15, buyPrice: 120.00, updatedAt: Date.now() },
   'ALO.PA': { shares: 100, buyPrice: 11.20, updatedAt: Date.now() },
@@ -232,6 +274,7 @@ function savePortfolioToStorage() {
   } catch (e) {
     console.error('[MarketPulse] Error saving portfolio:', e);
   }
+  triggerCloudSync();
 }
 
 const HISTORY_STORAGE_KEY = 'marketpulse_history_v4';
@@ -261,6 +304,9 @@ document.addEventListener('DOMContentLoaded', () => {
       pollLivePrices();
       setInterval(pollLivePrices, AppState.settings.refreshRate || 5000);
       setInterval(updateMarketHours, 60000);
+
+      // Non-blocking background initialization of Firebase Cloud Sync
+      initFirebaseBackground();
     });
   } catch (err) {
     console.error('[MarketPulse] Initialization error:', err);
@@ -411,6 +457,7 @@ function saveAssetsToStorage() {
   try {
     localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
   } catch (e) {}
+  triggerCloudSync();
 }
 
 function saveHistoryToStorage() {
@@ -3780,6 +3827,7 @@ function saveNotesForAsset() {
 
   const content = document.getElementById('tickerNotesInput').value;
   localStorage.setItem(`marketpulse_notes_${asset.symbol}`, content);
+  triggerCloudSync();
 
   const indicator = document.getElementById('notesSavedIndicator');
   indicator.style.display = 'inline';
@@ -3807,6 +3855,7 @@ function setupEventListeners() {
         try {
           localStorage.setItem('marketpulse_portfolio_sort', sortMode);
         } catch (e) {}
+        triggerCloudSync();
         document.querySelectorAll('.port-sort-btn').forEach(b => {
           b.classList.toggle('active', b.getAttribute('data-sort') === sortMode);
         });
@@ -4786,6 +4835,7 @@ function setupModals() {
       if (refresh) AppState.settings.refreshRate = parseInt(refresh.value, 10);
 
       localStorage.setItem('marketpulse_settings', JSON.stringify(AppState.settings));
+      triggerCloudSync();
       modalSettings.classList.remove('open');
 
       // Keep saved historical bars and force an incremental sync for new data!
@@ -4794,6 +4844,382 @@ function setupModals() {
         loadAndRenderChart(AppState.selectedAsset, AppState.activeTimeframe, { forceIncremental: true });
       }
       pollLivePrices();
+    });
+  }
+
+  // --- Sincronizzazione Desktop ⇄ Mobile & Backup (Export / Import JSON) ---
+  const exportDataBtn = document.getElementById('exportDataBtn');
+  const importDataBtn = document.getElementById('importDataBtn');
+  const importFileInput = document.getElementById('importFileInput');
+  const syncFeedbackMsg = document.getElementById('syncFeedbackMsg');
+
+  const showSyncFeedback = (msg, isError = false) => {
+    if (!syncFeedbackMsg) return;
+    syncFeedbackMsg.style.display = 'block';
+    syncFeedbackMsg.style.background = isError ? 'rgba(244, 63, 94, 0.16)' : 'rgba(16, 185, 129, 0.16)';
+    syncFeedbackMsg.style.border = isError ? '1px solid rgba(244, 63, 94, 0.45)' : '1px solid rgba(16, 185, 129, 0.45)';
+    syncFeedbackMsg.style.color = isError ? '#fda4af' : '#6ee7b7';
+    syncFeedbackMsg.textContent = msg;
+    setTimeout(() => {
+      if (syncFeedbackMsg) syncFeedbackMsg.style.display = 'none';
+    }, 4500);
+  };
+
+  if (exportDataBtn) {
+    exportDataBtn.addEventListener('click', () => {
+      try {
+        const backupData = getLocalBackupPayload();
+        backupData.app = 'MarketPulse Pro';
+        backupData.version = 2;
+        backupData.exportedAt = new Date().toISOString();
+
+        const jsonStr = JSON.stringify(backupData, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `marketpulse_backup_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showSyncFeedback('✓ Backup scaricato! Invialo su mobile (WhatsApp/Drive/AirDrop) per importarlo.', false);
+      } catch (err) {
+        console.error('Export error:', err);
+        showSyncFeedback('Errore durante l\'esportazione del backup.', true);
+      }
+    });
+  }
+
+  if (importDataBtn && importFileInput) {
+    importDataBtn.addEventListener('click', () => {
+      importFileInput.value = '';
+      importFileInput.click();
+    });
+
+    importFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const imported = JSON.parse(event.target.result);
+          if (!imported || typeof imported !== 'object') {
+            throw new Error('Formato non valido');
+          }
+
+          if (imported.settings && typeof imported.settings === 'object') {
+            AppState.settings = Object.assign(AppState.settings, imported.settings);
+            localStorage.setItem('marketpulse_settings', JSON.stringify(AppState.settings));
+          }
+
+          if (imported.portfolio && typeof imported.portfolio === 'object') {
+            AppState.portfolio = imported.portfolio;
+            localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
+          }
+
+          if (imported.portfolioSort) {
+            AppState.portfolioSort = imported.portfolioSort;
+            localStorage.setItem('marketpulse_portfolio_sort', AppState.portfolioSort);
+          }
+
+          if (Array.isArray(imported.assets) && imported.assets.length > 0) {
+            AppState.assets = imported.assets;
+            localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
+          }
+
+          if (imported.notes && typeof imported.notes === 'object') {
+            Object.keys(imported.notes).forEach(k => {
+              if (k.startsWith('marketpulse_notes_')) {
+                localStorage.setItem(k, imported.notes[k]);
+              }
+            });
+          }
+
+          showSyncFeedback('✓ Dati sincronizzati con successo! Aggiornamento interfaccia...', false);
+          triggerCloudSync(true);
+          setTimeout(() => {
+            renderAssetList();
+            updateSelectedAssetHeader();
+            if (AppState.activeTab === 'portfolio') {
+              updatePortfolioOverview();
+            }
+            if (modalSettings) modalSettings.classList.remove('open');
+          }, 600);
+        } catch (err) {
+          console.error('Import error:', err);
+          showSyncFeedback('Errore: file JSON non valido o non compatibile.', true);
+        }
+      };
+      reader.onerror = () => {
+        showSyncFeedback('Errore nella lettura del file.', true);
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  // --- MODAL AUTH: Firebase Account & Cloud Sync Setup ---
+  const modalAuth = document.getElementById('modalAuth');
+  const authBtn = document.getElementById('authBtn');
+  const openAuthFromSettings = document.getElementById('openAuthModalFromSettings');
+  const closeAuthModal = document.getElementById('closeAuthModal');
+  const authTabLogin = document.getElementById('authTabLogin');
+  const authTabRegister = document.getElementById('authTabRegister');
+  const authSubmitBtn = document.getElementById('authSubmitBtn');
+  const authRegisterExtra = document.getElementById('authRegisterExtra');
+  const authFeedback = document.getElementById('authFeedback');
+  const authForm = document.getElementById('authForm');
+  const authEmail = document.getElementById('authEmail');
+  const authPassword = document.getElementById('authPassword');
+  const authPasswordConfirm = document.getElementById('authPasswordConfirm');
+  const authGoogleBtn = document.getElementById('authGoogleBtn');
+  const authForgotPasswordLink = document.getElementById('authForgotPasswordLink');
+  const authLogoutBtn = document.getElementById('authLogoutBtn');
+  const authSyncNowBtn = document.getElementById('authSyncNowBtn');
+  const toggleFirebaseConfigBtn = document.getElementById('toggleFirebaseConfigBtn');
+  const firebaseConfigSection = document.getElementById('firebaseConfigSection');
+  const firebaseConfigInput = document.getElementById('firebaseConfigInput');
+  const saveFirebaseConfigBtn = document.getElementById('saveFirebaseConfigBtn');
+  const configChevron = document.getElementById('configChevron');
+
+  let authMode = 'login'; // 'login' or 'register'
+
+  const showAuthFeedback = (msg, variant = 'error') => {
+    if (!authFeedback) return;
+    authFeedback.style.display = 'block';
+    if (variant === 'error') {
+      authFeedback.style.background = 'rgba(244, 63, 94, 0.16)';
+      authFeedback.style.border = '1px solid rgba(244, 63, 94, 0.45)';
+      authFeedback.style.color = '#fda4af';
+    } else if (variant === 'success') {
+      authFeedback.style.background = 'rgba(16, 185, 129, 0.16)';
+      authFeedback.style.border = '1px solid rgba(16, 185, 129, 0.45)';
+      authFeedback.style.color = '#6ee7b7';
+    } else {
+      authFeedback.style.background = 'rgba(56, 189, 248, 0.16)';
+      authFeedback.style.border = '1px solid rgba(56, 189, 248, 0.45)';
+      authFeedback.style.color = '#bae6fd';
+    }
+    authFeedback.textContent = msg;
+  };
+
+  const clearAuthFeedback = () => {
+    if (authFeedback) {
+      authFeedback.style.display = 'none';
+      authFeedback.textContent = '';
+    }
+  };
+
+  const setAuthMode = (mode) => {
+    authMode = mode;
+    clearAuthFeedback();
+    if (mode === 'register') {
+      authTabRegister?.classList.add('active');
+      authTabLogin?.classList.remove('active');
+      if (authRegisterExtra) authRegisterExtra.style.display = 'block';
+      if (authSubmitBtn) authSubmitBtn.textContent = 'Crea Account';
+    } else {
+      authTabLogin?.classList.add('active');
+      authTabRegister?.classList.remove('active');
+      if (authRegisterExtra) authRegisterExtra.style.display = 'none';
+      if (authSubmitBtn) authSubmitBtn.textContent = 'Accedi';
+    }
+  };
+
+  if (authTabLogin) authTabLogin.addEventListener('click', () => setAuthMode('login'));
+  if (authTabRegister) authTabRegister.addEventListener('click', () => setAuthMode('register'));
+
+  if (authBtn && modalAuth) {
+    authBtn.addEventListener('click', () => {
+      modalAuth.classList.add('open');
+    });
+  }
+
+  if (openAuthFromSettings && modalAuth) {
+    openAuthFromSettings.addEventListener('click', () => {
+      if (modalSettings) modalSettings.classList.remove('open');
+      modalAuth.classList.add('open');
+    });
+  }
+
+  if (closeAuthModal && modalAuth) {
+    closeAuthModal.addEventListener('click', () => {
+      modalAuth.classList.remove('open');
+      clearAuthFeedback();
+    });
+  }
+
+  // Toggle Firebase Configuration Accordion
+  if (toggleFirebaseConfigBtn && firebaseConfigSection) {
+    toggleFirebaseConfigBtn.addEventListener('click', () => {
+      const isHidden = firebaseConfigSection.style.display === 'none';
+      firebaseConfigSection.style.display = isHidden ? 'block' : 'none';
+      if (configChevron) configChevron.textContent = isHidden ? '▲' : '▼';
+      if (isHidden && firebaseConfigInput && !firebaseConfigInput.value) {
+        const saved = localStorage.getItem('marketpulse_firebase_config');
+        if (saved) firebaseConfigInput.value = saved;
+      }
+    });
+  }
+
+  if (saveFirebaseConfigBtn && firebaseConfigInput) {
+    saveFirebaseConfigBtn.addEventListener('click', async () => {
+      try {
+        const text = firebaseConfigInput.value.trim();
+        if (!text) throw new Error('Inserisci la configurazione JSON');
+        const parsed = JSON.parse(text);
+        if (!parsed.apiKey || !parsed.projectId) {
+          throw new Error('La configurazione deve contenere almeno apiKey e projectId');
+        }
+        localStorage.setItem('marketpulse_firebase_config', JSON.stringify(parsed));
+        showAuthFeedback('✓ Configurazione salvata! Inizializzazione Firebase...', 'success');
+        const mod = await getFirebaseModule();
+        if (mod) {
+          await mod.initFirebaseSync({
+            onAuthUpdate: handleAuthStateUpdate,
+            onDataUpdate: handleRemoteCloudData,
+            getLocalState: getLocalBackupPayload
+          });
+        }
+      } catch (err) {
+        showAuthFeedback('Errore: formato JSON non valido (' + err.message + ')', 'error');
+      }
+    });
+  }
+
+  // Submit Email / Password
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAuthFeedback();
+      const email = authEmail?.value.trim();
+      const pass = authPassword?.value;
+      if (!email || !pass) {
+        showAuthFeedback('Inserisci sia email che password.', 'error');
+        return;
+      }
+      if (authMode === 'register') {
+        const confirm = authPasswordConfirm?.value;
+        if (pass !== confirm) {
+          showAuthFeedback('Le due password non coincidono.', 'error');
+          return;
+        }
+        if (pass.length < 6) {
+          showAuthFeedback('La password deve avere almeno 6 caratteri.', 'error');
+          return;
+        }
+      }
+
+      const mod = await getFirebaseModule();
+      if (!mod) {
+        showAuthFeedback('Modulo Firebase non disponibile. Verifica la connessione.', 'error');
+        return;
+      }
+
+      authSubmitBtn.disabled = true;
+      const origText = authSubmitBtn.textContent;
+      authSubmitBtn.textContent = 'Attendere...';
+
+      try {
+        if (authMode === 'register') {
+          await mod.registerWithEmail(email, pass);
+          showAuthFeedback('✓ Account creato con successo! Sincronizzazione in corso...', 'success');
+        } else {
+          await mod.loginWithEmail(email, pass);
+          showAuthFeedback('✓ Accesso effettuato! Sincronizzazione in corso...', 'success');
+        }
+        setTimeout(() => {
+          if (modalAuth) modalAuth.classList.remove('open');
+          clearAuthFeedback();
+        }, 800);
+      } catch (err) {
+        console.error('Auth error:', err);
+        let msg = err.message || 'Errore durante l\'autenticazione';
+        if (msg.includes('user-not-found') || msg.includes('wrong-password') || msg.includes('invalid-credential')) {
+          msg = 'Credenziali non valide o utente non trovato.';
+        } else if (msg.includes('email-already-in-use')) {
+          msg = 'Questa email è già registrata. Clicca su "Accedi".';
+        } else if (msg.includes('Firebase non configurato')) {
+          msg = 'Progetto Firebase non ancora configurato. Apri "⚙️ Configurazione Progetto Firebase" qui sotto per inserire le tue credenziali.';
+        }
+        showAuthFeedback(msg, 'error');
+      } finally {
+        authSubmitBtn.disabled = false;
+        authSubmitBtn.textContent = origText;
+      }
+    });
+  }
+
+  // Google Sign-In
+  if (authGoogleBtn) {
+    authGoogleBtn.addEventListener('click', async () => {
+      clearAuthFeedback();
+      const mod = await getFirebaseModule();
+      if (!mod) return;
+      try {
+        await mod.loginWithGoogle();
+        showAuthFeedback('✓ Accesso con Google effettuato!', 'success');
+        setTimeout(() => {
+          if (modalAuth) modalAuth.classList.remove('open');
+          clearAuthFeedback();
+        }, 800);
+      } catch (err) {
+        console.error('Google Sign-In error:', err);
+        let msg = err.message || 'Errore accesso con Google';
+        if (msg.includes('popup-closed-by-user')) {
+          msg = 'Finestra di accesso chiusa dall\'utente.';
+        } else if (msg.includes('unauthorized-domain')) {
+          msg = 'Dominio non autorizzato su Firebase Console (Settings > Authorized domains).';
+        } else if (msg.includes('Firebase non configurato')) {
+          msg = 'Inserisci prima la configurazione del tuo progetto Firebase qui sotto.';
+        }
+        showAuthFeedback(msg, 'error');
+      }
+    });
+  }
+
+  // Forgot Password
+  if (authForgotPasswordLink) {
+    authForgotPasswordLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      clearAuthFeedback();
+      const email = authEmail?.value.trim();
+      if (!email) {
+        showAuthFeedback('Inserisci prima la tua email nel campo sopra.', 'error');
+        authEmail?.focus();
+        return;
+      }
+      const mod = await getFirebaseModule();
+      if (!mod) return;
+      try {
+        await mod.resetPasswordEmail(email);
+        showAuthFeedback('✓ Email di reimpostazione inviata! Controlla la tua casella di posta.', 'success');
+      } catch (err) {
+        showAuthFeedback('Errore invio email: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Logout
+  if (authLogoutBtn) {
+    authLogoutBtn.addEventListener('click', async () => {
+      const mod = await getFirebaseModule();
+      if (mod) {
+        await mod.logoutUser();
+        if (modalAuth) modalAuth.classList.remove('open');
+      }
+    });
+  }
+
+  // Sync Now (Forza invio)
+  if (authSyncNowBtn) {
+    authSyncNowBtn.addEventListener('click', () => {
+      triggerCloudSync(true);
+      const origText = authSyncNowBtn.innerHTML;
+      authSyncNowBtn.innerHTML = '<span>✓ Sincronizzazione inviata al Cloud!</span>';
+      setTimeout(() => { authSyncNowBtn.innerHTML = origText; }, 2000);
     });
   }
 
@@ -4833,10 +5259,137 @@ function setupModals() {
   }
 
   // Close modals on clicking backdrop
-  [modalAdd, modalShortcuts, modalSettings, modalPort].forEach(m => {
+  [modalAdd, modalShortcuts, modalSettings, modalPort, modalAuth].forEach(m => {
     if (m) {
       m.addEventListener('click', (e) => {
         if (e.target === m) m.classList.remove('open');
+      });
+    }
+  });
+}
+
+// --- Firebase Auth & Cloud Sync State Handlers ---
+function handleAuthStateUpdate(user, meta) {
+  const authLoggedOutView = document.getElementById('authLoggedOutView');
+  const authLoggedInView = document.getElementById('authLoggedInView');
+  const authIndicatorDot = document.getElementById('authIndicatorDot');
+  const authUserName = document.getElementById('authUserName');
+  const authUserEmail = document.getElementById('authUserEmail');
+  const authUserAvatar = document.getElementById('authUserAvatar');
+  const settingsAuthLabel = document.getElementById('settingsAuthLabel');
+  const settingsAuthSub = document.getElementById('settingsAuthSub');
+
+  if (user) {
+    if (authLoggedOutView) authLoggedOutView.style.display = 'none';
+    if (authLoggedInView) authLoggedInView.style.display = 'block';
+    if (authIndicatorDot) authIndicatorDot.style.background = '#10b981';
+
+    const name = user.displayName || user.email?.split('@')[0] || 'Utente';
+    const email = user.email || 'Utente Autenticato';
+    if (authUserName) authUserName.textContent = name;
+    if (authUserEmail) authUserEmail.textContent = email;
+    if (authUserAvatar) authUserAvatar.textContent = name[0].toUpperCase();
+
+    if (settingsAuthLabel) settingsAuthLabel.textContent = `☁️ Connesso: ${name}`;
+    if (settingsAuthSub) settingsAuthSub.textContent = 'Sincronizzazione in tempo reale attiva';
+  } else {
+    if (authLoggedOutView) authLoggedOutView.style.display = 'block';
+    if (authLoggedInView) authLoggedInView.style.display = 'none';
+    if (authIndicatorDot) authIndicatorDot.style.background = '#64748b';
+
+    if (settingsAuthLabel) settingsAuthLabel.textContent = '☁️ Sincronizzazione Cloud';
+    if (settingsAuthSub) {
+      if (meta && meta.configured === false) {
+        settingsAuthSub.textContent = 'Configura Firebase per sincronizzare tra device';
+      } else {
+        settingsAuthSub.textContent = 'Accedi per sincronizzare in automatico';
+      }
+    }
+  }
+}
+
+function handleRemoteCloudData(remoteData) {
+  if (!remoteData || typeof remoteData !== 'object') return;
+  console.log('[MarketPulse Cloud] Aggiornamento remoto ricevuto:', remoteData);
+
+  isRemoteUpdateInProgress = true;
+  try {
+    let changed = false;
+
+    if (remoteData.settings && typeof remoteData.settings === 'object') {
+      AppState.settings = Object.assign(AppState.settings, remoteData.settings);
+      localStorage.setItem('marketpulse_settings', JSON.stringify(AppState.settings));
+      changed = true;
+    }
+
+    if (remoteData.portfolio && typeof remoteData.portfolio === 'object') {
+      AppState.portfolio = remoteData.portfolio;
+      localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
+      changed = true;
+    }
+
+    if (remoteData.portfolioSort) {
+      AppState.portfolioSort = remoteData.portfolioSort;
+      localStorage.setItem('marketpulse_portfolio_sort', AppState.portfolioSort);
+      document.querySelectorAll('.port-sort-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-sort') === AppState.portfolioSort);
+      });
+      changed = true;
+    }
+
+    if (Array.isArray(remoteData.assets) && remoteData.assets.length > 0) {
+      AppState.assets = remoteData.assets;
+      localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
+      changed = true;
+    }
+
+    if (remoteData.notes && typeof remoteData.notes === 'object') {
+      Object.keys(remoteData.notes).forEach(k => {
+        if (k.startsWith('marketpulse_notes_')) {
+          localStorage.setItem(k, remoteData.notes[k]);
+        }
+      });
+      if (AppState.selectedAsset) {
+        loadNotesForAsset(AppState.selectedAsset);
+      }
+    }
+
+    if (changed) {
+      renderAssetList();
+      updateSelectedAssetHeader();
+      if (AppState.activeTab === 'portfolio') {
+        updatePortfolioOverview();
+      }
+    }
+  } finally {
+    setTimeout(() => { isRemoteUpdateInProgress = false; }, 300);
+  }
+}
+
+function getLocalBackupPayload() {
+  const notesObj = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('marketpulse_notes_')) {
+      notesObj[key] = localStorage.getItem(key);
+    }
+  }
+  return {
+    settings: AppState.settings,
+    portfolio: AppState.portfolio,
+    portfolioSort: AppState.portfolioSort || localStorage.getItem('marketpulse_portfolio_sort') || 'best',
+    assets: AppState.assets,
+    notes: notesObj
+  };
+}
+
+function initFirebaseBackground() {
+  getFirebaseModule().then(mod => {
+    if (mod) {
+      mod.initFirebaseSync({
+        onAuthUpdate: handleAuthStateUpdate,
+        onDataUpdate: handleRemoteCloudData,
+        getLocalState: getLocalBackupPayload
       });
     }
   });
