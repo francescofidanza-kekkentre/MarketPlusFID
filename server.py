@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MarketPulse Pro - Local Server & Financial API Proxy for Chromebook (ChromeOS)
+MarketPulse Pro - Local Server & Financial API Proxy
 Zero-dependency, uses Python standard library only.
 """
 
@@ -421,9 +421,9 @@ def run_server():
             continue
 
     print("=" * 65)
-    print(" 🚀 MarketPulse Pro • Server Chromebook Avviato con Successo!")
+    print(" 🚀 MarketPulse Pro • Server Avviato con Successo!")
     print("=" * 65)
-    print(f" • Apri nel browser Chrome su Chromebook: http://localhost:{port}")
+    print(f" • Apri nel browser: http://localhost:{port}")
     print(" • Per installare come app nativa: Clicca l'icona 'Installa App' nella barra")
     print("   oppure clicca l'icona di installazione nella barra degli indirizzi di Chrome.")
     print("=" * 65)

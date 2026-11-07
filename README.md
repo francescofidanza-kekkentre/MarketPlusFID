@@ -1,14 +1,14 @@
-# 📈 MarketPulse Pro • Chromebook Trading & Portfolio PWA
+# 📈 MarketPulse Pro • Trading & Portfolio PWA
 
-**MarketPulse Pro** è un'applicazione moderna, veloce e reattiva progettata specificamente per **Chromebook (ChromeOS)**. Permette di monitorare in tempo reale **Azioni, ETF e Criptovalute**, analizzare i grafici tecnici professionali con indicatori chiave e supportare le decisioni di trading attraverso il calcolo matematico della posizione (Position Sizing) e la gestione del rischio.
+**MarketPulse Pro** è un'applicazione moderna, veloce e reattiva per **Desktop e Mobile (iOS / Android / ChromeOS / PC / Mac)**. Permette di monitorare in tempo reale **Azioni, ETF e Criptovalute**, analizzare i grafici tecnici professionali con indicatori chiave, supportare le decisioni di trading attraverso il calcolo matematico della posizione (Position Sizing) e valutazioni basate su intelligenza artificiale.
 
 ---
 
 ## 🌟 Caratteristiche Principali
 
-### 1. Esperienza Nativa per Chromebook (PWA)
-- **Installabile con 1 Clic**: Grazie al manifest PWA e al Service Worker integrato, l'app può essere installata come finestra nativa autonoma (`display: standalone`) sulla barra/dock di ChromeOS.
-- **Supporto Touch e Tastiera Fisica**: Navigazione ottimizzata sia per l'uso laptop con touchpad/tastiera sia per Chromebook convertibili touch.
+### 1. Esperienza Nativa Cross-Platform (PWA)
+- **Installabile con 1 Clic**: Grazie al manifest PWA e al Service Worker integrato, l'app può essere installata come applicazione nativa sia su Desktop che su Mobile (iOS & Android).
+- **Supporto Touch e Tastiera Fisica**: Navigazione ottimizzata sia per l'uso smartphone/tablet touch sia per PC, Mac e Chromebook con touchpad e tastiera fisica.
 - **Scorciatoie da Tastiera Veloci**:
   - `/` : Focus immediato sulla barra di ricerca del ticker
   - `1`, `2`, `3`, `4`, `5` : Cambio timeframe rapido (1G, 1S, 1M, 3M, 1A)

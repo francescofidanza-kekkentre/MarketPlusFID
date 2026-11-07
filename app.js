@@ -1,6 +1,6 @@
 /**
  * MarketPulse Pro - Core Application Logic
- * Optimized for Chromebook (ChromeOS), Responsive Touch & Keyboard shortcuts.
+ * Desktop & Mobile Responsive Trading PWA with Touch & Keyboard shortcuts.
  */
 
 // --- Default Asset Database ---
@@ -3862,7 +3862,7 @@ function setupModals() {
   });
 }
 
-// --- Chromebook Keyboard Shortcuts ---
+// --- Keyboard Shortcuts ---
 function setupKeyboardShortcuts() {
   window.addEventListener('keydown', (e) => {
     const isInputFocused = document.activeElement &&
@@ -3916,7 +3916,7 @@ function setupPWA() {
       window.location.reload();
     });
 
-    navigator.serviceWorker.register('./sw.js?v=20').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=21').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});
