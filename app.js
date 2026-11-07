@@ -1523,8 +1523,10 @@ function showChartNoData(asset) {
   const dpr = window.devicePixelRatio || 1;
   const width = wrapper.clientWidth || 600;
   const height = wrapper.clientHeight || 320;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
@@ -1543,7 +1545,9 @@ function showChartNoData(asset) {
   // Clear indicator canvases too
   ['rsiCanvas', 'macdCanvas'].forEach(id => {
     const c = document.getElementById(id);
-    if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    if (c) {
+      c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    }
   });
 }
 
@@ -1684,12 +1688,16 @@ function renderMainChart(bars) {
   if (!canvas || !wrapper) return;
 
   const dpr = window.devicePixelRatio || 1;
-  const width = wrapper.clientWidth;
-  const height = wrapper.clientHeight;
+  const width = wrapper.clientWidth || 360;
+  const height = wrapper.clientHeight || 290;
 
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+
   const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
 
   ctx.clearRect(0, 0, width, height);
@@ -1951,12 +1959,15 @@ function renderRsiChart(bars) {
   wrapper.style.display = 'block';
 
   const dpr = window.devicePixelRatio || 1;
-  const width = wrapper.clientWidth;
-  const height = wrapper.clientHeight;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  const width = wrapper.clientWidth || 360;
+  const height = wrapper.clientHeight || 100;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
 
   const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, width, height);
 
@@ -1992,10 +2003,18 @@ function renderRsiChart(bars) {
   ctx.strokeStyle = '#c084fc'; // Purple neon
   ctx.lineWidth = 1.8;
   ctx.beginPath();
+  let firstValid = true;
   bars.forEach((b, i) => {
-    const x = i * stepX + stepX / 2;
-    const y = getY(b.rsi || 50);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (b.rsi != null && !isNaN(b.rsi)) {
+      const x = i * stepX + stepX / 2;
+      const y = Math.max(2, Math.min(height - 2, getY(b.rsi)));
+      if (firstValid) {
+        ctx.moveTo(x, y);
+        firstValid = false;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
   });
   ctx.stroke();
 
@@ -2017,12 +2036,15 @@ function renderMacdChart(bars) {
   wrapper.style.display = 'block';
 
   const dpr = window.devicePixelRatio || 1;
-  const width = wrapper.clientWidth;
-  const height = wrapper.clientHeight;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  const width = wrapper.clientWidth || 360;
+  const height = wrapper.clientHeight || 100;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
 
   const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, width, height);
 
@@ -3885,7 +3907,7 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=16').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=17').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       reg.update().catch(() => {});
     }).catch(err => {
