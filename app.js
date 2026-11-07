@@ -5171,7 +5171,7 @@ function setupModals() {
         if (msg.includes('popup-closed-by-user')) {
           msg = 'Finestra di accesso chiusa dall\'utente.';
         } else if (msg.includes('unauthorized-domain')) {
-          msg = 'Dominio non autorizzato su Firebase Console (Settings > Authorized domains).';
+          msg = `Dominio "${location.hostname}" non autorizzato. Apri l'app da http://localhost:8000 oppure aggiungi "${location.hostname}" nella console Firebase (Authentication > Impostazioni > Domini autorizzati).`;
         } else if (msg.includes('Firebase non configurato')) {
           msg = 'Inserisci prima la configurazione del tuo progetto Firebase qui sotto.';
         }
