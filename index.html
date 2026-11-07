@@ -24,7 +24,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
 
@@ -84,7 +84,7 @@
       </div>
       <div class="watchlist-controls">
         <div class="category-chips">
-          <button class="chip-btn active" data-filter="all">Tutti</button>
+          <button class="chip-btn active" data-filter="portfolio">💼 Portafoglio</button>
           <button class="chip-btn" data-filter="stock">Azioni</button>
           <button class="chip-btn" data-filter="etf">ETF</button>
           <button class="chip-btn" data-filter="crypto">Crypto</button>
@@ -116,6 +116,7 @@
       <div class="asset-header-bar" id="section-chart">
         <div class="ticker-identity">
           <button id="favoriteToggleBtn" class="fav-toggle-btn" title="Aggiungi/Rimuovi dai preferiti">★</button>
+          <button id="headerPortfolioBtn" class="fav-toggle-btn" title="Aggiungi o modifica nel Portafoglio" style="color: #38bdf8;">💼</button>
           <div class="ticker-titles">
             <h2 id="activeSymbol">NVDA <span class="asset-type-badge type-stock" id="activeType">AZIONE</span></h2>
             <p style="display: flex; align-items: center; gap: 8px;">
@@ -631,6 +632,64 @@
 
   </main>
 
+  <!-- MODAL: Manage Portfolio Position -->
+  <div class="modal-backdrop" id="modalPortfolio">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 style="font-size: 1.1rem; font-weight: 700;">💼 Gestione Posizione Portafoglio</h3>
+        <button class="modal-close" id="closePortfolioModal">&times;</button>
+      </div>
+
+      <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span style="font-size: 1.05rem; font-weight: 800; font-family: var(--font-mono); color: #fff;" id="portModalSymbol">NVDA</span>
+            <span class="asset-type-badge type-stock" id="portModalType">AZIONE</span>
+          </div>
+          <div style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;" id="portModalCurrentPrice">$142.60</div>
+        </div>
+        <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 2px;" id="portModalName">NVIDIA Corporation</div>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Numero Quote / Quantità Posseduta<span class="helper">Es. 15 quote o 0.25 BTC</span></label>
+        <div class="input-with-affix">
+          <span class="input-affix">#</span>
+          <input type="number" id="portInputShares" class="calc-input" placeholder="es. 10" step="any" min="0.0001">
+        </div>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Prezzo Medio di Acquisto (PMC)<span class="helper" id="portUseCurrentPriceBtn" style="color: var(--accent-blue); cursor: pointer; text-decoration: underline;">Usa prezzo attuale</span></label>
+        <div class="input-with-affix">
+          <span class="input-affix" id="portCurrencyAffix">€</span>
+          <input type="number" id="portInputBuyPrice" class="calc-input" placeholder="es. 120.50" step="any" min="0.0001">
+        </div>
+      </div>
+
+      <!-- Live Preview of Position Value & PnL -->
+      <div class="port-modal-preview-box" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin-top: 10px;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--text-muted); margin-bottom: 4px;">
+          <span>Capitale Investito (PMC):</span>
+          <strong style="color: #fff;" id="portPreviewInvested">—</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--text-muted); margin-bottom: 4px;">
+          <span>Valore Attuale Posizione:</span>
+          <strong style="color: #fff;" id="portPreviewCurrentVal">—</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 6px; margin-top: 4px;">
+          <span>P&L Stimato:</span>
+          <span id="portPreviewPnl">—</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 14px;">
+        <button id="savePortfolioBtn" class="btn-primary" style="flex: 2;">Salva nel Portafoglio</button>
+        <button id="deletePortfolioBtn" class="btn-secondary" style="flex: 1; display: none; color: #f87171; border-color: rgba(239, 68, 68, 0.4);">Rimuovi</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Add Custom Asset -->
   <div class="modal-backdrop" id="modalAddTicker">
     <div class="modal-window">
@@ -751,6 +810,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>

@@ -189,7 +189,8 @@ const DEFAULT_ASSETS = [
 const AppState = {
   assets: [],
   selectedAsset: null,
-  activeFilter: 'all',
+  activeFilter: 'portfolio',
+  portfolio: {},
   activeTimeframe: '1M',
   chartType: 'candles', // 'candles' or 'line'
   indicators: {
@@ -213,6 +214,21 @@ const AppState = {
   crosshair: null,
   deferredPrompt: null
 };
+
+const DEFAULT_PORTFOLIO = {
+  'NVDA': { shares: 15, buyPrice: 120.00, updatedAt: Date.now() },
+  'ALO.PA': { shares: 100, buyPrice: 11.20, updatedAt: Date.now() },
+  'BTC': { shares: 0.05, buyPrice: 64200.00, updatedAt: Date.now() },
+  'NLBNPIT1Z123': { shares: 20, buyPrice: 98.40, updatedAt: Date.now() }
+};
+
+function savePortfolioToStorage() {
+  try {
+    localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
+  } catch (e) {
+    console.error('[MarketPulse] Error saving portfolio:', e);
+  }
+}
 
 const HISTORY_STORAGE_KEY = 'marketpulse_history_v4';
 const INCREMENTAL_SYNC_COOLDOWN_MS = 10000; // Minimum interval between incremental candle fetches per key
@@ -337,6 +353,19 @@ function loadStoredData() {
   });
   if (hasNewCert) {
     saveAssetsToStorage();
+  }
+
+  // Load persisted portfolio positions
+  const storedPortfolio = localStorage.getItem('marketpulse_portfolio');
+  if (storedPortfolio) {
+    try {
+      AppState.portfolio = JSON.parse(storedPortfolio);
+    } catch (e) {
+      AppState.portfolio = Object.assign({}, DEFAULT_PORTFOLIO);
+    }
+  } else {
+    AppState.portfolio = Object.assign({}, DEFAULT_PORTFOLIO);
+    savePortfolioToStorage();
   }
 }
 
@@ -1123,6 +1152,187 @@ async function pollLivePrices() {
   }
 }
 
+// --- Portfolio Logic & AI Advice ---
+function getPortfolioAiAdvice(asset, pos, currentPrice) {
+  const buyPrice = pos.buyPrice;
+  const pnlPct = buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0;
+  const bars = AppState.cachedBars[`${asset.symbol}_DAILY`] || AppState.cachedBars[`${asset.symbol}_1M`] || [];
+  const lastBar = bars.length > 0 ? bars[bars.length - 1] : null;
+  const rsi = (lastBar && lastBar.rsi != null) ? lastBar.rsi : 50;
+  const ema50 = lastBar ? lastBar.ema50 : null;
+
+  if (asset.type === 'certificate') {
+    const certData = asset.certificateData || {};
+    const barrier = certData.barrierPct || 60;
+    if (pnlPct >= 5 && currentPrice >= 100) {
+      return {
+        action: 'PRENDI PROFITTO',
+        badgeClass: 'ai-advice-sell',
+        text: 'Quota sopra il nominale (100€): rendimento residuo ridotto, valuta realizzo.'
+      };
+    }
+    return {
+      action: 'MANTIENI',
+      badgeClass: 'ai-advice-hold',
+      text: `Barriera al ${barrier}% con cuscino favorevole: mantieni per incasso cedolare.`
+    };
+  }
+
+  // Extreme overbought or large profit
+  if (pnlPct >= 20 && rsi >= 68) {
+    return {
+      action: 'PRENDI PROFITTO',
+      badgeClass: 'ai-advice-sell',
+      text: `Guadagno del +${pnlPct.toFixed(1)}% con RSI in ipercomprato (${rsi.toFixed(0)}): consigliato alleggerire o alzare trailing stop.`
+    };
+  }
+
+  // Significant loss below EMA50
+  if (pnlPct <= -10 && ema50 && currentPrice < ema50) {
+    return {
+      action: 'VALUTA STOP',
+      badgeClass: 'ai-advice-sell',
+      text: `Perdita del ${pnlPct.toFixed(1)}% sotto la media EMA50: valuta stop loss rigoroso per preservare il capitale.`
+    };
+  }
+
+  // Oversold / Pullback in constructive structure
+  if (rsi <= 42 && (ema50 ? currentPrice >= ema50 * 0.96 : true)) {
+    return {
+      action: 'ACCUMULA',
+      badgeClass: 'ai-advice-buy',
+      text: `RSI a ${rsi.toFixed(0)} su livelli di supporto favorevoli: buon punto per incrementare la posizione.`
+    };
+  }
+
+  // Profitable position with healthy momentum
+  if (pnlPct > 0 && rsi < 68) {
+    return {
+      action: 'MANTIENI',
+      badgeClass: 'ai-advice-hold',
+      text: `P&L positivo (+${pnlPct.toFixed(1)}%) e trend solido sopra i supporti: mantieni il trade aperto.`
+    };
+  }
+
+  // Neutral consolidation
+  return {
+    action: 'ATTESA',
+    badgeClass: 'ai-advice-wait',
+    text: `Fase di consolidamento laterale (RSI ${rsi.toFixed(0)}): monitora i livelli chiave prima di operare.`
+  };
+}
+
+let currentPortfolioModalSymbol = null;
+
+function openPortfolioModal(symbol) {
+  const asset = AppState.assets.find(a => a.symbol === symbol);
+  if (!asset) return;
+
+  currentPortfolioModalSymbol = symbol;
+  const pos = AppState.portfolio ? AppState.portfolio[symbol] : null;
+  const isExisting = Boolean(pos);
+
+  const symEl = document.getElementById('portModalSymbol');
+  const typeEl = document.getElementById('portModalType');
+  const nameEl = document.getElementById('portModalName');
+  const priceEl = document.getElementById('portModalCurrentPrice');
+  const inShares = document.getElementById('portInputShares');
+  const inBuyPrice = document.getElementById('portInputBuyPrice');
+  const curAffix = document.getElementById('portCurrencyAffix');
+  const btnDelete = document.getElementById('deletePortfolioBtn');
+  const btnSave = document.getElementById('savePortfolioBtn');
+
+  if (symEl) symEl.textContent = asset.symbol;
+  if (typeEl) {
+    typeEl.textContent = asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase();
+    typeEl.className = `asset-type-badge type-${asset.type}`;
+  }
+  if (nameEl) nameEl.textContent = asset.name;
+  if (priceEl) priceEl.textContent = asset.price != null ? formatCurrency(asset.price, asset) : '—';
+  if (curAffix) curAffix.textContent = getCurrencySymbol(asset) || '€';
+
+  if (inShares) inShares.value = isExisting ? pos.shares : '';
+  if (inBuyPrice) inBuyPrice.value = isExisting ? pos.buyPrice : (asset.price != null ? asset.price : '');
+
+  if (btnDelete) btnDelete.style.display = isExisting ? 'inline-block' : 'none';
+  if (btnSave) btnSave.textContent = isExisting ? 'Aggiorna Posizione' : 'Salva nel Portafoglio';
+
+  updatePortfolioModalPreview(asset);
+
+  const modal = document.getElementById('modalPortfolio');
+  if (modal) modal.classList.add('open');
+}
+
+function updatePortfolioModalPreview(asset) {
+  const symbol = currentPortfolioModalSymbol;
+  const curAsset = asset || AppState.assets.find(a => a.symbol === symbol);
+  if (!curAsset) return;
+
+  const shares = parseFloat(document.getElementById('portInputShares')?.value) || 0;
+  const buyPrice = parseFloat(document.getElementById('portInputBuyPrice')?.value) || 0;
+  const curPrice = curAsset.price != null ? curAsset.price : buyPrice;
+
+  const invested = shares * buyPrice;
+  const curVal = shares * curPrice;
+  const pnlCash = curVal - invested;
+  const pnlPct = invested > 0 ? (pnlCash / invested) * 100 : 0;
+  const isUp = pnlCash >= 0;
+
+  const elInvested = document.getElementById('portPreviewInvested');
+  const elCurVal = document.getElementById('portPreviewCurrentVal');
+  const elPnl = document.getElementById('portPreviewPnl');
+
+  if (elInvested) elInvested.textContent = formatCurrency(invested, curAsset);
+  if (elCurVal) elCurVal.textContent = formatCurrency(curVal, curAsset);
+  if (elPnl) {
+    elPnl.innerHTML = `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${pnlPct.toFixed(2)}% (${isUp ? '+' : ''}${formatCurrency(pnlCash, curAsset)})</span>`;
+  }
+}
+
+function savePortfolioPosition() {
+  const symbol = currentPortfolioModalSymbol;
+  if (!symbol) return;
+
+  const shares = parseFloat(document.getElementById('portInputShares')?.value);
+  const buyPrice = parseFloat(document.getElementById('portInputBuyPrice')?.value);
+
+  if (!shares || shares <= 0 || !buyPrice || buyPrice <= 0) {
+    alert('Inserisci un numero valido di quote e un prezzo medio di acquisto (PMC).');
+    return;
+  }
+
+  if (!AppState.portfolio) AppState.portfolio = {};
+  AppState.portfolio[symbol] = {
+    shares: shares,
+    buyPrice: buyPrice,
+    updatedAt: Date.now()
+  };
+
+  savePortfolioToStorage();
+  closePortfolioModal();
+  renderAssetList();
+  updateSelectedAssetHeader();
+}
+
+function deletePortfolioPosition(symbol) {
+  const sym = symbol || currentPortfolioModalSymbol;
+  if (!sym) return;
+
+  if (AppState.portfolio) {
+    delete AppState.portfolio[sym];
+    savePortfolioToStorage();
+  }
+  closePortfolioModal();
+  renderAssetList();
+  updateSelectedAssetHeader();
+}
+
+function closePortfolioModal() {
+  const modal = document.getElementById('modalPortfolio');
+  if (modal) modal.classList.remove('open');
+  currentPortfolioModalSymbol = null;
+}
+
 // --- Render Left Asset List ---
 function renderAssetList() {
   const container = document.getElementById('assetListContainer');
@@ -1131,6 +1341,167 @@ function renderAssetList() {
   const filter = AppState.activeFilter;
   const search = (document.getElementById('globalSearch').value || '').trim().toUpperCase();
 
+  // --- PORTFOLIO VIEW ---
+  if (filter === 'portfolio') {
+    const portfolioSymbols = Object.keys(AppState.portfolio || {});
+    const portfolioAssets = AppState.assets.filter(asset => {
+      const isOwned = portfolioSymbols.includes(asset.symbol);
+      const matchesSearch = !search ||
+        asset.symbol.toUpperCase().includes(search) ||
+        asset.name.toUpperCase().includes(search);
+      return isOwned && matchesSearch;
+    });
+
+    document.getElementById('assetCountText').textContent = `${portfolioAssets.length} Posizioni in Portafoglio`;
+
+    if (portfolioAssets.length === 0) {
+      container.innerHTML = `
+        <div class="portfolio-empty-state">
+          <div style="font-size: 2.2rem; margin-bottom: 8px;">💼</div>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px;">Portafoglio vuoto</h4>
+          <p style="font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 12px;">
+            Aggiungi qualsiasi azione, ETF, crypto o certificato cliccando sul tasto <strong>💼+</strong> accanto all'asset.
+          </p>
+          <button class="btn-primary" id="btnExploreAssetsFromEmptyPort" style="font-size: 0.75rem; padding: 6px 14px;">
+            Esplora Azioni
+          </button>
+        </div>
+      `;
+      const btnExp = document.getElementById('btnExploreAssetsFromEmptyPort');
+      if (btnExp) {
+        btnExp.onclick = () => {
+          const stockChip = document.querySelector('.chip-btn[data-filter="stock"]');
+          if (stockChip) stockChip.click();
+        };
+      }
+      renderMobileTickerCarousel();
+      return;
+    }
+
+    // Overall portfolio metrics
+    let totalInvested = 0;
+    let totalCurrentValue = 0;
+
+    portfolioAssets.forEach(asset => {
+      const pos = AppState.portfolio[asset.symbol];
+      if (pos) {
+        const curPrice = asset.price != null ? asset.price : pos.buyPrice;
+        totalInvested += (pos.shares * pos.buyPrice);
+        totalCurrentValue += (pos.shares * curPrice);
+      }
+    });
+
+    const totalPnlCash = totalCurrentValue - totalInvested;
+    const totalPnlPct = totalInvested > 0 ? (totalPnlCash / totalInvested) * 100 : 0;
+    const isTotalPnlUp = totalPnlCash >= 0;
+
+    const summaryHtml = `
+      <div class="portfolio-summary-card">
+        <div class="port-sum-row">
+          <div>
+            <div class="port-sum-label">Valore Totale Portafoglio</div>
+            <div class="port-sum-val">${formatCurrency(totalCurrentValue)}</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="port-sum-label">P&L Totale</div>
+            <div class="port-sum-pnl ${isTotalPnlUp ? 'badge-up' : 'badge-down'}">
+              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+' : ''}${formatCurrency(totalPnlCash)})
+            </div>
+          </div>
+        </div>
+        <div class="port-sum-sub">
+          <span>Capitale Investito: <strong>${formatCurrency(totalInvested)}</strong></span>
+          <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
+        </div>
+      </div>
+    `;
+
+    const cardsHtml = portfolioAssets.map(asset => {
+      const pos = AppState.portfolio[asset.symbol];
+      const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
+      const curPrice = asset.price != null ? asset.price : pos.buyPrice;
+      const currentVal = pos.shares * curPrice;
+      const invested = pos.shares * pos.buyPrice;
+      const pnlCash = currentVal - invested;
+      const pnlPct = invested > 0 ? (pnlCash / invested) * 100 : 0;
+      const isPnlUp = pnlCash >= 0;
+      const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset) : '—';
+      const formattedPmc = formatCurrency(pos.buyPrice, asset);
+      const advice = getPortfolioAiAdvice(asset, pos, curPrice);
+
+      return `
+        <div class="portfolio-card ${isSelected ? 'selected' : ''}" data-symbol="${asset.symbol}">
+          <div class="port-card-top">
+            <div class="port-card-identity">
+              <span class="asset-symbol">${asset.symbol}</span>
+              <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : asset.type}</span>
+              <span class="port-shares-pill">${pos.shares} quote</span>
+            </div>
+            <div class="port-card-actions">
+              <button class="port-edit-btn" data-action="edit" data-symbol="${asset.symbol}" title="Modifica posizione">✏️</button>
+              <button class="port-edit-btn" data-action="delete" data-symbol="${asset.symbol}" title="Rimuovi dal portafoglio">🗑️</button>
+            </div>
+          </div>
+
+          <div class="port-card-metrics">
+            <div>
+              <div class="port-metric-sub">PMC: ${formattedPmc} • Attuale: ${formattedPrice}</div>
+              <div class="port-metric-val">Valore: <strong>${formatCurrency(currentVal, asset)}</strong></div>
+            </div>
+            <div class="port-metric-right">
+              <div class="port-pnl-pill ${isPnlUp ? 'badge-up' : 'badge-down'}">
+                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(pnlPct).toFixed(2)}% (${isPnlUp ? '+' : ''}${formatCurrency(pnlCash, asset)})
+              </div>
+            </div>
+          </div>
+
+          <!-- IA Suggestion Box -->
+          <div class="port-ai-advice-box">
+            <div class="port-ai-header">
+              <span class="port-ai-badge ${advice.badgeClass}">IA: ${advice.action}</span>
+            </div>
+            <div class="port-ai-text">${advice.text}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = summaryHtml + cardsHtml;
+
+    // Attach click events on portfolio cards
+    container.querySelectorAll('.portfolio-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const sym = card.getAttribute('data-symbol');
+        const found = AppState.assets.find(a => a.symbol === sym);
+        if (found) {
+          selectAsset(found);
+          if (window.innerWidth <= 900) {
+            const chartSection = document.getElementById('section-chart');
+            if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+          }
+        }
+      });
+    });
+
+    // Attach edit / delete handlers
+    container.querySelectorAll('.port-edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sym = btn.getAttribute('data-symbol');
+        const action = btn.getAttribute('data-action');
+        if (action === 'edit') {
+          openPortfolioModal(sym);
+        } else if (action === 'delete') {
+          deletePortfolioPosition(sym);
+        }
+      });
+    });
+
+    renderMobileTickerCarousel();
+    return;
+  }
+
+  // --- STANDARD ASSET LIST VIEW (Azioni, ETF, Crypto, Certificati, Preferiti) ---
   const filtered = AppState.assets.filter(asset => {
     const matchesFilter = (filter === 'all') ||
       (filter === 'watchlist' && asset.favorite) ||
@@ -1152,6 +1523,7 @@ function renderAssetList() {
     const changeSign = isUp ? '+' : '';
     const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset) : '—';
     const formattedChange = asset.change != null ? `${changeSign}${asset.change.toFixed(2)}%` : '—';
+    const isInPort = Boolean(AppState.portfolio && AppState.portfolio[asset.symbol]);
 
     return `
       <div class="asset-item ${isSelected ? 'selected' : ''}" data-symbol="${asset.symbol}">
@@ -1159,6 +1531,9 @@ function renderAssetList() {
           <div class="asset-symbol-row">
             <span class="asset-symbol">${asset.symbol}</span>
             <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : asset.type}</span>
+            <button class="portfolio-btn ${isInPort ? 'in-portfolio' : ''}" data-symbol="${asset.symbol}" title="${isInPort ? 'In Portafoglio (modifica)' : 'Aggiungi al Portafoglio'}">
+              ${isInPort ? '💼' : '💼+'}
+            </button>
             <button class="delete-btn" title="Elimina asset">🗑️</button>
           </div>
           <span class="asset-name" title="${asset.name}">${asset.name}</span>
@@ -1177,35 +1552,50 @@ function renderAssetList() {
 
   // Attach click events
   container.querySelectorAll('.asset-item').forEach(el => {
-      el.addEventListener('click', () => {
+    el.addEventListener('click', () => {
+      const sym = el.getAttribute('data-symbol');
+      const found = AppState.assets.find(a => a.symbol === sym);
+      if (found) {
+        selectAsset(found);
+        if (window.innerWidth <= 900) {
+          const chartSection = document.getElementById('section-chart');
+          if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    });
+
+    // Portfolio button handler
+    const portBtn = el.querySelector('.portfolio-btn');
+    if (portBtn) {
+      portBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sym = portBtn.getAttribute('data-symbol');
+        openPortfolioModal(sym);
+      });
+    }
+
+    // Delete button handler
+    const deleteBtn = el.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // prevent row selection
         const sym = el.getAttribute('data-symbol');
-        const found = AppState.assets.find(a => a.symbol === sym);
-        if (found) {
-          selectAsset(found);
-          if (window.innerWidth <= 900) {
-            const chartSection = document.getElementById('section-chart');
-            if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+        AppState.assets = AppState.assets.filter(a => a.symbol !== sym);
+        if (AppState.portfolio) {
+          delete AppState.portfolio[sym];
+          savePortfolioToStorage();
+        }
+        for (const key of Object.keys(AppState.cachedBars)) {
+          if (key.startsWith(`${sym}_`)) {
+            delete AppState.cachedBars[key];
+            delete AppState.barsLastUpdated[key];
           }
         }
+        saveAssetsToStorage();
+        saveHistoryToStorage();
+        renderAssetList();
       });
-      // Delete button handler
-      const deleteBtn = el.querySelector('.delete-btn');
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', (e) => {
-          e.stopPropagation(); // prevent row selection
-          const sym = el.getAttribute('data-symbol');
-          AppState.assets = AppState.assets.filter(a => a.symbol !== sym);
-          for (const key of Object.keys(AppState.cachedBars)) {
-            if (key.startsWith(`${sym}_`)) {
-              delete AppState.cachedBars[key];
-              delete AppState.barsLastUpdated[key];
-            }
-          }
-          saveAssetsToStorage();
-          saveHistoryToStorage();
-          renderAssetList();
-        });
-      }
+    }
   });
 }
 
@@ -1259,6 +1649,14 @@ function updateSelectedAssetHeader() {
 
   const favBtn = document.getElementById('favoriteToggleBtn');
   if (favBtn) favBtn.className = `fav-toggle-btn ${asset.favorite ? 'active' : ''}`;
+
+  const portBtn = document.getElementById('headerPortfolioBtn');
+  if (portBtn) {
+    const inPort = Boolean(AppState.portfolio && AppState.portfolio[asset.symbol]);
+    portBtn.className = `fav-toggle-btn ${inPort ? 'active' : ''}`;
+    portBtn.style.color = inPort ? '#38bdf8' : 'var(--text-muted)';
+    portBtn.title = inPort ? 'Posizione in Portafoglio (modifica)' : 'Aggiungi al Portafoglio';
+  }
 
   // Update Data Source Badge
   const sourceBadge = document.getElementById('activeSourceBadge');
@@ -4264,8 +4662,43 @@ function setupModals() {
     });
   }
 
+  // Portfolio Modal
+  const modalPort = document.getElementById('modalPortfolio');
+  const headerPortBtn = document.getElementById('headerPortfolioBtn');
+  const closePortBtn = document.getElementById('closePortfolioModal');
+  const cancelPortBtn = document.getElementById('cancelPortfolioBtn');
+  const savePortBtn = document.getElementById('savePortfolioBtn');
+  const deletePortBtn = document.getElementById('deletePortfolioBtn');
+  const portUseCurrentPriceBtn = document.getElementById('portUseCurrentPriceBtn');
+  const portInputShares = document.getElementById('portInputShares');
+  const portInputBuyPrice = document.getElementById('portInputBuyPrice');
+
+  if (headerPortBtn) {
+    headerPortBtn.addEventListener('click', () => {
+      if (AppState.selectedAsset) {
+        openPortfolioModal(AppState.selectedAsset.symbol);
+      }
+    });
+  }
+  if (closePortBtn) closePortBtn.addEventListener('click', closePortfolioModal);
+  if (cancelPortBtn) cancelPortBtn.addEventListener('click', closePortfolioModal);
+  if (savePortBtn) savePortBtn.addEventListener('click', savePortfolioPosition);
+  if (deletePortBtn) deletePortBtn.addEventListener('click', () => deletePortfolioPosition());
+  if (portInputShares) portInputShares.addEventListener('input', () => updatePortfolioModalPreview());
+  if (portInputBuyPrice) portInputBuyPrice.addEventListener('input', () => updatePortfolioModalPreview());
+  if (portUseCurrentPriceBtn) {
+    portUseCurrentPriceBtn.addEventListener('click', () => {
+      const sym = currentPortfolioModalSymbol;
+      const asset = AppState.assets.find(a => a.symbol === sym);
+      if (asset && asset.price != null && portInputBuyPrice) {
+        portInputBuyPrice.value = asset.price;
+        updatePortfolioModalPreview(asset);
+      }
+    });
+  }
+
   // Close modals on clicking backdrop
-  [modalAdd, modalShortcuts, modalSettings].forEach(m => {
+  [modalAdd, modalShortcuts, modalSettings, modalPort].forEach(m => {
     if (m) {
       m.addEventListener('click', (e) => {
         if (e.target === m) m.classList.remove('open');
@@ -4328,7 +4761,7 @@ function setupPWA() {
       window.location.reload();
     });
 
-    navigator.serviceWorker.register('./sw.js?v=22').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=23').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});
