@@ -20,8 +20,8 @@ export function getFirebaseConfig() {
     const custom = localStorage.getItem('marketpulse_firebase_config');
     if (custom) {
       const parsed = JSON.parse(custom);
-      if (parsed && parsed.apiKey && parsed.projectId) {
-        return parsed;
+      if (parsed && parsed.apiKey && parsed.projectId && parsed.appId) {
+        return Object.assign({}, DEFAULT_FIREBASE_CONFIG, parsed);
       }
     }
   } catch (e) {

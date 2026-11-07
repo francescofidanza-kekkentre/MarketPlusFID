@@ -5140,7 +5140,11 @@ function setupModals() {
         if (msg.includes('user-not-found') || msg.includes('wrong-password') || msg.includes('invalid-credential')) {
           msg = 'Credenziali non valide o utente non trovato.';
         } else if (msg.includes('email-already-in-use')) {
-          msg = 'Questa email è già registrata. Clicca su "Accedi".';
+          msg = 'Questa email è già registrata. Clicca sul tab "Accedi".';
+        } else if (msg.includes('operation-not-allowed')) {
+          msg = 'Il metodo Email/Password non è ancora abilitato su Firebase (vai su Authentication > Provider di accesso > Email/Password e attivalo).';
+        } else if (msg.includes('unauthorized-domain')) {
+          msg = `Dominio "${location.hostname}" non autorizzato su Firebase. Aggiungi "${location.hostname}" in Authentication > Impostazioni > Domini autorizzati.`;
         } else if (msg.includes('Firebase non configurato')) {
           msg = 'Progetto Firebase non ancora configurato. Apri "⚙️ Configurazione Progetto Firebase" qui sotto per inserire le tue credenziali.';
         }
@@ -5169,9 +5173,11 @@ function setupModals() {
         console.error('Google Sign-In error:', err);
         let msg = err.message || 'Errore accesso con Google';
         if (msg.includes('popup-closed-by-user')) {
-          msg = 'Finestra di accesso chiusa dall\'utente.';
+          msg = 'Finestra di accesso chiusa prima del completamento.';
+        } else if (msg.includes('operation-not-allowed')) {
+          msg = 'Il provider Google non è ancora abilitato su Firebase (vai su Authentication > Provider di accesso > Google e attivalo).';
         } else if (msg.includes('unauthorized-domain')) {
-          msg = `Dominio "${location.hostname}" non autorizzato. Apri l'app da http://localhost:8000 oppure aggiungi "${location.hostname}" nella console Firebase (Authentication > Impostazioni > Domini autorizzati).`;
+          msg = `Dominio "${location.hostname}" non autorizzato su Firebase. Aggiungi "${location.hostname}" in Authentication > Impostazioni > Domini autorizzati.`;
         } else if (msg.includes('Firebase non configurato')) {
           msg = 'Inserisci prima la configurazione del tuo progetto Firebase qui sotto.';
         }
