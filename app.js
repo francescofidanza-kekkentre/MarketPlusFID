@@ -191,6 +191,7 @@ const AppState = {
   selectedAsset: null,
   activeFilter: 'portfolio',
   portfolio: {},
+  portfolioSort: 'pnl', // 'pnl' (dal migliore al peggiore) or 'alpha' (alfabetico)
   activeTimeframe: '1M',
   chartType: 'candles', // 'candles' or 'line'
   indicators: {
@@ -379,6 +380,12 @@ function loadStoredData() {
   } else {
     AppState.portfolio = Object.assign({}, DEFAULT_PORTFOLIO);
     savePortfolioToStorage();
+  }
+
+  // Load persisted portfolio sort mode
+  const storedSort = localStorage.getItem('marketpulse_portfolio_sort');
+  if (storedSort === 'pnl' || storedSort === 'alpha') {
+    AppState.portfolioSort = storedSort;
   }
 }
 
@@ -1413,8 +1420,19 @@ function renderAssetList() {
   const filter = AppState.activeFilter;
   const search = (document.getElementById('globalSearch').value || '').trim().toUpperCase();
 
+  // Toggle visibility of Portfolio Sort Bar (shown only in Portfolio tab)
+  const sortBar = document.getElementById('portfolioSortBar');
+  if (sortBar) {
+    sortBar.style.display = (filter === 'portfolio') ? 'flex' : 'none';
+  }
+
   // --- PORTFOLIO VIEW ---
   if (filter === 'portfolio') {
+    // Sync active state of sort buttons
+    document.querySelectorAll('.port-sort-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-sort') === AppState.portfolioSort);
+    });
+
     const portfolioSymbols = Object.keys(AppState.portfolio || {});
     const portfolioAssets = AppState.assets.filter(asset => {
       const isOwned = portfolioSymbols.includes(asset.symbol);
@@ -1448,6 +1466,22 @@ function renderAssetList() {
       }
       renderMobileTickerCarousel();
       return;
+    }
+
+    // Sort portfolio positions based on active toggle
+    if (AppState.portfolioSort === 'alpha') {
+      portfolioAssets.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    } else {
+      // Default: 'pnl' (dal migliore al peggiore in % di rendimento)
+      portfolioAssets.sort((a, b) => {
+        const posA = AppState.portfolio[a.symbol];
+        const posB = AppState.portfolio[b.symbol];
+        const curA = a.price != null ? a.price : (posA?.buyPrice || 0);
+        const curB = b.price != null ? b.price : (posB?.buyPrice || 0);
+        const pnlPctA = (posA && posA.buyPrice > 0) ? ((curA - posA.buyPrice) / posA.buyPrice) * 100 : -Infinity;
+        const pnlPctB = (posB && posB.buyPrice > 0) ? ((curB - posB.buyPrice) / posB.buyPrice) * 100 : -Infinity;
+        return pnlPctB - pnlPctA; // descending
+      });
     }
 
     // Overall portfolio metrics in EUR
@@ -3761,6 +3795,23 @@ function setupEventListeners() {
       btn.classList.add('active');
       AppState.activeFilter = btn.getAttribute('data-filter');
       renderAssetList();
+    });
+  });
+
+  // Portfolio Sorting Toggle
+  document.querySelectorAll('.port-sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sortMode = btn.getAttribute('data-sort');
+      if (sortMode && (sortMode === 'pnl' || sortMode === 'alpha')) {
+        AppState.portfolioSort = sortMode;
+        try {
+          localStorage.setItem('marketpulse_portfolio_sort', sortMode);
+        } catch (e) {}
+        document.querySelectorAll('.port-sort-btn').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-sort') === sortMode);
+        });
+        renderAssetList();
+      }
     });
   });
 
