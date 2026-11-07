@@ -3916,7 +3916,7 @@ function setupPWA() {
       window.location.reload();
     });
 
-    navigator.serviceWorker.register('./sw.js?v=19').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=20').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});
