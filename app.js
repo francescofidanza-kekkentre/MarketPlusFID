@@ -200,8 +200,11 @@ const AppState = {
     macd: false
   },
   settings: {
-    currency: 'USD',
+    currency: 'EUR',
     refreshRate: 5000
+  },
+  fxRates: {
+    EURUSD: 1.085 // 1 EUR = 1.085 USD (1 USD = ~0.9217 EUR)
   },
   cachedBars: {}, // symbol_DAILY, symbol_INTRADAY, or symbol_timeframe -> []
   renderedBars: [], // currently visible slice of bars on screen
@@ -618,7 +621,7 @@ function inferCurrencyFromSymbolOrExchange(sym = '', exchange = '') {
 }
 
 function getCurrencySymbol(assetOrCurrency) {
-  let code = 'USD';
+  let code = AppState.settings?.currency || 'EUR';
   if (typeof assetOrCurrency === 'string') {
     const upper = assetOrCurrency.trim().toUpperCase();
     if (upper && upper !== 'STOCK' && upper !== 'ETF' && upper !== 'CRYPTO') {
@@ -643,7 +646,33 @@ function getCurrencySymbol(assetOrCurrency) {
     'AUD': 'A$',
     'HKD': 'HK$'
   };
-  return map[code] || (code && code.length <= 4 ? `${code} ` : '$');
+  return map[code] || (code && code.length <= 4 ? `${code} ` : '€');
+}
+
+function getEurRate(assetOrCurrency) {
+  let cur = 'EUR';
+  if (typeof assetOrCurrency === 'string') {
+    cur = assetOrCurrency.trim().toUpperCase();
+  } else if (assetOrCurrency && assetOrCurrency.currency) {
+    cur = String(assetOrCurrency.currency).trim().toUpperCase();
+  }
+  if (cur === 'EUR') return 1.0;
+  if (cur === 'USD' || cur === 'USDT') {
+    return AppState.fxRates?.EURUSD || 1.085;
+  }
+  if (cur === 'GBP') {
+    return (AppState.fxRates?.EURUSD || 1.085) / 1.28;
+  }
+  if (cur === 'CHF') {
+    return (AppState.fxRates?.EURUSD || 1.085) / 1.08;
+  }
+  return 1.0;
+}
+
+function convertToEur(val, assetOrCurrency) {
+  if (val === undefined || val === null || isNaN(val)) return 0;
+  const rate = getEurRate(assetOrCurrency);
+  return val / (rate || 1.0);
 }
 
 function getStooqSymbol(asset) {
@@ -1068,6 +1097,20 @@ async function fetchStockQuoteKeyless(asset) {
 
 // --- Polling Live Prices (Keyless & Native CORS: Binance for Crypto + CNBC/Wall St. for Stocks/ETFs) ---
 async function pollLivePrices() {
+  // 0. Fetch live EUR/USD FX rate for real-time portfolio valuation in €
+  try {
+    fetch('https://api.binance.com/api/v3/ticker/price?symbol=EURUSDT')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.price) {
+          const rate = parseFloat(data.price);
+          if (rate > 0.5 && rate < 2.0) {
+            AppState.fxRates.EURUSD = rate;
+          }
+        }
+      }).catch(() => {});
+  } catch (e) {}
+
   // 1. Fetch real crypto tickers from Binance API (CORS friendly, keyless)
   try {
     const cryptoSymbols = AppState.assets.filter(a => a.type === 'crypto');
@@ -1248,7 +1291,18 @@ function openPortfolioModal(symbol) {
     typeEl.className = `asset-type-badge type-${asset.type}`;
   }
   if (nameEl) nameEl.textContent = asset.name;
-  if (priceEl) priceEl.textContent = asset.price != null ? formatCurrency(asset.price, asset) : '—';
+  if (priceEl) {
+    if (asset.price != null) {
+      if ((asset.currency || '').toUpperCase() !== 'EUR') {
+        const pEur = convertToEur(asset.price, asset);
+        priceEl.innerHTML = `${formatCurrency(asset.price, asset)} <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">(~${formatCurrency(pEur, 'EUR')})</span>`;
+      } else {
+        priceEl.textContent = formatCurrency(asset.price, asset);
+      }
+    } else {
+      priceEl.textContent = '—';
+    }
+  }
   if (curAffix) curAffix.textContent = getCurrencySymbol(asset) || '€';
 
   if (inShares) inShares.value = isExisting ? pos.shares : '';
@@ -1278,14 +1332,22 @@ function updatePortfolioModalPreview(asset) {
   const pnlPct = invested > 0 ? (pnlCash / invested) * 100 : 0;
   const isUp = pnlCash >= 0;
 
+  const investedEur = convertToEur(invested, curAsset);
+  const curValEur = convertToEur(curVal, curAsset);
+  const pnlCashEur = convertToEur(pnlCash, curAsset);
+
   const elInvested = document.getElementById('portPreviewInvested');
   const elCurVal = document.getElementById('portPreviewCurrentVal');
   const elPnl = document.getElementById('portPreviewPnl');
 
-  if (elInvested) elInvested.textContent = formatCurrency(invested, curAsset);
-  if (elCurVal) elCurVal.textContent = formatCurrency(curVal, curAsset);
+  const isNonEur = (curAsset.currency || '').toUpperCase() !== 'EUR';
+  const nativeInvested = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(invested, curAsset)})</span>` : '';
+  const nativeCurVal = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(curVal, curAsset)})</span>` : '';
+
+  if (elInvested) elInvested.innerHTML = `${formatCurrency(investedEur, 'EUR')}${nativeInvested}`;
+  if (elCurVal) elCurVal.innerHTML = `${formatCurrency(curValEur, 'EUR')}${nativeCurVal}`;
   if (elPnl) {
-    elPnl.innerHTML = `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${pnlPct.toFixed(2)}% (${isUp ? '+' : ''}${formatCurrency(pnlCash, curAsset)})</span>`;
+    elPnl.innerHTML = `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${pnlPct.toFixed(2)}% (${isUp ? '+' : ''}${formatCurrency(pnlCashEur, 'EUR')})</span>`;
   }
 }
 
@@ -1378,39 +1440,41 @@ function renderAssetList() {
       return;
     }
 
-    // Overall portfolio metrics
-    let totalInvested = 0;
-    let totalCurrentValue = 0;
+    // Overall portfolio metrics in EUR
+    let totalInvestedEur = 0;
+    let totalCurrentValueEur = 0;
 
     portfolioAssets.forEach(asset => {
       const pos = AppState.portfolio[asset.symbol];
       if (pos) {
         const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-        totalInvested += (pos.shares * pos.buyPrice);
-        totalCurrentValue += (pos.shares * curPrice);
+        const investedNative = pos.shares * pos.buyPrice;
+        const currentValNative = pos.shares * curPrice;
+        totalInvestedEur += convertToEur(investedNative, asset);
+        totalCurrentValueEur += convertToEur(currentValNative, asset);
       }
     });
 
-    const totalPnlCash = totalCurrentValue - totalInvested;
-    const totalPnlPct = totalInvested > 0 ? (totalPnlCash / totalInvested) * 100 : 0;
-    const isTotalPnlUp = totalPnlCash >= 0;
+    const totalPnlCashEur = totalCurrentValueEur - totalInvestedEur;
+    const totalPnlPct = totalInvestedEur > 0 ? (totalPnlCashEur / totalInvestedEur) * 100 : 0;
+    const isTotalPnlUp = totalPnlCashEur >= 0;
 
     const summaryHtml = `
       <div class="portfolio-summary-card">
         <div class="port-sum-row">
           <div>
             <div class="port-sum-label">Valore Totale Portafoglio</div>
-            <div class="port-sum-val">${formatCurrency(totalCurrentValue)}</div>
+            <div class="port-sum-val">${formatCurrency(totalCurrentValueEur, 'EUR')}</div>
           </div>
           <div style="text-align: right;">
             <div class="port-sum-label">P&L Totale</div>
             <div class="port-sum-pnl ${isTotalPnlUp ? 'badge-up' : 'badge-down'}">
-              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+' : ''}${formatCurrency(totalPnlCash)})
+              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+' : ''}${formatCurrency(totalPnlCashEur, 'EUR')})
             </div>
           </div>
         </div>
         <div class="port-sum-sub">
-          <span>Capitale Investito: <strong>${formatCurrency(totalInvested)}</strong></span>
+          <span>Capitale Investito: <strong>${formatCurrency(totalInvestedEur, 'EUR')}</strong></span>
           <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
         </div>
       </div>
@@ -1420,13 +1484,20 @@ function renderAssetList() {
       const pos = AppState.portfolio[asset.symbol];
       const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
       const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-      const currentVal = pos.shares * curPrice;
-      const invested = pos.shares * pos.buyPrice;
-      const pnlCash = currentVal - invested;
-      const pnlPct = invested > 0 ? (pnlCash / invested) * 100 : 0;
-      const isPnlUp = pnlCash >= 0;
+      const currentValNative = pos.shares * curPrice;
+      const investedNative = pos.shares * pos.buyPrice;
+      const pnlCashNative = currentValNative - investedNative;
+      const pnlPct = investedNative > 0 ? (pnlCashNative / investedNative) * 100 : 0;
+      const isPnlUp = pnlCashNative >= 0;
+
+      const currentValEur = convertToEur(currentValNative, asset);
+      const investedEur = convertToEur(investedNative, asset);
+      const pnlCashEur = convertToEur(pnlCashNative, asset);
+
+      const isNonEur = (asset.currency || '').toUpperCase() !== 'EUR';
       const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset) : '—';
       const formattedPmc = formatCurrency(pos.buyPrice, asset);
+      const nativeValHtml = isNonEur ? `<span class="port-metric-native">(${formatCurrency(currentValNative, asset)})</span>` : '';
       const advice = getPortfolioAiAdvice(asset, pos, curPrice);
 
       return `
@@ -1446,11 +1517,11 @@ function renderAssetList() {
           <div class="port-card-metrics">
             <div>
               <div class="port-metric-sub">PMC: ${formattedPmc} • Attuale: ${formattedPrice}</div>
-              <div class="port-metric-val">Valore: <strong>${formatCurrency(currentVal, asset)}</strong></div>
+              <div class="port-metric-val">Valore: <strong>${formatCurrency(currentValEur, 'EUR')}</strong> ${nativeValHtml}</div>
             </div>
             <div class="port-metric-right">
               <div class="port-pnl-pill ${isPnlUp ? 'badge-up' : 'badge-down'}">
-                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(pnlPct).toFixed(2)}% (${isPnlUp ? '+' : ''}${formatCurrency(pnlCash, asset)})
+                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(pnlPct).toFixed(2)}% (${isPnlUp ? '+' : ''}${formatCurrency(pnlCashEur, 'EUR')})
               </div>
             </div>
           </div>
@@ -4761,7 +4832,7 @@ function setupPWA() {
       window.location.reload();
     });
 
-    navigator.serviceWorker.register('./sw.js?v=23').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=24').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});

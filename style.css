@@ -2267,6 +2267,13 @@ body {
   margin-top: 2px;
 }
 
+.port-metric-native {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: normal;
+  margin-left: 4px;
+}
+
 .port-metric-right {
   text-align: right;
 }
