@@ -1,21 +1,27 @@
 // Service Worker for MarketPulse Pro (Desktop & Mobile Trading PWA)
-const CACHE_NAME = 'marketpulse-cache-v18';
+const CACHE_NAME = 'marketpulse-cache-v19';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=18',
+  './style.css?v=19',
   './app.js',
-  './app.js?v=18',
+  './app.js?v=19',
   './manifest.webmanifest',
   './icon.svg'
 ];
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Pre-caching static assets v2');
+      console.log('[SW] Pre-caching static assets v19');
       return cache.addAll(STATIC_ASSETS);
     })
   );
@@ -44,9 +50,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first strategy for local app assets (guarantees fresh UI on reload, cache offline)
+  // Network-first strategy with cache bypass:
+  // Using { cache: 'no-cache' } ensures the browser HTTP cache is bypassed and fresh assets are loaded
+  let fetchReq = event.request;
+  try {
+    fetchReq = new Request(event.request, { cache: 'no-cache' });
+  } catch (e) {
+    fetchReq = event.request;
+  }
+
   event.respondWith(
-    fetch(event.request)
+    fetch(fetchReq)
       .then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const resClone = networkResponse.clone();
@@ -57,7 +71,14 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(() => {
-        return caches.match(event.request);
+        // Fallback to cache only when offline / server unreachable
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          if (event.request.mode === 'navigate') {
+            return caches.match('./index.html');
+          }
+          return null;
+        });
       })
   );
 });

@@ -3907,9 +3907,35 @@ function setupKeyboardShortcuts() {
 // --- PWA Installation & Service Worker ---
 function setupPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=18').then(reg => {
+    let refreshing = false;
+    // Auto-reload immediately when a new service worker takes control so the user always has the fresh frontend
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      console.log('[MarketPulse PWA] Nuovo controller attivo -> Ricarico per applicare frontend fresco');
+      window.location.reload();
+    });
+
+    navigator.serviceWorker.register('./sw.js?v=19').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
+      // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});
+
+      if (reg.waiting) {
+        reg.waiting.postMessage('SKIP_WAITING');
+      }
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('[MarketPulse PWA] Aggiornamento frontend pronto, attivo immediatamente...');
+              newWorker.postMessage('SKIP_WAITING');
+            }
+          });
+        }
+      });
     }).catch(err => {
       console.log('[MarketPulse PWA] Service worker registration failed:', err);
     });
