@@ -237,27 +237,30 @@ const HISTORY_STORAGE_KEY = 'marketpulse_history_v4';
 const INCREMENTAL_SYNC_COOLDOWN_MS = 10000; // Minimum interval between incremental candle fetches per key
 const STOCK_QUOTE_POLL_COOLDOWN_MS = 30000; // Poll stock/ETF quotes every 30s without API key
 
-// --- Initialization ---
+// --- Initialization (Ultra-Fast Startup, Zero-Cache) ---
 document.addEventListener('DOMContentLoaded', () => {
   try {
     loadStoredData();
     setupEventListeners();
     setupKeyboardShortcuts();
     setupPWA();
-    updateMarketHours();
-    fetchFearAndGreed();
 
-    renderCertificatesRadar();
-    calculateCertificatesOutput();
-
-    // Select initial asset (NVDA)
+    // 1. Critical path: Render UI and portfolio immediately in the first frame
     const initial = AppState.assets.find(a => a.symbol === 'NVDA') || AppState.assets[0];
     if (initial) selectAsset(initial);
 
-    // Periodic polling for live data
-    pollLivePrices();
-    setInterval(pollLivePrices, AppState.settings.refreshRate || 5000);
-    setInterval(updateMarketHours, 60000);
+    // 2. Defer non-critical background computations and live polling after initial paint
+    const defer = window.requestIdleCallback || ((cb) => setTimeout(cb, 40));
+    defer(() => {
+      updateMarketHours();
+      fetchFearAndGreed();
+      renderCertificatesRadar();
+      calculateCertificatesOutput();
+
+      pollLivePrices();
+      setInterval(pollLivePrices, AppState.settings.refreshRate || 5000);
+      setInterval(updateMarketHours, 60000);
+    });
   } catch (err) {
     console.error('[MarketPulse] Initialization error:', err);
   }
@@ -4830,38 +4833,25 @@ function setupKeyboardShortcuts() {
   });
 }
 
-// --- PWA Installation & Service Worker ---
+// --- PWA Installation & Service Worker (Zero-Cache Mode) ---
 function setupPWA() {
+  // Purge any residual CacheStorage immediately on startup to keep device zero-cache
+  if ('caches' in window) {
+    caches.keys().then(keys => {
+      keys.forEach(k => {
+        console.log('[MarketPulse] Purging residual cache from window:', k);
+        caches.delete(k);
+      });
+    }).catch(() => {});
+  }
+
   if ('serviceWorker' in navigator) {
-    let refreshing = false;
-    // Auto-reload immediately when a new service worker takes control so the user always has the fresh frontend
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (refreshing) return;
-      refreshing = true;
-      console.log('[MarketPulse PWA] Nuovo controller attivo -> Ricarico per applicare frontend fresco');
-      window.location.reload();
-    });
-
-    navigator.serviceWorker.register('./sw.js?v=25').then(reg => {
-      console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
-      // Controlla aggiornamenti ad ogni avvio dell'app
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      console.log('[MarketPulse PWA] Zero-cache service worker active:', reg.scope);
       reg.update().catch(() => {});
-
       if (reg.waiting) {
         reg.waiting.postMessage('SKIP_WAITING');
       }
-
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('[MarketPulse PWA] Aggiornamento frontend pronto, attivo immediatamente...');
-              newWorker.postMessage('SKIP_WAITING');
-            }
-          });
-        }
-      });
     }).catch(err => {
       console.log('[MarketPulse PWA] Service worker registration failed:', err);
     });
