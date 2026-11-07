@@ -273,18 +273,9 @@ body {
   height: calc(100vh - var(--header-height));
 }
 
-@media (max-width: 1200px) {
+@media (min-width: 901px) and (max-width: 1200px) {
   .app-main {
     grid-template-columns: 280px 1fr 300px;
-  }
-}
-
-@media (max-width: 992px) {
-  .app-main {
-    grid-template-columns: 280px 1fr;
-  }
-  .app-panel-right {
-    display: none; /* accessible via drawer/toggle on mobile */
   }
 }
 
@@ -715,6 +706,14 @@ body {
   border-top: 1px solid var(--border-color);
   background: #070a10;
   position: relative;
+  overflow: hidden;
+}
+
+#rsiCanvas,
+#macdCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .subchart-title {
@@ -936,6 +935,127 @@ body {
   font-weight: 600;
   line-height: 1.38;
   color: var(--text-primary);
+}
+
+/* Structured AI Evaluation & Trade Setup Block */
+.ai-structured-box {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-structured-narrative {
+  font-size: 0.82rem;
+  line-height: 1.58;
+  color: #e2e8f0;
+  border-left: 3px solid var(--accent-blue);
+  padding-left: 10px;
+}
+
+.ai-structured-narrative strong {
+  color: #ffffff;
+}
+
+.ai-trade-plan-block {
+  background: rgba(9, 13, 22, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-trade-plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 6px;
+}
+
+.ai-trade-plan-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.btn-apply-trade-plan {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-apply-trade-plan:hover {
+  background: rgba(56, 189, 248, 0.28);
+  color: #ffffff;
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+.ai-trade-plan-lines {
+  font-family: var(--font-mono);
+  font-size: 0.83rem;
+  line-height: 1.75;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  user-select: text;
+}
+
+.ai-plan-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-plan-line strong {
+  min-width: 86px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.ai-plan-line span {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.ai-plan-line span.ai-val-entry {
+  color: #38bdf8;
+}
+
+.ai-plan-line span.ai-val-sl {
+  color: #f43f5e;
+}
+
+.ai-plan-line span.ai-val-tp {
+  color: #10b981;
+}
+
+.ai-plan-line span.ai-val-risk {
+  color: #fbbf24;
+}
+
+.ai-plan-line span.ai-val-rr {
+  color: #a78bfa;
 }
 
 .ai-narrative-box {
@@ -1342,4 +1462,510 @@ body {
   font-family: var(--font-mono);
   color: var(--accent-blue);
   font-size: 0.75rem;
+}
+
+/* ==========================================================================
+   DESKTOP DEFAULT GUARDS (PC / Mac / Chromebook: > 900px)
+   ========================================================================== */
+@media (min-width: 901px) {
+  .mobile-ticker-carousel,
+  .mobile-bottom-nav,
+  .mobile-section-header {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   MOBILE VERTICAL SCROLL LAYOUT (iOS / Android & Viewports <= 900px)
+   ========================================================================== */
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1024px) {
+  /* Natural full-page vertical scrolling on mobile */
+  html, body {
+    height: auto !important;
+    min-height: 100vh;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Header mobile adjustments */
+  .app-header {
+    height: auto;
+    min-height: 54px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 8px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 80;
+  }
+
+  .brand-title {
+    font-size: 1.05rem;
+  }
+
+  .brand-title span.badge-desktop {
+    display: none !important;
+  }
+
+  .brand-title::after {
+    content: "MOBILE";
+    font-size: 0.6rem;
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .market-status-bar {
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+    padding: 6px 0 2px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 6px;
+  }
+
+  .status-pill, .fear-greed-pill {
+    font-size: 0.68rem;
+    padding: 3px 8px;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .search-box {
+    width: 120px;
+  }
+
+  .search-input {
+    width: 120px;
+    padding: 6px 26px 6px 8px;
+    font-size: 16px !important; /* Prevents auto-zoom in iOS Safari */
+  }
+
+  .search-input:focus {
+    width: 165px;
+  }
+
+  .btn-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  #shortcutsBtn {
+    display: none !important; /* Keyboard shortcuts modal hidden on touch mobile */
+  }
+
+  /* Main Container: Single Vertical Scroll Column */
+  .app-main {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100vw;
+  }
+
+  /* Section Title Dividers on Mobile */
+  .mobile-section-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: rgba(15, 23, 42, 0.85);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Mobile Quick Watchlist Carousel */
+  .mobile-ticker-carousel {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-ticker-carousel::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mob-ticker-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+  }
+
+  .mob-ticker-chip.active {
+    background: var(--accent-blue-dim);
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+  }
+
+  .mob-ticker-chip .mob-ticker-sym {
+    color: var(--text-primary);
+  }
+
+  .mob-ticker-chip .mob-ticker-price {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+
+  .mob-ticker-chip .mob-ticker-chg.mob-up {
+    color: var(--color-up);
+  }
+
+  .mob-ticker-chip .mob-ticker-chg.mob-down {
+    color: var(--color-down);
+  }
+
+  /* Order of Vertical Panels */
+  .app-panel-center {
+    order: 1 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+
+  .app-panel-right {
+    order: 2 !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    flex: none !important;
+    border-left: none !important;
+    border-top: 1px solid var(--border-color) !important;
+    background: var(--bg-secondary);
+  }
+
+  .app-panel-left {
+    order: 3 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    flex: none !important;
+    border-right: none !important;
+    border-top: 1px solid var(--border-color) !important;
+    background: var(--bg-primary);
+  }
+
+  /* Center Panel Refinements */
+  .asset-header-bar {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .ticker-identity {
+    gap: 8px;
+  }
+
+  .ticker-titles h2 {
+    font-size: 1.25rem;
+  }
+
+  .ticker-stats-row {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .big-price {
+    font-size: 1.6rem;
+  }
+
+  .big-change {
+    font-size: 0.85rem;
+    padding: 2px 6px;
+  }
+
+  .broker-shortcuts-bar {
+    padding: 8px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    font-size: 0.72rem;
+    gap: 6px;
+  }
+
+  .broker-shortcuts-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .broker-links {
+    flex-shrink: 0;
+    gap: 6px;
+  }
+
+  .broker-btn {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .chart-toolbar {
+    padding: 8px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .chart-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .toolbar-group {
+    flex-shrink: 0;
+  }
+
+  .tool-btn {
+    padding: 6px 11px;
+    font-size: 0.78rem;
+  }
+
+  /* Responsive Touch Chart Height */
+  .chart-container {
+    height: 290px !important;
+    min-height: 290px !important;
+    flex: none !important;
+  }
+
+  #mainChartCanvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    touch-action: pan-y !important;
+  }
+
+  .subchart-container {
+    height: 100px !important;
+    overflow: hidden !important;
+  }
+
+  #rsiCanvas,
+  #macdCanvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+  }
+
+  /* Decision Support & AI Card */
+  .decision-support-banner {
+    padding: 14px 12px;
+  }
+
+  .decision-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .decision-signals-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .signal-pill {
+    padding: 6px 8px;
+  }
+
+  .signal-pill .name {
+    font-size: 0.65rem;
+  }
+
+  .signal-pill .val {
+    font-size: 0.72rem;
+  }
+
+  .ai-evaluation-card {
+    padding: 12px 10px;
+    margin-top: 12px;
+  }
+
+  .ai-eval-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .ai-eval-badges {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ai-factors-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .ai-factor-item {
+    padding: 8px 10px;
+  }
+
+  .ai-structured-box {
+    padding: 10px 10px;
+  }
+
+  .ai-structured-narrative {
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+
+  .ai-trade-plan-lines {
+    gap: 5px;
+  }
+
+  .ai-plan-line {
+    font-size: 0.82rem;
+  }
+
+  .btn-apply-trade-plan {
+    width: 100%;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* Right Panel: Trading Tools on Mobile */
+  .tools-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .tools-tab {
+    padding: 12px 14px;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+  }
+
+  .tools-body {
+    padding: 14px 12px;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .calc-field-group label {
+    font-size: 0.78rem;
+  }
+
+  .calc-input {
+    font-size: 16px !important; /* Avoids iOS Safari auto-zoom */
+    padding: 10px 12px 10px 32px;
+  }
+
+  .calc-chip {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  .result-grid-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Left Panel: Watchlist on Mobile */
+  .watchlist-controls {
+    padding: 12px;
+  }
+
+  .asset-list {
+    max-height: 520px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 10px;
+  }
+
+  .asset-card {
+    padding: 12px 10px;
+  }
+
+  /* Modals on Mobile */
+  .modal-window {
+    width: 95% !important;
+    max-width: 440px !important;
+    max-height: 88vh !important;
+    overflow-y: auto !important;
+    padding: 18px 14px !important;
+  }
+
+  /* Sticky Mobile Bottom Navigation Bar */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(10, 14, 23, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border-highlight);
+    z-index: 99;
+    padding: 6px 4px max(6px, env(safe-area-inset-bottom)) 4px;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+  }
+
+  .mob-nav-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex: 1;
+    text-align: center;
+  }
+
+  .mob-nav-btn.active {
+    color: var(--accent-blue);
+    background: var(--accent-blue-dim);
+  }
+
+  .mob-nav-btn svg {
+    width: 18px;
+    height: 18px;
+  }
 }
