@@ -8,12 +8,10 @@ self.addEventListener('message', (event) => {
 });
 
 self.addEventListener('install', (event) => {
-  // Activate immediately without pre-caching anything
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  // Purge ALL existing caches completely from the device
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
@@ -26,8 +24,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Direct network pass-through: zero cache interception, zero cache writes
+// Direct network pass-through with browser cache bypass for local assets
 self.addEventListener('fetch', (event) => {
-  // Direct native fetch without touching CacheStorage
+  const url = new URL(event.request.url);
+  if (url.origin === location.origin) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(() => fetch(event.request))
+    );
+    return;
+  }
   event.respondWith(fetch(event.request));
 });

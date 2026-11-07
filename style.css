@@ -2372,23 +2372,27 @@ body {
 }
 
 .port-sort-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  flex: 1;
+  max-width: 165px;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
-  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .port-sort-btn {
+  flex: 1;
+  text-align: center;
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
   font-size: 0.65rem;
   font-weight: 600;
-  padding: 2px 7px;
+  padding: 2px 4px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;

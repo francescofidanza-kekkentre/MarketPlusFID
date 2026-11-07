@@ -4897,7 +4897,7 @@ function setupPWA() {
   }
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=26').then(reg => {
       console.log('[MarketPulse PWA] Zero-cache service worker active:', reg.scope);
       reg.update().catch(() => {});
       if (reg.waiting) {
