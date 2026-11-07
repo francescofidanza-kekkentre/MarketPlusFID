@@ -439,6 +439,7 @@ body {
 .type-stock { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
 .type-etf { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
 .type-crypto { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.type-certificate { background: rgba(236, 72, 153, 0.2); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.4); }
 
 .asset-name {
   font-size: 0.72rem;
@@ -1968,4 +1969,142 @@ body {
     width: 18px;
     height: 18px;
   }
+}
+
+/* --- Certificate Section Styling --- */
+.cert-header-box {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.95));
+  border: 1px solid rgba(236, 72, 153, 0.35);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.cert-badge-pill {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: rgba(236, 72, 153, 0.2);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.45);
+}
+
+.cert-calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .cert-calc-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cert-results-card {
+  background: rgba(17, 24, 39, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.cert-scenarios-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cert-scenario-box {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.scenario-win {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.scenario-win .scenario-title {
+  color: #34d399;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.scenario-loss {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.scenario-loss .scenario-title {
+  color: #f87171;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.cert-radar-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.cert-radar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cert-radar-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cert-radar-item:hover {
+  background: rgba(236, 72, 153, 0.12);
+  border-color: rgba(236, 72, 153, 0.35);
+}
+
+.cert-radar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cert-radar-isin {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.cert-radar-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.cert-radar-metrics {
+  text-align: right;
+}
+
+.cert-radar-yield {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.cert-radar-barrier {
+  font-size: 0.68rem;
+  color: #38bdf8;
 }

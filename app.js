@@ -30,7 +30,159 @@ const DEFAULT_ASSETS = [
   { symbol: 'SOL', name: 'Solana (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
   { symbol: 'BNB', name: 'BNB (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
   { symbol: 'XRP', name: 'Ripple (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false }
+  { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
+
+  // Certificati d'Investimento (SeDeX / EuroTLX)
+  {
+    symbol: 'NLBNPIT1Z123',
+    marketSymbol: 'FTSEMIB.MI',
+    name: 'BNP Cash Collect • FTSE MIB',
+    type: 'certificate',
+    exchange: 'Borsa Italiana (SeDeX)',
+    currency: 'EUR',
+    price: 98.40,
+    change: 0.45,
+    high: 99.10,
+    low: 97.90,
+    volume: '15.4K',
+    favorite: true,
+    certificateData: {
+      isin: 'NLBNPIT1Z123',
+      issuer: 'BNP Paribas',
+      certType: 'Cash Collect con Memoria',
+      underlying: 'FTSE MIB Index',
+      underlyingTicker: 'FTSEMIB.MI',
+      strike: 34500,
+      barrier: 20700,
+      barrierPct: 60,
+      nominal: 100,
+      coupon: 0.85,
+      couponFreq: 'Mensile (0,85%)',
+      maturity: '18/12/2026',
+      memory: true,
+      protectionType: 'Condizionatamente Protetto (Barriera Discreta 60%)'
+    }
+  },
+  {
+    symbol: 'DE000VM5A456',
+    marketSymbol: 'ENI.MI',
+    name: 'Vontobel Bonus Cap • ENI',
+    type: 'certificate',
+    exchange: 'Borsa Italiana (SeDeX)',
+    currency: 'EUR',
+    price: 102.15,
+    change: 0.32,
+    high: 102.80,
+    low: 101.90,
+    volume: '28.2K',
+    favorite: false,
+    certificateData: {
+      isin: 'DE000VM5A456',
+      issuer: 'Vontobel',
+      certType: 'Bonus Cap',
+      underlying: 'Eni S.p.A.',
+      underlyingTicker: 'ENI.MI',
+      strike: 14.20,
+      barrier: 9.23,
+      barrierPct: 65,
+      nominal: 100,
+      coupon: 1.04,
+      couponFreq: 'A Scadenza (Bonus 112,50€)',
+      maturity: '19/06/2026',
+      memory: false,
+      protectionType: 'Barriera Continua Americana (65%)'
+    }
+  },
+  {
+    symbol: 'IT0006757890',
+    marketSymbol: 'ISP.MI',
+    name: 'UniCredit Top Cash • Intesa SP',
+    type: 'certificate',
+    exchange: 'Borsa Italiana (Cert-X)',
+    currency: 'EUR',
+    price: 99.80,
+    change: -0.25,
+    high: 100.50,
+    low: 99.40,
+    volume: '34.8K',
+    favorite: true,
+    certificateData: {
+      isin: 'IT0006757890',
+      issuer: 'UniCredit onemarkets',
+      certType: 'Top Cash Collect',
+      underlying: 'Intesa Sanpaolo',
+      underlyingTicker: 'ISP.MI',
+      strike: 3.80,
+      barrier: 2.09,
+      barrierPct: 55,
+      nominal: 100,
+      coupon: 0.60,
+      couponFreq: 'Mensile (0,60% - 7,2% annuo)',
+      maturity: '15/10/2027',
+      memory: true,
+      protectionType: 'Barriera Europea a Scadenza (55%)'
+    }
+  },
+  {
+    symbol: 'CH1261324567',
+    marketSymbol: 'UCG.MI',
+    name: 'Marex Airbag Cash • UniCredit',
+    type: 'certificate',
+    exchange: 'EuroTLX',
+    currency: 'EUR',
+    price: 96.50,
+    change: 0.85,
+    high: 97.20,
+    low: 95.80,
+    volume: '19.1K',
+    favorite: false,
+    certificateData: {
+      isin: 'CH1261324567',
+      issuer: 'Marex Financial',
+      certType: 'Airbag Cash Collect',
+      underlying: 'UniCredit S.p.A.',
+      underlyingTicker: 'UCG.MI',
+      strike: 39.50,
+      barrier: 19.75,
+      barrierPct: 50,
+      nominal: 100,
+      coupon: 1.10,
+      couponFreq: 'Trimestrale (3,3% - 13,2% annuo)',
+      maturity: '24/09/2026',
+      memory: true,
+      protectionType: 'Struttura Difensiva con Fattore Airbag 2x'
+    }
+  },
+  {
+    symbol: 'DE000SB3XYZ1',
+    marketSymbol: '^GSPC',
+    name: 'SocGen Turbo Open-End • S&P 500',
+    type: 'certificate',
+    exchange: 'Borsa Italiana (SeDeX)',
+    currency: 'EUR',
+    price: 14.85,
+    change: 1.95,
+    high: 15.30,
+    low: 14.40,
+    volume: '82.5K',
+    favorite: false,
+    certificateData: {
+      isin: 'DE000SB3XYZ1',
+      issuer: 'Societe Generale',
+      certType: 'Turbo Open-End Long',
+      underlying: 'S&P 500 Index',
+      underlyingTicker: '^GSPC',
+      strike: 5200,
+      barrier: 5200,
+      barrierPct: 88,
+      nominal: 10,
+      coupon: 0,
+      couponFreq: 'Leva Dinamica (Zero Cedole)',
+      maturity: 'Open-End',
+      memory: false,
+      protectionType: 'Stop-Loss / Knock-Out Intraday'
+    }
+  }
 ];
 
 // --- State Management ---
@@ -75,6 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setupPWA();
     updateMarketHours();
     fetchFearAndGreed();
+
+    renderCertificatesRadar();
+    calculateCertificatesOutput();
 
     // Select initial asset (NVDA)
     const initial = AppState.assets.find(a => a.symbol === 'NVDA') || AppState.assets[0];
@@ -169,6 +324,18 @@ function loadStoredData() {
     }
   }
   if (migratedCurrency) {
+    saveAssetsToStorage();
+  }
+
+  // Ensure default certificates exist in AppState.assets
+  let hasNewCert = false;
+  DEFAULT_ASSETS.filter(a => a.type === 'certificate').forEach(cert => {
+    if (!AppState.assets.some(a => a.symbol === cert.symbol)) {
+      AppState.assets.push(cert);
+      hasNewCert = true;
+    }
+  });
+  if (hasNewCert) {
     saveAssetsToStorage();
   }
 }
@@ -991,7 +1158,7 @@ function renderAssetList() {
         <div class="asset-meta">
           <div class="asset-symbol-row">
             <span class="asset-symbol">${asset.symbol}</span>
-            <span class="asset-type-badge type-${asset.type}">${asset.type}</span>
+            <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : asset.type}</span>
             <button class="delete-btn" title="Elimina asset">🗑️</button>
           </div>
           <span class="asset-name" title="${asset.name}">${asset.name}</span>
@@ -1057,6 +1224,9 @@ function selectAsset(asset) {
   updateSelectedAssetHeader();
   updateBrokerLinks(asset);
   updateRiskCalculatorPreloads(asset);
+  if (asset.type === 'certificate') {
+    populateCertificateDetails(asset);
+  }
   loadNotesForAsset(asset);
   const cached = AppState.cachedBars[`${asset.symbol}_${AppState.activeTimeframe}`] || AppState.cachedBars[`${asset.symbol}_DAILY`];
   updateAiInvestmentEvaluation(asset, cached);
@@ -1068,7 +1238,8 @@ function updateSelectedAssetHeader() {
   const asset = AppState.selectedAsset;
   if (!asset) return;
 
-  document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${asset.type}" id="activeType">${asset.type.toUpperCase()}</span>`;
+  const typeDisplay = asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase();
+  document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${asset.type}" id="activeType">${typeDisplay}</span>`;
   document.getElementById('activeName').textContent = `${asset.name} • ${asset.exchange}`;
 
   const isUp = (asset.change ?? 0) >= 0;
@@ -1127,13 +1298,25 @@ function updateBrokerLinks(asset) {
     binanceLink.style.display = 'none';
   }
 
-  // 3. Interactive Brokers
+  // 3. Interactive Brokers / CED
   const ibkrLink = document.getElementById('linkIBKR');
-  ibkrLink.href = `https://www.interactivebrokers.com/en/search/site_search.php?q=${encodeURIComponent(sym)}`;
+  if (asset.type === 'certificate') {
+    ibkrLink.href = `https://www.certificatiederivati.it/ricerca?q=${encodeURIComponent(sym)}`;
+    ibkrLink.title = `Analisi Certificati e Derivati (CED) per ${sym}`;
+  } else {
+    ibkrLink.href = `https://www.interactivebrokers.com/en/search/site_search.php?q=${encodeURIComponent(sym)}`;
+    ibkrLink.title = 'Interactive Brokers Search';
+  }
 
-  // 4. Yahoo Finance
+  // 4. Yahoo Finance / Borsa Italiana
   const yahooLink = document.getElementById('linkYahoo');
-  yahooLink.href = `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
+  if (asset.type === 'certificate') {
+    yahooLink.href = `https://www.borsaitaliana.it/borsa/cw-e-certificates/cerca.html?isin=${encodeURIComponent(sym)}`;
+    yahooLink.title = `Scheda ufficiale Borsa Italiana SeDeX per ${sym}`;
+  } else {
+    yahooLink.href = `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
+    yahooLink.title = 'Yahoo Finance';
+  }
 }
 
 // --- Candlestick & Technical Indicators Generator ---
@@ -2276,6 +2459,62 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   const currentPrice = asset.price != null ? asset.price : last.close;
   const fund = asset.fundamentals || {};
 
+  if (asset.type === 'certificate') {
+    const certData = asset.certificateData || {};
+    const certPrice = asset.price || 98.40;
+    const nominal = certData.nominal || 100;
+    const coupons = (certData.coupon || 0.85) * 8;
+    const barrier = certData.barrierPct || 60;
+    const targetPrice = nominal + coupons;
+    const yieldPct = ((targetPrice - certPrice) / certPrice) * 100;
+    const bufferPct = ((100 - barrier) * 0.72).toFixed(1);
+    const rr = (yieldPct / Math.max(1, (100 - barrier) / 4)).toFixed(2);
+
+    if (riskBadgeEl) {
+      riskBadgeEl.textContent = 'Rischio: Condizionato / Difensivo';
+      riskBadgeEl.className = 'ai-badge ai-badge-moderate';
+    }
+    if (verdictBadgeEl) {
+      verdictBadgeEl.textContent = 'Setup Certificato: FAVOREVOLE A SCADENZA';
+      verdictBadgeEl.className = 'ai-badge ai-badge-buy';
+    }
+    if (factorCurveEl) factorCurveEl.textContent = `Sottostante: ${certData.underlying || 'Indice'}`;
+    if (factorTechEl) factorTechEl.textContent = `Barriera: ${barrier}% (Cuscino +${bufferPct}%)`;
+    if (factorAnalystsEl) factorAnalystsEl.textContent = `Cedola: ${certData.couponFreq || 'Periodica'}`;
+    if (factorStrategyEl) factorStrategyEl.textContent = certData.protectionType || 'Capitale Condizionatamente Protetto';
+
+    if (narrativeEl) {
+      narrativeEl.textContent = `Il certificato ${asset.name} (${certData.isin || asset.symbol}) quota a ${certPrice.toFixed(2)} € sul mercato ${asset.exchange || 'SeDeX'}. Il sottostante ${certData.underlying || 'di riferimento'} mantiene un cuscino di protezione di +${bufferPct}% sopra la barriera di protezione (${barrier}%). La struttura offre un rendimento potenziale del ${yieldPct.toFixed(2)}% con incasso cedolare periodico e rimborso a ${nominal.toFixed(2)} € a scadenza.`;
+    }
+
+    if (structuredNarrativeEl) {
+      structuredNarrativeEl.innerHTML = `Il certificato si trova in una configurazione asimmetrica favorevole con quotazione a sconto sul nominale (${certPrice.toFixed(2)} € rispetto a ${nominal.toFixed(2)} €). La barriera di protezione al <strong>${barrier}%</strong> sul sottostante <em>${certData.underlying || 'Indice'}</em> garantisce un ampio cuscino di sicurezza del <strong>+${bufferPct}%</strong> prima che il capitale possa essere intaccato.<br><br>La presenza dell'effetto memoria e il flusso cedolare (${certData.couponFreq || 'periodico'}) offrono un rendimento totale atteso a scadenza del <strong>+${yieldPct.toFixed(2)}%</strong>, rendendo il trade attraente rispetto all'investimento diretto nell'asset sottostante.<br><br><strong>Ingresso ${formatPriceWithIso(certPrice, asset)}</strong><br><strong>Livello Barriera Protezione ${barrier}% (${formatPriceWithIso(certPrice * barrier / 100, asset)})</strong><br><strong>Target Rimborso ${formatPriceWithIso(targetPrice, asset)}</strong><br><strong>Buffer di Sicurezza +${bufferPct}%</strong><br><strong>R/R Struttura 1 : ${rr}</strong>`;
+    }
+
+    if (tradePlanLinesEl) {
+      tradePlanLinesEl.innerHTML = `
+        <div class="ai-plan-line"><strong>Ingresso</strong> <span class="ai-val-entry">${formatPriceWithIso(certPrice, asset)}</span></div>
+        <div class="ai-plan-line"><strong>Barriera</strong> <span class="ai-val-sl">${barrier}% (+${bufferPct}%)</span></div>
+        <div class="ai-plan-line"><strong>Target</strong> <span class="ai-val-tp">${formatPriceWithIso(targetPrice, asset)}</span></div>
+        <div class="ai-plan-line"><strong>Cedola</strong> <span class="ai-val-risk">${certData.couponFreq || 'Periodica'}</span></div>
+        <div class="ai-plan-line"><strong>R/R</strong> <span class="ai-val-rr">1 : ${rr}</span></div>
+      `;
+    }
+
+    if (btnApplyTradePlan) {
+      btnApplyTradePlan.onclick = () => {
+        const certTab = document.querySelector('.tools-tab[data-tool="certificates"]');
+        if (certTab) certTab.click();
+        populateCertificateDetails(asset);
+        if (window.innerWidth <= 900) {
+          const toolsSection = document.getElementById('section-tools');
+          if (toolsSection) toolsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      };
+    }
+    return;
+  }
+
   // Use daily master series if available for multi-horizon performance & annualized volatility
   const dailySeries = (AppState.cachedBars[`${asset.symbol}_DAILY`] && AppState.cachedBars[`${asset.symbol}_DAILY`].length >= 10)
     ? AppState.cachedBars[`${asset.symbol}_DAILY`]
@@ -2851,6 +3090,142 @@ function calculateRiskOutput() {
   }
 }
 
+// --- Certificates Yield & Scenario Calculation ---
+function calculateCertificatesOutput() {
+  const price = parseFloat(document.getElementById('certInputPrice')?.value) || 98.40;
+  const nominal = parseFloat(document.getElementById('certInputNominal')?.value) || 100.00;
+  const coupons = parseFloat(document.getElementById('certInputCoupons')?.value) || 0;
+  const months = parseFloat(document.getElementById('certInputMonths')?.value) || 14;
+  const barrierPct = parseFloat(document.getElementById('certInputBarrierPct')?.value) || 60;
+  const bufferPct = parseFloat(document.getElementById('certInputBufferPct')?.value) || 28.5;
+
+  const totalPayout = nominal + coupons;
+  const profit = totalPayout - price;
+  const totalYieldPct = price > 0 ? (profit / price) * 100 : 0;
+  const years = Math.max(0.1, months / 12);
+  const annualYieldPct = (price > 0 && totalPayout > 0)
+    ? (Math.pow(totalPayout / price, 1 / years) - 1) * 100
+    : 0;
+
+  const elYieldTotal = document.getElementById('certOutYieldTotal');
+  const elYieldAnnual = document.getElementById('certOutYieldAnnual');
+  const elTotalCash = document.getElementById('certOutTotalCash');
+  const elBufferVal = document.getElementById('certOutBufferVal');
+  const elScenarioWin = document.getElementById('certScenarioWinText');
+  const elScenarioLoss = document.getElementById('certScenarioLossText');
+
+  if (elYieldTotal) {
+    elYieldTotal.textContent = `${totalYieldPct >= 0 ? '+' : ''}${totalYieldPct.toFixed(2)}%`;
+    elYieldTotal.className = `value ${totalYieldPct >= 0 ? 'value-up' : 'value-down'}`;
+  }
+  if (elYieldAnnual) {
+    elYieldAnnual.textContent = `${annualYieldPct >= 0 ? '+' : ''}${annualYieldPct.toFixed(2)}% p.a.`;
+    elYieldAnnual.className = `value ${annualYieldPct >= 0 ? 'value-up' : 'value-down'}`;
+  }
+  if (elTotalCash) {
+    elTotalCash.textContent = `${totalPayout.toFixed(2)} €`;
+  }
+  if (elBufferVal) {
+    elBufferVal.textContent = `${bufferPct >= 0 ? '+' : ''}${bufferPct.toFixed(1)}%`;
+    elBufferVal.style.color = bufferPct >= 25 ? '#10b981' : (bufferPct >= 15 ? '#38bdf8' : '#f59e0b');
+  }
+
+  if (elScenarioWin) {
+    elScenarioWin.innerHTML = `Se alla scadenza il sottostante chiude sopra la barriera di protezione (<strong>${barrierPct}%</strong>): <strong>Rimborso nominale ${nominal.toFixed(2)}€ + ${coupons.toFixed(2)}€ cedole = ${totalPayout.toFixed(2)}€</strong> con utile netto di <strong style="color: #34d399;">+${profit.toFixed(2)}€ a certificato (+${totalYieldPct.toFixed(2)}%)</strong>.`;
+  }
+  if (elScenarioLoss) {
+    const stressDrop = Math.round(barrierPct + 8);
+    const estimatedLossPayout = (nominal * (100 - stressDrop)) / 100;
+    const lossDiffPct = price > 0 ? ((estimatedLossPayout - price) / price) * 100 : -stressDrop;
+    elScenarioLoss.innerHTML = `Se il sottostante crolla oltre la barriera (es. -${stressDrop}% dallo strike): <strong>Perdita della protezione</strong> con rimborso proporzionale stimato a <strong style="color: #f87171;">${estimatedLossPayout.toFixed(2)}€</strong> (${lossDiffPct.toFixed(1)}% rispetto all'acquisto).`;
+  }
+}
+
+function populateCertificateDetails(cert) {
+  if (!cert) return;
+  const data = cert.certificateData || {};
+  const isin = data.isin || cert.symbol;
+  const certType = data.certType || 'Cash Collect con Memoria';
+  const issuer = data.issuer || 'SeDeX';
+  const underlying = data.underlying || (cert.marketSymbol || 'Sottostante');
+  const nominal = data.nominal || 100;
+  const price = cert.price || 98.40;
+  const barrierPct = data.barrierPct || 60;
+  const bufferPct = parseFloat(((100 - barrierPct) * 0.72).toFixed(1));
+  const coupons = (data.coupon || 0.85) * 8;
+
+  const badgeEl = document.getElementById('certBadgeType');
+  const issuerEl = document.getElementById('certIssuerText');
+  const titleEl = document.getElementById('certTitleText');
+  const isinEl = document.getElementById('certIsinText');
+  const underlyingEl = document.getElementById('certUnderlyingText');
+
+  if (badgeEl) badgeEl.textContent = certType.toUpperCase();
+  if (issuerEl) issuerEl.textContent = `${issuer} • ${cert.exchange || 'Borsa Italiana'}`;
+  if (titleEl) titleEl.textContent = cert.name;
+  if (isinEl) isinEl.textContent = isin;
+  if (underlyingEl) underlyingEl.textContent = underlying;
+
+  const inPrice = document.getElementById('certInputPrice');
+  const inNominal = document.getElementById('certInputNominal');
+  const inCoupons = document.getElementById('certInputCoupons');
+  const inBarrier = document.getElementById('certInputBarrierPct');
+  const inBuffer = document.getElementById('certInputBufferPct');
+
+  if (inPrice) inPrice.value = price.toFixed(2);
+  if (inNominal) inNominal.value = nominal.toFixed(2);
+  if (inCoupons) inCoupons.value = coupons.toFixed(2);
+  if (inBarrier) inBarrier.value = barrierPct;
+  if (inBuffer) inBuffer.value = bufferPct;
+
+  const presetSel = document.getElementById('certPresetSelect');
+  if (presetSel && Array.from(presetSel.options).some(o => o.value === isin)) {
+    presetSel.value = isin;
+  }
+
+  calculateCertificatesOutput();
+}
+
+function renderCertificatesRadar() {
+  const container = document.getElementById('certRadarList');
+  if (!container) return;
+
+  const certs = AppState.assets.filter(a => a.type === 'certificate');
+  const countEl = document.getElementById('certRadarCount');
+  if (countEl) countEl.textContent = `${certs.length} Strumenti`;
+
+  container.innerHTML = certs.map(cert => {
+    const data = cert.certificateData || {};
+    const priceStr = cert.price != null ? `${cert.price.toFixed(2)} €` : '—';
+    const barrierStr = data.barrierPct ? `Barriera ${data.barrierPct}%` : 'Cap. Protetto';
+    const yieldStr = data.coupon ? `Cedola ${(data.coupon * 12).toFixed(1)}% p.a.` : (data.bonusAmount ? `Bonus ${data.bonusAmount}€` : (data.leverage || 'Leva'));
+
+    return `
+      <div class="cert-radar-item" data-isin="${cert.symbol}">
+        <div class="cert-radar-info">
+          <span class="cert-radar-isin">${cert.symbol} <span class="asset-type-badge type-certificate">CERT</span></span>
+          <span class="cert-radar-sub">${cert.name}</span>
+        </div>
+        <div class="cert-radar-metrics">
+          <div class="cert-radar-yield">${priceStr} • ${yieldStr}</div>
+          <div class="cert-radar-barrier">${barrierStr}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.cert-radar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const isin = item.getAttribute('data-isin');
+      const found = AppState.assets.find(a => a.symbol === isin);
+      if (found) {
+        selectAsset(found);
+        populateCertificateDetails(found);
+      }
+    });
+  });
+}
+
 // --- Pre-Trade Checklist Logic ---
 function updateChecklistScore() {
   const checkboxes = document.querySelectorAll('.chk-item');
@@ -2986,10 +3361,47 @@ function setupEventListeners() {
       tab.classList.add('active');
       const tool = tab.getAttribute('data-tool');
       if (tool === 'calculator') document.getElementById('paneCalculator').classList.add('active');
+      if (tool === 'certificates') {
+        document.getElementById('paneCertificates').classList.add('active');
+        calculateCertificatesOutput();
+      }
       if (tool === 'checklist') document.getElementById('paneChecklist').classList.add('active');
       if (tool === 'journal') document.getElementById('paneJournal').classList.add('active');
     });
   });
+
+  // Certificate Inputs & Preset Selector
+  ['certInputPrice', 'certInputNominal', 'certInputCoupons', 'certInputMonths', 'certInputBarrierPct', 'certInputBufferPct'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', calculateCertificatesOutput);
+  });
+
+  const certPresetSel = document.getElementById('certPresetSelect');
+  if (certPresetSel) {
+    certPresetSel.addEventListener('change', () => {
+      const isin = certPresetSel.value;
+      if (isin === 'custom') return;
+      const targetCert = AppState.assets.find(a => a.symbol === isin) || DEFAULT_ASSETS.find(a => a.symbol === isin);
+      if (targetCert) {
+        populateCertificateDetails(targetCert);
+        selectAsset(targetCert);
+      }
+    });
+  }
+
+  const btnViewUnderlying = document.getElementById('btnViewUnderlyingChart');
+  if (btnViewUnderlying) {
+    btnViewUnderlying.addEventListener('click', () => {
+      const cert = AppState.selectedAsset && AppState.selectedAsset.type === 'certificate'
+        ? AppState.selectedAsset
+        : AppState.assets.find(a => a.type === 'certificate');
+      if (cert) {
+        selectAsset(cert);
+        const chartSec = document.getElementById('section-chart');
+        if (chartSec) chartSec.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  }
 
   // Calculator Inputs
   ['calcCapital', 'calcRiskPct', 'calcEntryPrice', 'calcStopLoss', 'calcTakeProfit'].forEach(id => {
@@ -3916,7 +4328,7 @@ function setupPWA() {
       window.location.reload();
     });
 
-    navigator.serviceWorker.register('./sw.js?v=21').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=22').then(reg => {
       console.log('[MarketPulse PWA] Service worker registered:', reg.scope);
       // Controlla aggiornamenti ad ogni avvio dell'app
       reg.update().catch(() => {});
