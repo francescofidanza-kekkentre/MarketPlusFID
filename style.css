@@ -2229,24 +2229,33 @@ body {
 .port-card-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  position: relative;
+  z-index: 5;
 }
 
 .port-edit-btn {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
-  font-size: 0.75rem;
-  opacity: 0.65;
-  padding: 2px 4px;
-  border-radius: 3px;
+  font-size: 0.9rem;
+  min-width: 30px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
   transition: all 0.15s ease;
+  touch-action: manipulation;
 }
 
-.port-edit-btn:hover {
+.port-edit-btn:hover,
+.port-edit-btn:active {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
-  transform: scale(1.15);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.08);
 }
 
 .port-card-metrics {
