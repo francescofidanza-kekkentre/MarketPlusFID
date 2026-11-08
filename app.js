@@ -267,13 +267,13 @@ const DEFAULT_PORTFOLIO = {
   'NLBNPIT1Z123': { shares: 20, buyPrice: 98.40, updatedAt: Date.now() }
 };
 
-function savePortfolioToStorage() {
+function savePortfolioToStorage(immediate = false) {
   try {
     localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
   } catch (e) {
     console.error('[MarketPulse] Error saving portfolio:', e);
   }
-  triggerCloudSync();
+  triggerCloudSync(immediate);
 }
 
 const HISTORY_STORAGE_KEY = 'marketpulse_history_v4';
@@ -452,11 +452,11 @@ function syncAssetQuoteFromBars(asset, bars) {
   }
 }
 
-function saveAssetsToStorage() {
+function saveAssetsToStorage(immediate = false) {
   try {
     localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
   } catch (e) {}
-  triggerCloudSync();
+  triggerCloudSync(immediate);
 }
 
 function saveHistoryToStorage() {
@@ -1445,7 +1445,7 @@ function deletePortfolioPosition(symbol) {
 
   if (AppState.portfolio) {
     delete AppState.portfolio[sym];
-    savePortfolioToStorage();
+    savePortfolioToStorage(true);
   }
   closePortfolioModal();
   renderAssetList();
@@ -1744,7 +1744,7 @@ function renderAssetList() {
         AppState.assets = AppState.assets.filter(a => a.symbol !== sym);
         if (AppState.portfolio) {
           delete AppState.portfolio[sym];
-          savePortfolioToStorage();
+          savePortfolioToStorage(true);
         }
         for (const key of Object.keys(AppState.cachedBars)) {
           if (key.startsWith(`${sym}_`)) {
@@ -1752,9 +1752,14 @@ function renderAssetList() {
             delete AppState.barsLastUpdated[key];
           }
         }
-        saveAssetsToStorage();
+        if (AppState.selectedAsset && AppState.selectedAsset.symbol === sym) {
+          const next = AppState.assets[0];
+          if (next) selectAsset(next);
+        }
+        saveAssetsToStorage(true);
         saveHistoryToStorage();
         renderAssetList();
+        updateSelectedAssetHeader();
       });
     }
   });
@@ -4942,9 +4947,6 @@ function setupModals() {
           setTimeout(() => {
             renderAssetList();
             updateSelectedAssetHeader();
-            if (AppState.activeTab === 'portfolio') {
-              updatePortfolioOverview();
-            }
             if (modalSettings) modalSettings.classList.remove('open');
           }, 600);
         } catch (err) {
@@ -5380,9 +5382,6 @@ function handleRemoteCloudData(remoteData) {
     if (changed) {
       renderAssetList();
       updateSelectedAssetHeader();
-      if (AppState.activeTab === 'portfolio') {
-        updatePortfolioOverview();
-      }
     }
   } finally {
     setTimeout(() => { isRemoteUpdateInProgress = false; }, 300);

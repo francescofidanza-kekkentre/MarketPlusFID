@@ -138,6 +138,11 @@ function setupRemoteListener(uid, onDataUpdate, getLocalState) {
   try {
     const userDocRef = doc(db, 'users', uid);
     unsubscribeSnapshot = onSnapshot(userDocRef, async (docSnap) => {
+      // Ignora snapshot locali generati dalla scrittura immediata corrente del client
+      if (docSnap.metadata && docSnap.metadata.hasPendingWrites) {
+        return;
+      }
+
       if (docSnap.exists()) {
         const remoteData = docSnap.data();
         console.log('[Firebase Cloud] Ricevuti dati cloud aggiornati per utente:', uid);
@@ -198,7 +203,9 @@ export async function saveUserDataToCloud(data, immediate = false) {
         updatedAt: Date.now()
       };
 
-      await setDoc(userDocRef, payload, { merge: true });
+      // Sostituisce il documento con lo stato completo aggiornato
+      // (non usare { merge: true } altrimenti i ticker eliminati dalla mappa portfolio rimangono salvati su Firestore)
+      await setDoc(userDocRef, payload);
       console.log('[Firebase Cloud] Salvataggio completato con successo!');
       return { success: true };
     } catch (err) {
