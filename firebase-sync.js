@@ -15,7 +15,7 @@ let isApplyingRemoteData = false;
 let initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
     signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut,
     onAuthStateChanged, sendPasswordResetEmail, getFirestore, doc, getDoc, setDoc,
-    onSnapshot, serverTimestamp;
+    onSnapshot, serverTimestamp, setPersistence, indexedDBLocalPersistence, browserLocalPersistence;
 
 /**
  * Carica dinamicamente gli SDK Firebase da CDN ufficiale
@@ -38,6 +38,9 @@ async function loadFirebaseModules() {
     signOut = authMod.signOut;
     onAuthStateChanged = authMod.onAuthStateChanged;
     sendPasswordResetEmail = authMod.sendPasswordResetEmail;
+    setPersistence = authMod.setPersistence;
+    indexedDBLocalPersistence = authMod.indexedDBLocalPersistence;
+    browserLocalPersistence = authMod.browserLocalPersistence;
 
     getFirestore = firestoreMod.getFirestore;
     doc = firestoreMod.doc;
@@ -73,6 +76,16 @@ export async function initFirebaseSync({ onAuthUpdate, onDataUpdate, getLocalSta
     app = initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
+
+    // Configura persistenza di sessione persistente tra riaperture (IndexedDB / LocalStorage)
+    if (setPersistence) {
+      try {
+        const persistence = indexedDBLocalPersistence || browserLocalPersistence;
+        if (persistence) await setPersistence(auth, persistence);
+      } catch (persistErr) {
+        console.warn('[Firebase Auth] Errore configurazione persistenza iniziale:', persistErr);
+      }
+    }
 
     // Controlla se siamo tornati da un flusso di redirect OAuth (es. Google su mobile o PWA)
     if (getRedirectResult) {
@@ -223,32 +236,39 @@ export async function registerWithEmail(email, password) {
 }
 
 /**
- * Login con account Google (gestisce sia Popup su Desktop che Redirect su Mobile/PWA)
+ * Login con account Google
+ * Usa signInWithPopup come metodo principale (mantiene la sessione attiva ed evita la perdita di token su iOS/Safari)
+ * Ripiega su signInWithRedirect solo se i popup sono esplicitamente bloccati.
  */
 export async function loginWithGoogle() {
   if (!auth) throw new Error('Firebase non configurato');
+
+  if (setPersistence) {
+    try {
+      const persistence = indexedDBLocalPersistence || browserLocalPersistence;
+      if (persistence) await setPersistence(auth, persistence);
+    } catch (persistErr) {
+      console.warn('[Firebase Auth] Errore configurazione persistenza:', persistErr);
+    }
+  }
+
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  // Rileva se siamo su dispositivo mobile (iPhone, iPad, Android) o PWA standalone
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-                   (window.navigator.standalone === true) ||
-                   (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-
-  if (isMobile) {
-    console.log('[Firebase Auth] Dispositivo mobile/PWA rilevato: avvio login Google con Redirect...');
-    return await signInWithRedirect(auth, provider);
-  } else {
-    try {
-      console.log('[Firebase Auth] Desktop rilevato: avvio login Google con Popup...');
-      return await signInWithPopup(auth, provider);
-    } catch (popupErr) {
-      if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/cancelled-popup-request') {
-        console.warn('[Firebase Auth] Popup bloccato dal browser desktop, ripiego su Redirect...');
-        return await signInWithRedirect(auth, provider);
-      }
-      throw popupErr;
+  try {
+    console.log('[Firebase Auth] Apertura popup di accesso con Google...');
+    const result = await signInWithPopup(auth, provider);
+    console.log('[Firebase Auth] Login con Google completato con successo per:', result?.user?.email);
+    return result;
+  } catch (popupErr) {
+    console.warn('[Firebase Auth] Errore signInWithPopup:', popupErr);
+    // Se il popup è bloccato dal browser, ripiega su redirect
+    if (popupErr.code === 'auth/popup-blocked' ||
+        popupErr.code === 'auth/operation-not-supported-in-this-environment') {
+      console.log('[Firebase Auth] Popup bloccato, tentativo con signInWithRedirect...');
+      return await signInWithRedirect(auth, provider);
     }
+    throw popupErr;
   }
 }
 
