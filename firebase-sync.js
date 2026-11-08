@@ -13,8 +13,9 @@ let isApplyingRemoteData = false;
 
 // Dynamic imports for Firebase Modular SDK
 let initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-    signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, sendPasswordResetEmail,
-    getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp;
+    signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut,
+    onAuthStateChanged, sendPasswordResetEmail, getFirestore, doc, getDoc, setDoc,
+    onSnapshot, serverTimestamp;
 
 /**
  * Carica dinamicamente gli SDK Firebase da CDN ufficiale
@@ -31,6 +32,8 @@ async function loadFirebaseModules() {
     signInWithEmailAndPassword = authMod.signInWithEmailAndPassword;
     createUserWithEmailAndPassword = authMod.createUserWithEmailAndPassword;
     signInWithPopup = authMod.signInWithPopup;
+    signInWithRedirect = authMod.signInWithRedirect;
+    getRedirectResult = authMod.getRedirectResult;
     GoogleAuthProvider = authMod.GoogleAuthProvider;
     signOut = authMod.signOut;
     onAuthStateChanged = authMod.onAuthStateChanged;
@@ -70,6 +73,19 @@ export async function initFirebaseSync({ onAuthUpdate, onDataUpdate, getLocalSta
     app = initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
+
+    // Controlla se siamo tornati da un flusso di redirect OAuth (es. Google su mobile o PWA)
+    if (getRedirectResult) {
+      getRedirectResult(auth)
+        .then((redirectResult) => {
+          if (redirectResult && redirectResult.user) {
+            console.log('[Firebase Auth] Login con redirect completato con successo per:', redirectResult.user.email);
+          }
+        })
+        .catch((redirectErr) => {
+          console.warn('[Firebase Auth] Info getRedirectResult:', redirectErr);
+        });
+    }
 
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
@@ -207,12 +223,33 @@ export async function registerWithEmail(email, password) {
 }
 
 /**
- * Login con account Google
+ * Login con account Google (gestisce sia Popup su Desktop che Redirect su Mobile/PWA)
  */
 export async function loginWithGoogle() {
   if (!auth) throw new Error('Firebase non configurato');
   const provider = new GoogleAuthProvider();
-  return await signInWithPopup(auth, provider);
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  // Rileva se siamo su dispositivo mobile (iPhone, iPad, Android) o PWA standalone
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                   (window.navigator.standalone === true) ||
+                   (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+
+  if (isMobile) {
+    console.log('[Firebase Auth] Dispositivo mobile/PWA rilevato: avvio login Google con Redirect...');
+    return await signInWithRedirect(auth, provider);
+  } else {
+    try {
+      console.log('[Firebase Auth] Desktop rilevato: avvio login Google con Popup...');
+      return await signInWithPopup(auth, provider);
+    } catch (popupErr) {
+      if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/cancelled-popup-request') {
+        console.warn('[Firebase Auth] Popup bloccato dal browser desktop, ripiego su Redirect...');
+        return await signInWithRedirect(auth, provider);
+      }
+      throw popupErr;
+    }
+  }
 }
 
 /**
