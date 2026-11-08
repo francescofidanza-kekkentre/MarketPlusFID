@@ -15,15 +15,19 @@ rules_version = '2';
 //    Document ID: userId (matches request.auth.uid)
 //    Fields:
 //      - uid: string (required, 1-128 chars, matches request.auth.uid, immutable)
-//      - email: string (optional, valid email format, max 128 chars)
-//      - displayName: string (optional, 1-100 chars)
-//      - photoURL: string (optional, valid URL format, max 500 chars)
+//      - email: string (optional, valid email format or empty string, max 128 chars)
+//      - displayName: string (optional, 0-100 chars)
+//      - photoURL: string (optional, valid URL format or empty string, max 500 chars)
 //      - settings: map (optional, preferences map, validated keys & types)
-//      - portfolio: map (optional, inline portfolio map, max 500 entries)
+//      - portfolio: map (optional, ticker symbol keys -> position map, max 500 entries)
+//      - portfolioSort: string (optional, e.g. 'pnl', 'best', 'alpha', max 30 chars)
+//      - assets: list (optional, list of asset objects, max 500 items)
 //      - watchlist: list (optional, list of ticker symbols, max 200 items)
 //      - customAssets: list (optional, list of custom asset objects, max 100 items)
+//      - notes: map (optional, ticker symbol keys -> note text, max 500 entries)
+//      - lastDevice: string (optional, e.g. 'Desktop' or 'Mobile', max 30 chars)
 //      - lastSync: timestamp/number (optional, sync timestamp)
-//      - createdAt: timestamp (optional, immutable once set)
+//      - createdAt: timestamp/number (optional, immutable once set)
 //      - updatedAt: timestamp/number (optional, last modified timestamp)
 //
 // 2. Settings Subcollection: /users/{userId}/settings/{settingId}
@@ -36,7 +40,7 @@ rules_version = '2';
 //      - chartType: string (optional, max 20 chars, e.g. 'candles', 'line')
 //      - activeTimeframe: string (optional, max 10 chars, e.g. '1M', '1D')
 //      - indicators: map (optional, indicator booleans, max 10 keys)
-//      - createdAt: timestamp (optional, immutable)
+//      - createdAt: timestamp/number (optional, immutable)
 //      - updatedAt: timestamp/number (optional)
 //
 // 3. Custom Assets Subcollection: /users/{userId}/customAssets/{assetId} (and /custom_assets/{assetId})
@@ -56,7 +60,7 @@ rules_version = '2';
 //      - fundamentals: map/null (optional, max 50 keys)
 //      - favorite: bool (optional)
 //      - notes: string (optional, max 5000 chars)
-//      - createdAt: timestamp (optional, immutable)
+//      - createdAt: timestamp/number (optional, immutable)
 //      - updatedAt: timestamp/number (optional)
 //
 // 4. Watchlist Subcollection: /users/{userId}/watchlist/{symbol}
@@ -73,7 +77,7 @@ rules_version = '2';
 //      - order: number (optional)
 //      - favorite: bool (optional)
 //      - addedAt: timestamp/number (optional)
-//      - createdAt: timestamp (optional, immutable)
+//      - createdAt: timestamp/number (optional, immutable)
 //      - updatedAt: timestamp/number (optional)
 //
 // 5. Notes Subcollection: /users/{userId}/notes/{noteId}
@@ -83,7 +87,7 @@ rules_version = '2';
 //      - content: string (required, max 50000 chars)
 //      - title: string (optional, max 200 chars)
 //      - tags: list (optional, max 20 items)
-//      - createdAt: timestamp (optional, immutable)
+//      - createdAt: timestamp/number (optional, immutable)
 //      - updatedAt: timestamp/number (optional)
 //
 // 6. Portfolio Subcollection: /users/{userId}/portfolio/{symbol}
@@ -96,7 +100,7 @@ rules_version = '2';
 //      - notes: string (optional, max 2000 chars)
 //      - targetPrice: number (optional, >= 0, <= 10^9)
 //      - stopLoss: number (optional, >= 0, <= 10^9)
-//      - createdAt: timestamp (optional, immutable)
+//      - createdAt: timestamp/number (optional, immutable)
 //      - updatedAt: timestamp/number (optional)
 //
 // 7. Sync Subcollection: /users/{userId}/sync/{syncId}
@@ -106,7 +110,7 @@ rules_version = '2';
 //      - version: string (optional, max 30 chars)
 //      - deviceId: string (optional, max 100 chars)
 //      - lastSync: timestamp/number (optional)
-//      - createdAt: timestamp (optional, immutable)
+//      - createdAt: timestamp/number (optional, immutable)
 //      - updatedAt: timestamp/number (optional)
 //
 // ===============================================================
@@ -169,20 +173,22 @@ service cloud.firestore {
         (data[field] is number && data[field] > 0);
     }
 
-    // Validate email format
+    // Validate email format (allows empty string or valid email up to 128 chars)
     function isOptionalEmail(data, field) {
       return !(field in data) ||
         (data[field] is string &&
-         data[field].size() <= 128 &&
-         data[field].matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
+         (data[field].size() == 0 ||
+          (data[field].size() <= 128 &&
+           data[field].matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"))));
     }
 
-    // Validate URL format (http:// or https://)
+    // Validate URL format (allows empty string or http:// / https:// URL up to 500 chars)
     function isOptionalUrl(data, field) {
       return !(field in data) ||
         (data[field] is string &&
-         data[field].size() <= 500 &&
-         (data[field].matches("^https://.*") || data[field].matches("^http://.*")));
+         (data[field].size() == 0 ||
+          (data[field].size() <= 500 &&
+           (data[field].matches("^https://.*") || data[field].matches("^http://.*")))));
     }
 
     // Validate settings map structure
@@ -205,18 +211,38 @@ service cloud.firestore {
     // Validator for root user document
     function isValidUserDoc(data, userId) {
       return data.keys().hasAll(['uid']) &&
-        data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'settings', 'portfolio', 'watchlist', 'customAssets', 'lastSync', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'uid',
+          'email',
+          'displayName',
+          'photoURL',
+          'settings',
+          'portfolio',
+          'portfolioSort',
+          'assets',
+          'watchlist',
+          'customAssets',
+          'notes',
+          'lastDevice',
+          'lastSync',
+          'createdAt',
+          'updatedAt'
+        ]) &&
         data.uid == userId &&
         data.uid == request.auth.uid &&
         isOptionalEmail(data, 'email') &&
-        isOptionalString(data, 'displayName', 1, 100) &&
+        isOptionalString(data, 'displayName', 0, 100) &&
         isOptionalUrl(data, 'photoURL') &&
         (!('settings' in data) || isValidSettingsMap(data.settings)) &&
         (!('portfolio' in data) || (data.portfolio is map && data.portfolio.size() <= 500)) &&
+        isOptionalString(data, 'portfolioSort', 1, 30) &&
+        (!('assets' in data) || (data.assets is list && data.assets.size() <= 500)) &&
         (!('watchlist' in data) || (data.watchlist is list && data.watchlist.size() <= 200)) &&
         (!('customAssets' in data) || (data.customAssets is list && data.customAssets.size() <= 100)) &&
+        (!('notes' in data) || (data.notes is map && data.notes.size() <= 500)) &&
+        isOptionalString(data, 'lastDevice', 1, 30) &&
         isOptionalTimestampOrMs(data, 'lastSync') &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 
@@ -230,7 +256,7 @@ service cloud.firestore {
         isOptionalString(data, 'chartType', 1, 20) &&
         isOptionalString(data, 'activeTimeframe', 1, 10) &&
         (!('indicators' in data) || (data.indicators is map && data.indicators.size() <= 10)) &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 
@@ -245,7 +271,7 @@ service cloud.firestore {
         isOptionalString(data, 'notes', 0, 2000) &&
         isOptionalNumber(data, 'targetPrice', 0, 1000000000) &&
         isOptionalNumber(data, 'stopLoss', 0, 1000000000) &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 
@@ -264,7 +290,7 @@ service cloud.firestore {
         (!('order' in data) || data.order is number) &&
         isOptionalBool(data, 'favorite') &&
         isOptionalTimestampOrMs(data, 'addedAt') &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 
@@ -276,7 +302,7 @@ service cloud.firestore {
         isRequiredString(data, 'content', 0, 50000) &&
         isOptionalString(data, 'title', 0, 200) &&
         (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 
@@ -298,7 +324,7 @@ service cloud.firestore {
         (!('fundamentals' in data) || data.fundamentals == null || (data.fundamentals is map && data.fundamentals.size() <= 50)) &&
         isOptionalBool(data, 'favorite') &&
         isOptionalString(data, 'notes', 0, 5000) &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 
@@ -309,7 +335,7 @@ service cloud.firestore {
         isOptionalString(data, 'version', 1, 30) &&
         isOptionalString(data, 'deviceId', 1, 100) &&
         isOptionalTimestampOrMs(data, 'lastSync') &&
-        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        isOptionalTimestampOrMs(data, 'createdAt') &&
         isOptionalTimestampOrMs(data, 'updatedAt');
     }
 

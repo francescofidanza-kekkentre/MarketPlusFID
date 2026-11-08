@@ -138,32 +138,55 @@ function setupRemoteListener(uid, onDataUpdate, getLocalState) {
  * Salva i dati dell'utente sul Cloud Firestore
  */
 export async function saveUserDataToCloud(data, immediate = false) {
-  if (!currentUser || !db || isApplyingRemoteData) return;
+  if (!currentUser || !db || isApplyingRemoteData) return { success: false, reason: 'not_ready' };
 
   const performSave = async () => {
     try {
       const userDocRef = doc(db, 'users', currentUser.uid);
+
+      // Assicura che portfolio sia una mappa oggetto valida
+      let portMap = {};
+      if (data.portfolio && typeof data.portfolio === 'object' && !Array.isArray(data.portfolio)) {
+        portMap = data.portfolio;
+      }
+
+      // Assicura che notes sia un oggetto valido
+      let notesMap = {};
+      if (data.notes && typeof data.notes === 'object') {
+        notesMap = data.notes;
+      }
+
       const payload = {
-        settings: data.settings || {},
-        portfolio: data.portfolio || [],
-        portfolioSort: data.portfolioSort || 'best',
-        assets: data.assets || [],
-        notes: data.notes || {},
+        uid: currentUser.uid,
+        email: currentUser.email || '',
+        displayName: currentUser.displayName || '',
+        settings: (data.settings && typeof data.settings === 'object') ? data.settings : {},
+        portfolio: portMap,
+        portfolioSort: typeof data.portfolioSort === 'string' ? data.portfolioSort : 'best',
+        assets: Array.isArray(data.assets) ? data.assets : [],
+        notes: notesMap,
         lastDevice: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop',
         updatedAt: Date.now()
       };
+
       await setDoc(userDocRef, payload, { merge: true });
       console.log('[Firebase Cloud] Salvataggio completato con successo!');
+      return { success: true };
     } catch (err) {
       console.error('[Firebase Cloud] Errore salvataggio su Firestore:', err);
+      throw err;
     }
   };
 
   if (immediate) {
-    await performSave();
+    return await performSave();
   } else {
     clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(performSave, 600);
+    return new Promise((resolve, reject) => {
+      syncTimeout = setTimeout(() => {
+        performSave().then(resolve).catch(reject);
+      }, 500);
+    });
   }
 }
 

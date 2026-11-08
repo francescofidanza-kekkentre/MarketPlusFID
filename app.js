@@ -234,31 +234,30 @@ async function getFirebaseModule() {
   }
 }
 
-function triggerCloudSync(immediate = false) {
-  if (isRemoteUpdateInProgress) return;
-  getFirebaseModule().then(mod => {
-    if (!mod) return;
-    const user = mod.getCurrentUser();
-    if (!user) return;
+async function triggerCloudSync(immediate = false) {
+  if (isRemoteUpdateInProgress) return { skipped: true };
+  const mod = await getFirebaseModule();
+  if (!mod) return { skipped: true, reason: 'no_module' };
+  const user = mod.getCurrentUser();
+  if (!user) return { skipped: true, reason: 'no_user' };
 
-    const notesObj = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('marketpulse_notes_')) {
-        notesObj[key] = localStorage.getItem(key);
-      }
+  const notesObj = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith('marketpulse_notes_')) {
+      notesObj[key] = localStorage.getItem(key);
     }
+  }
 
-    const payload = {
-      settings: AppState.settings,
-      portfolio: AppState.portfolio,
-      portfolioSort: AppState.portfolioSort || localStorage.getItem('marketpulse_portfolio_sort') || 'best',
-      assets: AppState.assets,
-      notes: notesObj
-    };
+  const payload = {
+    settings: AppState.settings,
+    portfolio: AppState.portfolio,
+    portfolioSort: AppState.portfolioSort || localStorage.getItem('marketpulse_portfolio_sort') || 'best',
+    assets: AppState.assets,
+    notes: notesObj
+  };
 
-    mod.saveUserDataToCloud(payload, immediate);
-  });
+  return await mod.saveUserDataToCloud(payload, immediate);
 }
 
 const DEFAULT_PORTFOLIO = {
@@ -5221,11 +5220,29 @@ function setupModals() {
 
   // Sync Now (Forza invio)
   if (authSyncNowBtn) {
-    authSyncNowBtn.addEventListener('click', () => {
-      triggerCloudSync(true);
+    authSyncNowBtn.addEventListener('click', async () => {
+      authSyncNowBtn.disabled = true;
       const origText = authSyncNowBtn.innerHTML;
-      authSyncNowBtn.innerHTML = '<span>✓ Sincronizzazione inviata al Cloud!</span>';
-      setTimeout(() => { authSyncNowBtn.innerHTML = origText; }, 2000);
+      authSyncNowBtn.innerHTML = '<span>⏳ Salvataggio sul Cloud in corso...</span>';
+      try {
+        await triggerCloudSync(true);
+        authSyncNowBtn.innerHTML = '<span>✓ Dati salvati sul Cloud con successo!</span>';
+        setTimeout(() => {
+          authSyncNowBtn.innerHTML = origText;
+          authSyncNowBtn.disabled = false;
+        }, 2500);
+      } catch (err) {
+        console.error('Manual sync error:', err);
+        let errorMsg = err.message || 'Errore salvataggio';
+        if (errorMsg.includes('permission-denied') || errorMsg.includes('Missing or insufficient permissions')) {
+          errorMsg = 'Permesso negato: verifica le regole Firestore nella console Firebase.';
+        }
+        authSyncNowBtn.innerHTML = `<span style="color: #fda4af; font-size: 0.72rem;">❌ ${errorMsg}</span>`;
+        setTimeout(() => {
+          authSyncNowBtn.innerHTML = origText;
+          authSyncNowBtn.disabled = false;
+        }, 6000);
+      }
     });
   }
 
