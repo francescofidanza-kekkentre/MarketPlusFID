@@ -226,7 +226,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=31');
+    FirebaseModule = await import('./firebase-sync.js?v=32');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -260,12 +260,8 @@ async function triggerCloudSync(immediate = false) {
   return await mod.saveUserDataToCloud(payload, immediate);
 }
 
-const DEFAULT_PORTFOLIO = {
-  'NVDA': { shares: 15, buyPrice: 120.00, updatedAt: Date.now() },
-  'ALO.PA': { shares: 100, buyPrice: 11.20, updatedAt: Date.now() },
-  'BTC': { shares: 0.05, buyPrice: 64200.00, updatedAt: Date.now() },
-  'NLBNPIT1Z123': { shares: 20, buyPrice: 98.40, updatedAt: Date.now() }
-};
+// Il portafoglio predefinito per un nuovo utente o installazione parte sempre completamente vuoto
+const DEFAULT_PORTFOLIO = {};
 
 function savePortfolioToStorage(immediate = false) {
   try {
@@ -5215,6 +5211,11 @@ function setupModals() {
       const mod = await getFirebaseModule();
       if (mod) {
         await mod.logoutUser();
+        // Resetta il portafoglio locale a vuoto alla disconnessione
+        AppState.portfolio = {};
+        localStorage.setItem('marketpulse_portfolio', '{}');
+        renderAssetList();
+        updateSelectedAssetHeader();
         if (modalAuth) modalAuth.classList.remove('open');
       }
     });

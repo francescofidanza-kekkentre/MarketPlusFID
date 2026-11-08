@@ -153,12 +153,18 @@ function setupRemoteListener(uid, onDataUpdate, getLocalState) {
           setTimeout(() => { isApplyingRemoteData = false; }, 300);
         }
       } else {
-        // Primo accesso dell'utente: migriamo i dati locali correnti sul Cloud
-        console.log('[Firebase Cloud] Documento utente non trovato. Primo salvataggio dati locali sul Cloud...');
-        if (getLocalState) {
-          const localData = getLocalState();
-          await saveUserDataToCloud(localData, true);
-        }
+        // Primo accesso di un nuovo utente: inizializza il profilo sul Cloud con portafoglio rigorosamente VUOTO
+        console.log('[Firebase Cloud] Nuovo utente: inizializzazione profilo sul Cloud con portafoglio vuoto...');
+        const localData = (getLocalState ? getLocalState() : {}) || {};
+        const initialPayload = {
+          settings: localData.settings || {},
+          portfolio: {}, // Sempre vuoto al primo accesso di un nuovo utente
+          portfolioSort: 'best',
+          assets: Array.isArray(localData.assets) ? localData.assets : [],
+          notes: {}
+        };
+        await saveUserDataToCloud(initialPayload, true);
+        if (onDataUpdate) onDataUpdate(initialPayload);
       }
     }, (error) => {
       console.warn('[Firebase Cloud] Errore ascolto Firestore:', error);
