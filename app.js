@@ -2998,8 +2998,26 @@ function renderAssetList() {
 
     document.getElementById('assetCountText').textContent = `${portfolioAssets.length} Posizioni • ${activePf.name}`;
 
+    let switcherHost = document.getElementById('portfolioSwitcherHost');
+    let contentHost = document.getElementById('portfolioContentHost');
+    if (!switcherHost || !contentHost) {
+      container.innerHTML = '<div id="portfolioSwitcherHost"></div><div id="portfolioContentHost"></div>';
+      switcherHost = document.getElementById('portfolioSwitcherHost');
+      contentHost = document.getElementById('portfolioContentHost');
+    }
+
+    const switcherSig = AppState.portfolios
+      .map(p => `${p.id}:${p.name}:${Object.keys(p.positions || {}).length}`)
+      .join('|') + '|' + activePf.id;
+
+    if (switcherHost.dataset.sig !== switcherSig) {
+      switcherHost.innerHTML = switcherHtml;
+      switcherHost.dataset.sig = switcherSig;
+      bindSwitcherEvents();
+    }
+
     if (portfolioAssets.length === 0) {
-      container.innerHTML = switcherHtml + `
+      contentHost.innerHTML = `
         <div class="portfolio-empty-state">
           <div style="font-size: 2.2rem; margin-bottom: 8px;">💼</div>
           <h4 style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px;">${escapePortfolioHtml(activePf.name)} è vuoto</h4>
@@ -3011,7 +3029,6 @@ function renderAssetList() {
           </button>
         </div>
       `;
-      bindSwitcherEvents();
       const btnExp = document.getElementById('btnExploreAssetsFromEmptyPort');
       if (btnExp) {
         btnExp.onclick = () => {
@@ -3155,8 +3172,7 @@ function renderAssetList() {
       </div>
     `;
 
-    container.innerHTML = switcherHtml + summaryHtml + holdingsGroupHtml;
-    bindSwitcherEvents();
+    contentHost.innerHTML = summaryHtml + holdingsGroupHtml;
 
     const sumCard = document.getElementById('portfolioSummaryCard');
     if (sumCard) {
