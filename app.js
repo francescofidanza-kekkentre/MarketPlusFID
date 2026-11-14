@@ -3318,6 +3318,32 @@ function renderAssetList() {
 
   document.getElementById('assetCountText').textContent = `${filtered.length} Asset Disponibili`;
 
+  const listSig = filtered.map(a => `${a.symbol}:${Boolean(AppState.portfolio && AppState.portfolio[a.symbol])}`).join('|');
+  const canPatchInPlace = container.dataset.listSig === listSig && Boolean(container.querySelector('.asset-item'));
+
+  if (canPatchInPlace) {
+    filtered.forEach(asset => {
+      const el = container.querySelector(`.asset-item[data-symbol="${CSS.escape(asset.symbol)}"]`);
+      if (!el) return;
+      const isSelected = Boolean(AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol);
+      el.classList.toggle('selected', isSelected);
+
+      const isUp = (asset.change ?? 0) >= 0;
+      const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset) : '—';
+      const formattedChange = asset.change != null ? `${isUp ? '+' : ''}${asset.change.toFixed(2)}%` : '—';
+      const priceEl = el.querySelector('.asset-price');
+      const changeEl = el.querySelector('.asset-change');
+      if (priceEl && priceEl.textContent !== formattedPrice) priceEl.textContent = formattedPrice;
+      if (changeEl) {
+        if (changeEl.textContent !== formattedChange) changeEl.textContent = formattedChange;
+        changeEl.className = `asset-change ${asset.change != null ? (isUp ? 'badge-up' : 'badge-down') : ''}`;
+      }
+    });
+    renderMobileTickerCarousel();
+    return;
+  }
+
+  container.dataset.listSig = listSig;
   container.innerHTML = filtered.map(asset => {
     const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
     const isUp = (asset.change ?? 0) >= 0;
