@@ -285,8 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupPWA();
 
     // 1. Critical path: Render UI and portfolio immediately in the first frame
-    const initial = AppState.assets.find(a => a.symbol === 'NVDA') || AppState.assets[0];
-    if (initial) selectAsset(initial);
+    selectPortfolioOverview();
 
     // 2. Defer non-critical background computations and live polling after initial paint
     const defer = window.requestIdleCallback || ((cb) => setTimeout(cb, 40));
@@ -1823,6 +1822,56 @@ function updatePortfolioModalPreview(asset) {
   }
 }
 
+function getPortfolioAssetsWithPos() {
+  if (!AppState.portfolio) return [];
+  return AppState.assets
+    .filter(a => AppState.portfolio[a.symbol] && AppState.portfolio[a.symbol].shares > 0)
+    .map(asset => ({ asset, pos: AppState.portfolio[asset.symbol] }));
+}
+
+function getPortfolioVirtualAsset() {
+  const entries = getPortfolioAssetsWithPos();
+  let totalInvestedEur = 0;
+  let totalCurrentValueEur = 0;
+
+  entries.forEach(({ asset, pos }) => {
+    const curPrice = asset.price != null ? asset.price : pos.buyPrice;
+    totalInvestedEur += convertToEur(pos.shares * pos.buyPrice, asset);
+    totalCurrentValueEur += convertToEur(pos.shares * curPrice, asset);
+  });
+
+  const totalPnlCashEur = totalCurrentValueEur - totalInvestedEur;
+  const totalPnlPct = totalInvestedEur > 0 ? (totalPnlCashEur / totalInvestedEur) * 100 : 0;
+
+  let periodHigh = null;
+  let periodLow = null;
+  if (AppState.selectedAsset?.isPortfolio && Array.isArray(AppState.renderedBars) && AppState.renderedBars.length > 0) {
+    periodHigh = Math.max(...AppState.renderedBars.map(b => b.high));
+    periodLow = Math.min(...AppState.renderedBars.map(b => b.low));
+  }
+
+  return {
+    symbol: 'PORTAFOGLIO',
+    name: entries.length > 0
+      ? `Andamento Complessivo • ${entries.length} posizioni`
+      : 'Andamento Complessivo Portafoglio',
+    type: 'portfolio',
+    exchange: 'Multi-Asset (EUR)',
+    currency: 'EUR',
+    price: totalCurrentValueEur,
+    change: totalPnlPct,
+    high: periodHigh,
+    low: periodLow,
+    volume: `Inv. € ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    favorite: false,
+    isPortfolio: true
+  };
+}
+
+function selectPortfolioOverview() {
+  selectAsset(getPortfolioVirtualAsset());
+}
+
 function savePortfolioPosition() {
   const symbol = currentPortfolioModalSymbol;
   if (!symbol) return;
@@ -1844,8 +1893,12 @@ function savePortfolioPosition() {
 
   savePortfolioToStorage();
   closePortfolioModal();
-  renderAssetList();
-  updateSelectedAssetHeader();
+  if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
+    selectPortfolioOverview();
+  } else {
+    renderAssetList();
+    updateSelectedAssetHeader();
+  }
 }
 
 function deletePortfolioPosition(symbol) {
@@ -1857,8 +1910,12 @@ function deletePortfolioPosition(symbol) {
     savePortfolioToStorage(true);
   }
   closePortfolioModal();
-  renderAssetList();
-  updateSelectedAssetHeader();
+  if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
+    selectPortfolioOverview();
+  } else {
+    renderAssetList();
+    updateSelectedAssetHeader();
+  }
 }
 
 function closePortfolioModal() {
@@ -1984,11 +2041,12 @@ function renderAssetList() {
       </div>
     ` : '';
 
+    const isPortfolioSelected = Boolean(AppState.selectedAsset && AppState.selectedAsset.isPortfolio);
     const summaryHtml = `
-      <div class="portfolio-summary-card">
+      <div class="portfolio-summary-card ${isPortfolioSelected ? 'selected' : ''}" id="portfolioSummaryCard" title="Clicca per visualizzare il grafico dell'intero portafoglio">
         <div class="port-sum-row">
           <div>
-            <div class="port-sum-label">Valore Totale Portafoglio</div>
+            <div class="port-sum-label">Valore Totale Portafoglio <span class="port-chart-link-pill">📈 Grafico</span></div>
             <div class="port-sum-val">€ ${totalCurrentValueEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div style="text-align: right;">
@@ -2064,6 +2122,17 @@ function renderAssetList() {
     }).join('');
 
     container.innerHTML = summaryHtml + cardsHtml;
+
+    const sumCard = document.getElementById('portfolioSummaryCard');
+    if (sumCard) {
+      sumCard.addEventListener('click', () => {
+        selectPortfolioOverview();
+        if (window.innerWidth <= 900) {
+          const chartSection = document.getElementById('section-chart');
+          if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    }
 
     // Attach click events on portfolio cards
     container.querySelectorAll('.portfolio-card').forEach(card => {
@@ -2230,11 +2299,17 @@ function selectAsset(asset) {
 }
 
 function updateSelectedAssetHeader() {
+  if (!AppState.selectedAsset) return;
+  if (AppState.selectedAsset.isPortfolio) {
+    AppState.selectedAsset = getPortfolioVirtualAsset();
+  }
   const asset = AppState.selectedAsset;
-  if (!asset) return;
 
-  const typeDisplay = asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase();
-  document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${asset.type}" id="activeType">${typeDisplay}</span>`;
+  const typeDisplay = asset.isPortfolio
+    ? 'PORTAFOGLIO'
+    : (asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase());
+  const badgeTypeClass = asset.isPortfolio ? 'etf' : asset.type;
+  document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${badgeTypeClass}" id="activeType">${typeDisplay}</span>`;
   document.getElementById('activeName').textContent = `${asset.name} • ${asset.exchange}`;
 
   const isUp = (asset.change ?? 0) >= 0;
@@ -2253,10 +2328,14 @@ function updateSelectedAssetHeader() {
   document.getElementById('activeVolume').textContent = asset.volume || '—';
 
   const favBtn = document.getElementById('favoriteToggleBtn');
-  if (favBtn) favBtn.className = `fav-toggle-btn ${asset.favorite ? 'active' : ''}`;
+  if (favBtn) {
+    favBtn.style.display = asset.isPortfolio ? 'none' : '';
+    favBtn.className = `fav-toggle-btn ${asset.favorite ? 'active' : ''}`;
+  }
 
   const portBtn = document.getElementById('headerPortfolioBtn');
   if (portBtn) {
+    portBtn.style.display = asset.isPortfolio ? 'none' : '';
     const inPort = Boolean(AppState.portfolio && AppState.portfolio[asset.symbol]);
     portBtn.className = `fav-toggle-btn ${inPort ? 'active' : ''}`;
     portBtn.style.color = inPort ? '#38bdf8' : 'var(--text-muted)';
@@ -2266,7 +2345,13 @@ function updateSelectedAssetHeader() {
   // Update Data Source Badge
   const sourceBadge = document.getElementById('activeSourceBadge');
   if (sourceBadge) {
-    if (asset.type === 'crypto') {
+    if (asset.isPortfolio) {
+      sourceBadge.textContent = '● Portafoglio Live (EUR)';
+      sourceBadge.style.background = 'rgba(139, 92, 246, 0.18)';
+      sourceBadge.style.color = '#c4b5fd';
+      sourceBadge.style.border = '1px solid rgba(139, 92, 246, 0.4)';
+      sourceBadge.title = 'Andamento aggregato in tempo reale di tutte le posizioni in portafoglio convertite in EUR';
+    } else if (asset.type === 'crypto') {
       sourceBadge.textContent = '● Binance Live';
       sourceBadge.style.background = 'rgba(16, 185, 129, 0.15)';
       sourceBadge.style.color = '#10b981';
@@ -2288,6 +2373,14 @@ function updateBrokerLinks(asset) {
 
   // 1. TradingView
   const tvLink = document.getElementById('linkTradingView');
+  if (asset.isPortfolio) {
+    tvLink.href = 'https://www.tradingview.com/chart/';
+    const binanceLink = document.getElementById('linkBinance');
+    if (binanceLink) binanceLink.style.display = 'none';
+    const ibkrLink = document.getElementById('linkIBKR');
+    if (ibkrLink) ibkrLink.style.display = 'none';
+    return;
+  }
   let tvSymbol = sym;
   if (asset.type === 'crypto') tvSymbol = `BINANCE:${sym}USDT`;
   tvLink.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`;
@@ -2618,7 +2711,173 @@ function renderChartFromBars(rawBars, timeframe = AppState.activeTimeframe) {
   updateTechnicalDecisionBanner(visibleBars);
 }
 
+function getPortfolioBucketKey(dateObj, isIntradayTf) {
+  const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+  if (isIntradayTf) {
+    const slotMs = 30 * 60 * 1000;
+    return Math.floor(d.getTime() / slotMs) * slotMs;
+  }
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0);
+}
+
+function getPortfolioAssetBarsForTf(asset, timeframe) {
+  const isCrypto = asset.type === 'crypto';
+  const isIntradayTf = timeframe === '1D' || timeframe === '1W';
+  const dailyKey = `${asset.symbol}_DAILY`;
+  const primaryKey = isIntradayTf
+    ? (isCrypto ? `${asset.symbol}_${timeframe}` : `${asset.symbol}_INTRADAY`)
+    : dailyKey;
+
+  const primaryBars = AppState.cachedBars[primaryKey];
+  if (primaryBars && primaryBars.length >= (isIntradayTf ? 5 : 10)) {
+    return primaryBars;
+  }
+  return AppState.cachedBars[dailyKey] || AppState.cachedBars[`${asset.symbol}_3M`] || AppState.cachedBars[`${asset.symbol}_1M`] || null;
+}
+
+function buildPortfolioCompositeBars(entries, timeframe) {
+  if (!entries || entries.length === 0) return [];
+  const isIntradayTf = timeframe === '1D' || timeframe === '1W';
+  const bucketMaps = {};
+  const lastKnown = {};
+  const allTimestamps = new Set();
+
+  entries.forEach(({ asset, pos }) => {
+    const rawBars = getPortfolioAssetBarsForTf(asset, timeframe);
+    const fallbackPrice = asset.price != null ? asset.price : pos.buyPrice;
+    const flatBar = { open: fallbackPrice, high: fallbackPrice, low: fallbackPrice, close: fallbackPrice, volume: 0 };
+
+    if (!rawBars || rawBars.length === 0) {
+      bucketMaps[asset.symbol] = new Map();
+      lastKnown[asset.symbol] = flatBar;
+      return;
+    }
+
+    const map = new Map();
+    rawBars.forEach(b => {
+      const ts = getPortfolioBucketKey(b.time, isIntradayTf);
+      map.set(ts, b);
+      allTimestamps.add(ts);
+    });
+    bucketMaps[asset.symbol] = map;
+    lastKnown[asset.symbol] = rawBars[0];
+  });
+
+  if (allTimestamps.size === 0) {
+    // Fallback if no asset has historical bars yet (e.g. certificates-only portfolio)
+    const now = Date.now();
+    const totalEur = entries.reduce((sum, { asset, pos }) => {
+      const p = asset.price != null ? asset.price : pos.buyPrice;
+      return sum + convertToEur(pos.shares * p, asset);
+    }, 0);
+    return [
+      { time: new Date(now - 86400000), open: totalEur, high: totalEur, low: totalEur, close: totalEur, volume: 0 },
+      { time: new Date(now), open: totalEur, high: totalEur, low: totalEur, close: totalEur, volume: 0 }
+    ];
+  }
+
+  const sortedTs = Array.from(allTimestamps).sort((a, b) => a - b);
+  const composite = sortedTs.map((ts, idx) => {
+    let o = 0, h = 0, l = 0, c = 0, v = 0;
+    const isLast = idx === sortedTs.length - 1;
+
+    entries.forEach(({ asset, pos }) => {
+      const b = bucketMaps[asset.symbol].get(ts);
+      if (b) lastKnown[asset.symbol] = b;
+      const curBar = lastKnown[asset.symbol];
+      const barClose = (isLast && asset.price != null) ? asset.price : curBar.close;
+
+      o += convertToEur(pos.shares * curBar.open, asset);
+      h += convertToEur(pos.shares * Math.max(curBar.high, barClose), asset);
+      l += convertToEur(pos.shares * Math.min(curBar.low, barClose), asset);
+      c += convertToEur(pos.shares * barClose, asset);
+      v += curBar.volume || 0;
+    });
+
+    return {
+      time: new Date(ts),
+      open: o,
+      high: Math.max(o, h, c),
+      low: Math.min(o, l, c),
+      close: c,
+      volume: v
+    };
+  });
+
+  return composite;
+}
+
+async function loadAndRenderPortfolioChart(timeframe, options = {}) {
+  const entries = getPortfolioAssetsWithPos();
+  if (entries.length === 0) {
+    AppState.renderedBars = [];
+    showChartNoData(
+      getPortfolioVirtualAsset(),
+      'Portafoglio vuoto',
+      'Aggiungi almeno un titolo al portafoglio per vedere il grafico complessivo'
+    );
+    return;
+  }
+
+  const immediateBars = buildPortfolioCompositeBars(entries, timeframe);
+  if (immediateBars.length >= 2) {
+    renderChartFromBars(immediateBars, timeframe);
+    updateSelectedAssetHeader();
+    updateAiInvestmentEvaluation(AppState.selectedAsset, AppState.renderedBars);
+  }
+
+  if (options.renderOnly) return;
+
+  const isIntradayTf = timeframe === '1D' || timeframe === '1W';
+  const fetchTasks = entries
+    .filter(({ asset }) => asset.type !== 'certificate')
+    .map(async ({ asset }) => {
+      const isCrypto = asset.type === 'crypto';
+      const primaryKey = isIntradayTf
+        ? (isCrypto ? `${asset.symbol}_${timeframe}` : `${asset.symbol}_INTRADAY`)
+        : `${asset.symbol}_DAILY`;
+      const seriesType = isIntradayTf
+        ? (isCrypto ? `INTRADAY_${timeframe}` : 'INTRADAY')
+        : 'DAILY';
+
+      const existing = AppState.cachedBars[primaryKey];
+      const lastUpd = AppState.barsLastUpdated[primaryKey] || 0;
+      const minNeeded = isIntradayTf ? 10 : 30;
+      const hasEnough = existing && existing.length >= minNeeded;
+      const needsFetch = !hasEnough || options.forceIncremental || (Date.now() - lastUpd >= INCREMENTAL_SYNC_COOLDOWN_MS);
+      if (!needsFetch) return false;
+
+      AppState.barsLastUpdated[primaryKey] = Date.now();
+      const fetched = await fetchMasterSeriesFromSource(asset, seriesType, hasEnough);
+      if (fetched && fetched.length > 0) {
+        AppState.cachedBars[primaryKey] = hasEnough
+          ? mergeHistoricalBars(existing, fetched)
+          : fetched;
+        AppState.barsLastUpdated[primaryKey] = Date.now();
+        return true;
+      }
+      return false;
+    });
+
+  const results = await Promise.allSettled(fetchTasks);
+  const anyUpdated = results.some(r => r.status === 'fulfilled' && r.value === true);
+  if (anyUpdated) {
+    saveHistoryToStorage();
+    if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio && AppState.activeTimeframe === timeframe) {
+      const updatedBars = buildPortfolioCompositeBars(getPortfolioAssetsWithPos(), timeframe);
+      if (updatedBars.length >= 2) {
+        renderChartFromBars(updatedBars, timeframe);
+        updateSelectedAssetHeader();
+        updateAiInvestmentEvaluation(AppState.selectedAsset, AppState.renderedBars);
+      }
+    }
+  }
+}
+
 async function loadAndRenderChart(asset, timeframe, options = {}) {
+  if (asset && asset.isPortfolio) {
+    return loadAndRenderPortfolioChart(timeframe, options);
+  }
   const isCrypto = asset.type === 'crypto';
   const isIntradayTf = timeframe === '1D' || timeframe === '1W';
   const dailyKey = `${asset.symbol}_DAILY`;
@@ -2702,7 +2961,7 @@ async function loadAndRenderChart(asset, timeframe, options = {}) {
   }
 }
 
-function showChartNoData(asset) {
+function showChartNoData(asset, customMsg1 = null, customMsg2 = null) {
   const canvas = document.getElementById('mainChartCanvas');
   const wrapper = document.getElementById('chartWrapper');
   if (!canvas || !wrapper) return;
@@ -2720,10 +2979,10 @@ function showChartNoData(asset) {
   ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
   ctx.font = '14px sans-serif';
   ctx.textAlign = 'center';
-  const msg1 = 'Dati reali non disponibili al momento per ' + asset.symbol;
-  const msg2 = asset.type === 'crypto'
+  const msg1 = customMsg1 || ('Dati reali non disponibili al momento per ' + asset.symbol);
+  const msg2 = customMsg2 || (asset.type === 'crypto'
     ? 'Server Binance temporaneamente non raggiungibile'
-    : 'Server Yahoo Finance / Mercati temporaneamente non raggiungibile';
+    : 'Server Yahoo Finance / Mercati temporaneamente non raggiungibile');
   ctx.fillText(msg1, width / 2, height / 2 - 12);
   ctx.fillText(msg2, width / 2, height / 2 + 12);
   ctx.textAlign = 'left';

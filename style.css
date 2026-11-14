@@ -2142,6 +2142,32 @@ body {
   border-radius: 10px;
   padding: 12px 14px;
   margin-bottom: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.portfolio-summary-card:hover {
+  border-color: rgba(56, 189, 248, 0.7);
+}
+
+.portfolio-summary-card.selected {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 4px 16px rgba(56, 189, 248, 0.14);
+}
+
+.port-chart-link-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
 }
 
 .port-sum-row {
