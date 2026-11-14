@@ -265,6 +265,12 @@ async function triggerCloudSync(immediate = false) {
 // Il portafoglio predefinito per un nuovo utente o installazione parte sempre completamente vuoto
 const DEFAULT_PORTFOLIO = {};
 
+let PortfolioInlineFormState = {
+  open: false,
+  mode: 'create',
+  draftName: ''
+};
+
 function getActivePortfolioObj() {
   if (!Array.isArray(AppState.portfolios) || AppState.portfolios.length === 0) {
     AppState.portfolios = [{
@@ -2888,6 +2894,7 @@ function renderAssetList() {
       b.classList.toggle('active', b.getAttribute('data-sort') === AppState.portfolioSort);
     });
 
+    const wasInlineFocused = Boolean(document.activeElement && document.activeElement.id === 'pfInlineInput');
     const activePf = getActivePortfolioObj();
     const switcherHtml = `
       <div class="portfolio-switcher-bar" id="portfolioSwitcherBar">
@@ -2908,8 +2915,8 @@ function renderAssetList() {
           <button type="button" class="pf-mini-btn" id="btnRenamePortfolio" title="Rinomina portafoglio attivo">✏️</button>
           ${AppState.portfolios.length > 1 ? `<button type="button" class="pf-mini-btn pf-mini-del" id="btnDeletePortfolio" title="Elimina portafoglio attivo">🗑️</button>` : ''}
         </div>
-        <div class="pf-inline-form" id="pfInlineForm" style="display:none;">
-          <input type="text" id="pfInlineInput" class="pf-inline-input" placeholder="Nome portafoglio (es. ETF Lungo Termine)" maxlength="28">
+        <div class="pf-inline-form" id="pfInlineForm" style="display:${PortfolioInlineFormState.open ? 'flex' : 'none'};">
+          <input type="text" id="pfInlineInput" class="pf-inline-input" placeholder="Nome portafoglio (es. ETF Lungo Termine)" maxlength="28" value="${escapePortfolioHtml(PortfolioInlineFormState.draftName)}">
           <button type="button" class="pf-inline-save" id="pfInlineSaveBtn">Salva</button>
           <button type="button" class="pf-inline-cancel" id="pfInlineCancelBtn">✕</button>
         </div>
@@ -2919,6 +2926,7 @@ function renderAssetList() {
     const bindSwitcherEvents = () => {
       container.querySelectorAll('.pf-pill[data-pf-id]').forEach(btn => {
         btn.addEventListener('click', () => {
+          PortfolioInlineFormState = { open: false, mode: 'create', draftName: '' };
           const id = btn.getAttribute('data-pf-id');
           if (id) switchActivePortfolio(id);
         });
@@ -2928,22 +2936,26 @@ function renderAssetList() {
       const inputEl = document.getElementById('pfInlineInput');
       const saveBtn = document.getElementById('pfInlineSaveBtn');
       const cancelBtn = document.getElementById('pfInlineCancelBtn');
-      let formMode = 'create';
 
       const openInline = (mode, initialVal = '') => {
+        PortfolioInlineFormState = { open: true, mode, draftName: initialVal };
         if (!formEl || !inputEl) return;
-        formMode = mode;
         inputEl.value = initialVal;
         formEl.style.display = 'flex';
         inputEl.focus();
         inputEl.select();
       };
 
+      const closeInline = () => {
+        PortfolioInlineFormState = { open: false, mode: 'create', draftName: '' };
+        if (formEl) formEl.style.display = 'none';
+      };
+
       const btnNew = document.getElementById('btnShowNewPortfolioForm');
-      if (btnNew) btnNew.addEventListener('click', () => openInline('create', ''));
+      if (btnNew) btnNew.addEventListener('click', (e) => { e.stopPropagation(); openInline('create', ''); });
 
       const btnRen = document.getElementById('btnRenamePortfolio');
-      if (btnRen) btnRen.addEventListener('click', () => openInline('rename', activePf.name));
+      if (btnRen) btnRen.addEventListener('click', (e) => { e.stopPropagation(); openInline('rename', activePf.name); });
 
       const btnDel = document.getElementById('btnDeletePortfolio');
       if (btnDel) btnDel.addEventListener('click', () => deleteActivePortfolio());
@@ -2951,17 +2963,27 @@ function renderAssetList() {
       const submitInline = () => {
         const val = inputEl ? inputEl.value.trim() : '';
         if (!val) return;
-        if (formMode === 'rename') renameActivePortfolio(val);
+        const mode = PortfolioInlineFormState.mode;
+        closeInline();
+        if (mode === 'rename') renameActivePortfolio(val);
         else createNewPortfolio(val);
       };
 
       if (saveBtn) saveBtn.addEventListener('click', submitInline);
-      if (cancelBtn) cancelBtn.addEventListener('click', () => { if (formEl) formEl.style.display = 'none'; });
+      if (cancelBtn) cancelBtn.addEventListener('click', closeInline);
       if (inputEl) {
+        inputEl.addEventListener('input', () => {
+          PortfolioInlineFormState.draftName = inputEl.value;
+        });
         inputEl.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') submitInline();
-          if (e.key === 'Escape' && formEl) formEl.style.display = 'none';
+          if (e.key === 'Escape') closeInline();
         });
+        if (PortfolioInlineFormState.open && wasInlineFocused) {
+          inputEl.focus();
+          const len = inputEl.value.length;
+          inputEl.setSelectionRange(len, len);
+        }
       }
     };
 
