@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=40">
+  <link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 
@@ -722,6 +722,46 @@
     </div>
   </div>
 
+  <!-- MODAL: Portfolio Characteristics (Composition & Horizon) -->
+  <div class="modal-backdrop" id="modalPortfolioProfile">
+    <div class="modal-window" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3 style="font-size: 1.02rem; font-weight: 700;">⚙️ Caratteristiche Portafoglio</h3>
+        <button class="modal-close" id="closePortfolioProfileModal">&times;</button>
+      </div>
+
+      <p style="font-size: 0.76rem; color: var(--text-muted); margin-bottom: 12px;">
+        Imposta il profilo di <strong id="pfProfileModalName" style="color: #fff;">Portafoglio</strong> per personalizzare badge e suggerimenti Gemini:
+      </p>
+
+      <div class="calc-field-group">
+        <label>1) Composizione del Portafoglio</label>
+        <select id="pfProfileCompositionSelect" class="port-sim-select">
+          <option value="misto">Misto (Multi-Asset)</option>
+          <option value="azionario">Azionario</option>
+          <option value="etf">ETF</option>
+          <option value="certificati">Certificati</option>
+          <option value="crypto">Crypto</option>
+        </select>
+      </div>
+
+      <div class="calc-field-group">
+        <label>2) Orizzonte Temporale</label>
+        <select id="pfProfileHorizonSelect" class="port-sim-select">
+          <option value="1 MESE">1 MESE</option>
+          <option value="6 MESI">6 MESI</option>
+          <option value="12 MESI">12 MESI</option>
+          <option value=">12 MESI">&gt;12 MESI</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 14px;">
+        <button id="savePortfolioProfileBtn" class="btn-primary" style="flex: 2;">Salva Caratteristiche</button>
+        <button id="skipPortfolioProfileBtn" class="btn-secondary" style="flex: 1;">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Add Custom Asset -->
   <div class="modal-backdrop" id="modalAddTicker">
     <div class="modal-window">
@@ -979,6 +1019,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=40"></script>
+  <script src="app.js?v=42"></script>
 </body>
 </html>

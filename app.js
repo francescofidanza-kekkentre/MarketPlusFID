@@ -226,7 +226,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=35');
+    FirebaseModule = await import('./firebase-sync.js?v=42');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -312,10 +312,65 @@ function createNewPortfolio(name) {
   const newPf = {
     id: 'pf_' + Date.now(),
     name: cleanName,
+    composition: 'misto',
+    horizon: '>12 MESI',
     positions: {}
   };
   AppState.portfolios.push(newPf);
   switchActivePortfolio(newPf.id);
+  openPortfolioProfileModal(newPf.id);
+}
+
+let editingPortfolioProfileId = null;
+
+function formatPortfolioCompositionLabel(comp) {
+  const map = {
+    misto: 'Misto',
+    azionario: 'Azionario',
+    etf: 'ETF',
+    certificati: 'Certificati',
+    crypto: 'Crypto'
+  };
+  return map[String(comp || 'misto').toLowerCase()] || 'Misto';
+}
+
+function openPortfolioProfileModal(portfolioId) {
+  const pf = (AppState.portfolios || []).find(p => p.id === portfolioId) || getActivePortfolioObj();
+  if (!pf) return;
+  editingPortfolioProfileId = pf.id;
+
+  const modal = document.getElementById('modalPortfolioProfile');
+  const nameEl = document.getElementById('pfProfileModalName');
+  const compSel = document.getElementById('pfProfileCompositionSelect');
+  const horSel = document.getElementById('pfProfileHorizonSelect');
+
+  if (nameEl) nameEl.textContent = pf.name;
+  if (compSel) compSel.value = pf.composition || 'misto';
+  if (horSel) horSel.value = pf.horizon || '>12 MESI';
+  if (modal) modal.classList.add('active');
+}
+
+function closePortfolioProfileModal() {
+  const modal = document.getElementById('modalPortfolioProfile');
+  if (modal) modal.classList.remove('active');
+  editingPortfolioProfileId = null;
+}
+
+function savePortfolioProfileModal() {
+  const pf = (AppState.portfolios || []).find(p => p.id === editingPortfolioProfileId) || getActivePortfolioObj();
+  if (!pf) {
+    closePortfolioProfileModal();
+    return;
+  }
+  const compSel = document.getElementById('pfProfileCompositionSelect');
+  const horSel = document.getElementById('pfProfileHorizonSelect');
+  pf.composition = compSel ? compSel.value : (pf.composition || 'misto');
+  pf.horizon = horSel ? horSel.value : (pf.horizon || '>12 MESI');
+
+  savePortfolioToStorage(true);
+  closePortfolioProfileModal();
+  renderAssetList();
+  renderPortfolioAiAnalysisSection();
 }
 
 function renameActivePortfolio(newName) {
@@ -1914,8 +1969,14 @@ async function runGeminiPortfolioEvaluation() {
       .slice(0, 60)
       .map(a => ({ symbol: a.symbol, name: a.name, type: a.type }));
 
+    const activePf = getActivePortfolioObj();
     const res = await mod.analyzePortfolioWithGemini({
       positionsCount: holdingsPayload.length,
+      portfolioProfile: {
+        name: activePf.name,
+        composition: formatPortfolioCompositionLabel(activePf.composition),
+        horizon: activePf.horizon || '>12 MESI'
+      },
       holdings: holdingsPayload,
       localCompartmentBreakdown: (localEval?.sortedSectors || []).map(s => ({
         sector: s.name,
@@ -1970,6 +2031,8 @@ async function runGeminiAssetEvaluation() {
 
     const bars = AppState.renderedBars || [];
     const last = bars.length > 0 ? bars[bars.length - 1] : null;
+    const fund = asset.fundamentals || null;
+    const cert = asset.certificateData || null;
     const payload = {
       symbol: asset.symbol,
       name: asset.name,
@@ -1981,8 +2044,10 @@ async function runGeminiAssetEvaluation() {
       rsi: last?.rsi ?? null,
       ema20: last?.ema20 ?? null,
       ema50: last?.ema50 ?? null,
-      fundamentals: asset.fundamentals || null,
-      certificateData: asset.certificateData || null
+      peRatio: fund?.peRatio ?? null,
+      analystRating: fund?.analystRating ?? null,
+      underlying: cert?.underlying ?? null,
+      barrierPct: cert?.barrierPct ?? null
     };
 
     const res = await mod.analyzeAssetWithGemini(payload);
@@ -1999,6 +2064,14 @@ async function runGeminiAssetEvaluation() {
     }
   } catch (err) {
     console.warn('[Hybrid AI] Fallback locale mantenuto:', err);
+    if (narrativeEl && err?.message) {
+      const prevErr = narrativeEl.querySelector('.port-ai-fallback-note');
+      if (prevErr) prevErr.remove();
+      const note = document.createElement('div');
+      note.className = 'port-ai-fallback-note';
+      note.textContent = `Fallback locale: ${err.message}`;
+      narrativeEl.appendChild(note);
+    }
     if (btn) {
       btn.textContent = '✦ Fallback Locale';
       btn.title = err?.message || 'Abilita Firebase AI Logic per usare Gemini';
@@ -2912,6 +2985,7 @@ function renderAssetList() {
           <button type="button" class="pf-pill pf-pill-add" id="btnShowNewPortfolioForm" title="Crea un nuovo portafoglio">+ Nuovo</button>
         </div>
         <div class="pf-switcher-actions">
+          <button type="button" class="pf-mini-btn" id="btnProfilePortfolio" title="Caratteristiche portafoglio (composizione e orizzonte)">⚙️</button>
           <button type="button" class="pf-mini-btn" id="btnRenamePortfolio" title="Rinomina portafoglio attivo">✏️</button>
           ${AppState.portfolios.length > 1 ? `<button type="button" class="pf-mini-btn pf-mini-del" id="btnDeletePortfolio" title="Elimina portafoglio attivo">🗑️</button>` : ''}
         </div>
@@ -2953,6 +3027,9 @@ function renderAssetList() {
 
       const btnNew = document.getElementById('btnShowNewPortfolioForm');
       if (btnNew) btnNew.addEventListener('click', (e) => { e.stopPropagation(); openInline('create', ''); });
+
+      const btnProf = document.getElementById('btnProfilePortfolio');
+      if (btnProf) btnProf.addEventListener('click', (e) => { e.stopPropagation(); openPortfolioProfileModal(activePf.id); });
 
       const btnRen = document.getElementById('btnRenamePortfolio');
       if (btnRen) btnRen.addEventListener('click', (e) => { e.stopPropagation(); openInline('rename', activePf.name); });
@@ -3007,7 +3084,7 @@ function renderAssetList() {
     }
 
     const switcherSig = AppState.portfolios
-      .map(p => `${p.id}:${p.name}:${Object.keys(p.positions || {}).length}`)
+      .map(p => `${p.id}:${p.name}:${p.composition || 'misto'}:${p.horizon || '>12 MESI'}:${Object.keys(p.positions || {}).length}`)
       .join('|') + '|' + activePf.id;
 
     if (switcherHost.dataset.sig !== switcherSig) {
@@ -3094,6 +3171,10 @@ function renderAssetList() {
         <div class="port-sum-sub">
           <span>Capitale Investito: <strong>€ ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
           <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
+        </div>
+        <div class="port-sum-profile-row">
+          <span class="port-profile-chip">📊 ${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))}</span>
+          <span class="port-profile-chip">⏱ ${escapePortfolioHtml(activePf.horizon || '>12 MESI')}</span>
         </div>
       </div>
     `;
@@ -5179,6 +5260,20 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     `<div>⚠️ <strong>A cosa fare attenzione:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
     `<div>💡 <strong>In conclusione (cosa fare):</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(resistanceLevel, asset)}</strong>.</div>`;
 
+  const assetGemKey = `${asset.symbol}_${AppState.activeTimeframe}`;
+  const cachedGemAsset = GeminiHybridState.assets?.[assetGemKey];
+  const gemAssetBtn = document.getElementById('btnGeminiAssetEval');
+  if (cachedGemAsset) {
+    if (cachedGemAsset.verdict) verdictBadgeEl.textContent = `✦ ${cachedGemAsset.verdict}`;
+    if (riskBadgeEl && cachedGemAsset.riskProfile) riskBadgeEl.textContent = cachedGemAsset.riskProfile;
+    if (cachedGemAsset.narrative) {
+      narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(cachedGemAsset.narrative)}`;
+    }
+    if (gemAssetBtn) gemAssetBtn.textContent = '✦ Gemini ✓';
+  } else if (gemAssetBtn && !gemAssetBtn.disabled) {
+    gemAssetBtn.textContent = '✦ Gemini';
+  }
+
   // --- Dynamic Structured AI Evaluation & Trade Setup Plan (Requested Format) ---
   const isAlo = (asset.symbol === 'ALO.PA');
 
@@ -7043,6 +7138,13 @@ function setupModals() {
   if (closePortBtn) closePortBtn.addEventListener('click', closePortfolioModal);
   if (cancelPortBtn) cancelPortBtn.addEventListener('click', closePortfolioModal);
   if (savePortBtn) savePortBtn.addEventListener('click', savePortfolioPosition);
+
+  const closePfProfBtn = document.getElementById('closePortfolioProfileModal');
+  const skipPfProfBtn = document.getElementById('skipPortfolioProfileBtn');
+  const savePfProfBtn = document.getElementById('savePortfolioProfileBtn');
+  if (closePfProfBtn) closePfProfBtn.addEventListener('click', closePortfolioProfileModal);
+  if (skipPfProfBtn) skipPfProfBtn.addEventListener('click', closePortfolioProfileModal);
+  if (savePfProfBtn) savePfProfBtn.addEventListener('click', savePortfolioProfileModal);
   if (deletePortBtn) deletePortBtn.addEventListener('click', () => deletePortfolioPosition());
   if (portInputShares) portInputShares.addEventListener('input', () => updatePortfolioModalPreview());
   if (portInputBuyPrice) portInputBuyPrice.addEventListener('input', () => updatePortfolioModalPreview());

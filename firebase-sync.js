@@ -422,13 +422,24 @@ export async function analyzePortfolioWithGemini(portfolioContext) {
       '1) Sovrapposizioni tra azioni singole, ETF (anche look-through su indici/settori come S&P 500, Nasdaq 100, MSCI World, Semiconduttori, FTSE MIB) e certificati (sottostante diretto o worst-of). Se non ci sono sovrapposizioni, restituisci overlaps: [].',
       '2) Sbilanciamento verso un comparto/settore o area geografica.',
       '3) Un breve consiglio operativo concreto (actionableTip, max 22 parole).',
-      '4) Basandoti direttamente sul consiglio espresso in actionableTip, suggerisci i migliori 3 asset da aggiungere al portafoglio (recommendedAdditions: esattamente 3 elementi con symbol, name, assetType es. ETF/Azione/Crypto/Certificato, e reason di max 14 parole coerente con actionableTip). Se nel contesto è presente availableCandidates, scegli prioritariamente ticker reali da quella lista (non già presenti in holdings).'
+      '4) Basandoti direttamente sul consiglio espresso in actionableTip, suggerisci i migliori 3 asset da aggiungere al portafoglio (recommendedAdditions: esattamente 3 elementi con symbol, name, assetType es. ETF/Azione/Crypto/Certificato, e reason di max 14 parole coerente con actionableTip). Se nel contesto è presente availableCandidates, scegli prioritariamente ticker reali da quella lista (non già presenti in holdings).',
+      '5) Se nel contesto è presente portfolioProfile (composition e horizon), adatta il tono e i 3 asset suggeriti alla composizione target e all\'orizzonte temporale dichiarati dall\'utente.'
     ].join('\n');
+
+function parseGeminiJsonText(rawText) {
+  const cleaned = String(rawText || '')
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  return JSON.parse(cleaned);
+}
 
     const result = await model.generateContent(prompt);
     const text = result?.response?.text();
     if (!text) throw new Error('Risposta Gemini vuota');
-    const parsed = JSON.parse(text);
+    const parsed = parseGeminiJsonText(text);
     return { ok: true, model: GEMINI_MODEL_NAME, data: parsed };
   } catch (err) {
     console.warn('[Firebase AI Logic] Fallback locale portafoglio:', err);
@@ -454,7 +465,7 @@ export async function analyzeAssetWithGemini(assetContext) {
       model: GEMINI_MODEL_NAME,
       generationConfig: {
         temperature: 0.35,
-        maxOutputTokens: 900,
+        maxOutputTokens: 1400,
         responseMimeType: 'application/json',
         responseSchema
       }
@@ -469,8 +480,11 @@ export async function analyzeAssetWithGemini(assetContext) {
 
     const result = await model.generateContent(prompt);
     const text = result?.response?.text();
-    if (!text) throw new Error('Risposta Gemini vuota');
-    const parsed = JSON.parse(text);
+    if (!text) {
+      const reason = result?.response?.candidates?.[0]?.finishReason || 'empty';
+      throw new Error(`Risposta Gemini vuota (${reason})`);
+    }
+    const parsed = parseGeminiJsonText(text);
     return { ok: true, model: GEMINI_MODEL_NAME, data: parsed };
   } catch (err) {
     console.warn('[Firebase AI Logic] Fallback locale asset:', err);
