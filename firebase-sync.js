@@ -369,6 +369,16 @@ async function ensureFirebaseAiReady() {
   return aiInstance;
 }
 
+function parseGeminiJsonText(rawText) {
+  const cleaned = String(rawText || '')
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  return JSON.parse(cleaned);
+}
+
 /**
  * Valuta la composizione del portafoglio tramite Firebase AI Logic (Gemini Developer API)
  * con risposta JSON strutturata. In caso di errore restituisce { ok: false, error }.
@@ -425,16 +435,6 @@ export async function analyzePortfolioWithGemini(portfolioContext) {
       '4) Basandoti direttamente sul consiglio espresso in actionableTip, suggerisci i migliori 3 asset da aggiungere al portafoglio (recommendedAdditions: esattamente 3 elementi con symbol, name, assetType es. ETF/Azione/Crypto/Certificato, e reason di max 14 parole coerente con actionableTip). Se nel contesto è presente availableCandidates, scegli prioritariamente ticker reali da quella lista (non già presenti in holdings).',
       '5) Se nel contesto è presente portfolioProfile (composition e horizon), adatta il tono e i 3 asset suggeriti alla composizione target e all\'orizzonte temporale dichiarati dall\'utente.'
     ].join('\n');
-
-function parseGeminiJsonText(rawText) {
-  const cleaned = String(rawText || '')
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-  return JSON.parse(cleaned);
-}
 
     const result = await model.generateContent(prompt);
     const text = result?.response?.text();

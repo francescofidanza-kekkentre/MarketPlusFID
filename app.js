@@ -226,7 +226,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=42');
+    FirebaseModule = await import('./firebase-sync.js?v=44');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -1906,7 +1906,8 @@ function evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur) {
 
 const GeminiHybridState = {
   portfolio: { key: null, data: null, model: null, loading: false, error: null },
-  assets: {} // keyed by `${symbol}_${timeframe}`
+  assets: {}, // keyed by `${symbol}_${timeframe}`
+  assetErrors: {} // keyed by `${symbol}_${timeframe}`
 };
 
 function getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur) {
@@ -2052,6 +2053,7 @@ async function runGeminiAssetEvaluation() {
 
     const res = await mod.analyzeAssetWithGemini(payload);
     if (res && res.ok && res.data) {
+      delete GeminiHybridState.assetErrors[cacheKey];
       GeminiHybridState.assets[cacheKey] = res.data;
       if (verdictEl && res.data.verdict) verdictEl.textContent = `✦ ${res.data.verdict}`;
       if (riskEl && res.data.riskProfile) riskEl.textContent = res.data.riskProfile;
@@ -2064,17 +2066,18 @@ async function runGeminiAssetEvaluation() {
     }
   } catch (err) {
     console.warn('[Hybrid AI] Fallback locale mantenuto:', err);
-    if (narrativeEl && err?.message) {
+    GeminiHybridState.assetErrors[cacheKey] = err?.message || 'Errore sconosciuto';
+    if (narrativeEl) {
       const prevErr = narrativeEl.querySelector('.port-ai-fallback-note');
       if (prevErr) prevErr.remove();
       const note = document.createElement('div');
       note.className = 'port-ai-fallback-note';
-      note.textContent = `Fallback locale: ${err.message}`;
+      note.textContent = `Fallback locale: ${GeminiHybridState.assetErrors[cacheKey]}`;
       narrativeEl.appendChild(note);
     }
     if (btn) {
       btn.textContent = '✦ Fallback Locale';
-      btn.title = err?.message || 'Abilita Firebase AI Logic per usare Gemini';
+      btn.title = GeminiHybridState.assetErrors[cacheKey];
       setTimeout(() => { if (btn) btn.textContent = '✦ Gemini'; }, 3000);
     }
   } finally {
@@ -5262,6 +5265,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
 
   const assetGemKey = `${asset.symbol}_${AppState.activeTimeframe}`;
   const cachedGemAsset = GeminiHybridState.assets?.[assetGemKey];
+  const cachedGemErr = GeminiHybridState.assetErrors?.[assetGemKey];
   const gemAssetBtn = document.getElementById('btnGeminiAssetEval');
   if (cachedGemAsset) {
     if (cachedGemAsset.verdict) verdictBadgeEl.textContent = `✦ ${cachedGemAsset.verdict}`;
@@ -5270,8 +5274,16 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(cachedGemAsset.narrative)}`;
     }
     if (gemAssetBtn) gemAssetBtn.textContent = '✦ Gemini ✓';
-  } else if (gemAssetBtn && !gemAssetBtn.disabled) {
-    gemAssetBtn.textContent = '✦ Gemini';
+  } else {
+    if (cachedGemErr) {
+      const note = document.createElement('div');
+      note.className = 'port-ai-fallback-note';
+      note.textContent = `Fallback locale: ${cachedGemErr}`;
+      narrativeEl.appendChild(note);
+    }
+    if (gemAssetBtn && !gemAssetBtn.disabled) {
+      gemAssetBtn.textContent = '✦ Gemini';
+    }
   }
 
   // --- Dynamic Structured AI Evaluation & Trade Setup Plan (Requested Format) ---
