@@ -2426,6 +2426,20 @@ body {
   border-radius: 8px;
 }
 
+.port-ai-wide-grid .port-ai-item-gemini {
+  grid-column: 1 / -1;
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.port-ai-wide-grid .port-ai-item-gemini .port-ai-comp-label {
+  color: #ddd6fe;
+}
+
+.port-ai-gemini-text {
+  color: #ede9fe;
+}
+
 @media (max-width: 768px) {
   .port-ai-wide-grid {
     grid-template-columns: 1fr;

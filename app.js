@@ -1995,12 +1995,13 @@ function renderPortfolioAiAnalysisSection() {
             `).join('')}
           </div>
         </div>
+        ${hasGemini && gemState.data.actionableTip ? `
+          <div class="port-ai-comp-item port-ai-item-gemini">
+            <div class="port-ai-comp-label">3. ✦ Consiglio Gemini</div>
+            <div class="port-ai-comp-text port-ai-gemini-text">${escapePortfolioHtml(gemState.data.actionableTip)}</div>
+          </div>
+        ` : ''}
       </div>
-      ${hasGemini && gemState.data.actionableTip ? `
-        <div class="port-ai-gemini-tip">
-          <strong>✦ Consiglio Gemini:</strong> ${escapePortfolioHtml(gemState.data.actionableTip)}
-        </div>
-      ` : ''}
       ${gemError ? `
         <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
           Fallback locale attivo: ${escapePortfolioHtml(gemError)}
