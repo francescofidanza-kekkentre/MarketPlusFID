@@ -2388,6 +2388,51 @@ body {
   margin-right: 6px;
 }
 
+.port-ai-comp-wide {
+  margin-top: 0;
+  padding: 12px 14px;
+  border-top: none;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  border-radius: 10px;
+}
+
+.port-ai-comp-wide .port-ai-comp-title {
+  font-size: 0.85rem;
+}
+
+.port-ai-comp-wide .port-ai-comp-label {
+  font-size: 0.72rem;
+}
+
+.port-ai-comp-wide .port-ai-comp-text,
+.port-ai-comp-wide .port-ai-comp-list,
+.port-ai-comp-wide .port-ai-comp-ok {
+  font-size: 0.78rem;
+}
+
+.port-ai-wide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.port-ai-wide-grid .port-ai-comp-item {
+  margin-top: 0;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+  .port-ai-wide-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
 .portfolio-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);

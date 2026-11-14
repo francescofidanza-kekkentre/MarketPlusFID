@@ -1772,6 +1772,7 @@ async function runGeminiPortfolioEvaluation() {
 
   GeminiHybridState.portfolio = { key: cacheKey, data: null, model: null, loading: true, error: null };
   renderAssetList();
+  renderPortfolioAiAnalysisSection();
 
   try {
     const mod = await getFirebaseModule();
@@ -1825,6 +1826,7 @@ async function runGeminiPortfolioEvaluation() {
     };
   }
   renderAssetList();
+  renderPortfolioAiAnalysisSection();
 }
 
 async function runGeminiAssetEvaluation() {
@@ -1885,6 +1887,134 @@ async function runGeminiAssetEvaluation() {
     }
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+function renderPortfolioAiAnalysisSection() {
+  const sectionAi = document.getElementById('section-ai');
+  if (!sectionAi) return;
+
+  const isPort = Boolean(AppState.selectedAsset && AppState.selectedAsset.isPortfolio);
+  const decHeader = sectionAi.querySelector('.decision-header');
+  const decSignals = sectionAi.querySelector('.decision-signals-grid');
+  const aiEvalCard = document.getElementById('aiEvaluationCard');
+  let portBox = document.getElementById('portfolioAiAnalysisBox');
+
+  if (!isPort) {
+    if (decHeader) decHeader.style.display = '';
+    if (decSignals) decSignals.style.display = '';
+    if (aiEvalCard) aiEvalCard.style.display = '';
+    if (portBox) portBox.style.display = 'none';
+    return;
+  }
+
+  // Hide single-asset technicals when viewing the overall Portfolio
+  if (decHeader) decHeader.style.display = 'none';
+  if (decSignals) decSignals.style.display = 'none';
+  if (aiEvalCard) aiEvalCard.style.display = 'none';
+
+  if (!portBox) {
+    portBox = document.createElement('div');
+    portBox.id = 'portfolioAiAnalysisBox';
+    sectionAi.appendChild(portBox);
+  }
+  portBox.style.display = '';
+
+  const entries = getPortfolioAssetsWithPos();
+  if (entries.length === 0) {
+    portBox.innerHTML = `
+      <div class="port-ai-comp-box port-ai-comp-wide">
+        <div class="port-ai-comp-header">
+          <span class="port-ai-comp-title"><span class="ai-spark-icon">✦</span> Valutazione IA Composizione Portafoglio</span>
+        </div>
+        <div class="port-ai-comp-text">Aggiungi almeno una posizione nel portafoglio per analizzare sovrapposizioni e bilanciamento per comparto.</div>
+      </div>
+    `;
+    return;
+  }
+
+  let totalCurrentValueEur = 0;
+  const portfolioAssets = entries.map(({ asset, pos }) => {
+    const curPrice = asset.price != null ? asset.price : pos.buyPrice;
+    totalCurrentValueEur += convertToEur(pos.shares * curPrice, asset);
+    return asset;
+  });
+
+  const compAi = evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur);
+  if (!compAi) return;
+
+  const cacheKey = getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur);
+  const gemState = GeminiHybridState.portfolio;
+  const hasGemini = Boolean(gemState.key === cacheKey && gemState.data);
+  const isGemLoading = Boolean(gemState.loading);
+  const gemError = (gemState.key === cacheKey && gemState.error) ? gemState.error : null;
+
+  const effectiveOverlaps = hasGemini && Array.isArray(gemState.data.overlaps)
+    ? gemState.data.overlaps.map(o => ({ severity: o.severity || 'medium', message: escapePortfolioHtml(o.message) }))
+    : compAi.overlaps;
+  const effectiveSectorSummary = hasGemini && gemState.data.sectorSummary
+    ? escapePortfolioHtml(gemState.data.sectorSummary)
+    : compAi.sectorSummary;
+  const effectiveBadge = hasGemini && gemState.data.overallStatus
+    ? {
+        label: gemState.data.overallStatus,
+        cls: gemState.data.overallStatus === 'EQUILIBRATO'
+          ? 'port-ai-status-ok'
+          : (gemState.data.overallStatus === 'ATTENZIONE' ? 'port-ai-status-warn' : 'port-ai-status-danger')
+      }
+    : compAi.overallBadge;
+
+  portBox.innerHTML = `
+    <div class="port-ai-comp-box port-ai-comp-wide">
+      <div class="port-ai-comp-header">
+        <span class="port-ai-comp-title">
+          <span class="ai-spark-icon">✦</span>
+          ${hasGemini ? 'Valutazione Gemini Composizione Portafoglio' : 'Valutazione IA Composizione Portafoglio'}
+        </span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button type="button" class="ai-gemini-btn" id="btnGeminiPortfolioEval" ${isGemLoading ? 'disabled' : ''} title="Analisi approfondita tramite Firebase AI Logic (Gemini)">
+            ${isGemLoading ? '⏳ Gemini...' : (hasGemini ? '✦ Aggiorna' : '✦ Gemini')}
+          </button>
+          <span class="port-ai-comp-badge ${effectiveBadge.cls}">${effectiveBadge.label}</span>
+        </div>
+      </div>
+      <div class="port-ai-wide-grid">
+        <div class="port-ai-comp-item">
+          <div class="port-ai-comp-label">1. Sovrapposizioni (Azioni / ETF / Certificati)</div>
+          ${effectiveOverlaps.length > 0
+            ? `<ul class="port-ai-comp-list">${effectiveOverlaps.map(o => `<li class="overlap-${o.severity}">${o.message}</li>`).join('')}</ul>`
+            : `<div class="port-ai-comp-ok">✓ Nessuna sovrapposizione rilevata tra azioni, ETF e certificati in portafoglio.</div>`
+          }
+        </div>
+        <div class="port-ai-comp-item">
+          <div class="port-ai-comp-label">2. Bilanciamento per Comparto</div>
+          <div class="port-ai-comp-text sector-${compAi.sectorStatus}">${effectiveSectorSummary}</div>
+          <div class="port-ai-sector-pills">
+            ${compAi.sortedSectors.map(sec => `
+              <span class="port-ai-sector-pill">${escapePortfolioHtml(sec.name)}: <strong>${sec.weightPct.toFixed(0)}%</strong></span>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+      ${hasGemini && gemState.data.actionableTip ? `
+        <div class="port-ai-gemini-tip">
+          <strong>✦ Consiglio Gemini:</strong> ${escapePortfolioHtml(gemState.data.actionableTip)}
+        </div>
+      ` : ''}
+      ${gemError ? `
+        <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
+          Fallback locale attivo: ${escapePortfolioHtml(gemError)}
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  const gemPortBtn = document.getElementById('btnGeminiPortfolioEval');
+  if (gemPortBtn) {
+    gemPortBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runGeminiPortfolioEvaluation();
+    });
   }
 }
 
@@ -2129,6 +2259,7 @@ function renderAssetList() {
         };
       }
       renderMobileTickerCarousel();
+      renderPortfolioAiAnalysisSection();
       return;
     }
 
@@ -2167,71 +2298,6 @@ function renderAssetList() {
     const totalPnlPct = totalInvestedEur > 0 ? (totalPnlCashEur / totalInvestedEur) * 100 : 0;
     const isTotalPnlUp = totalPnlCashEur >= 0;
 
-    const compAi = evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur);
-    const cacheKey = getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur);
-    const gemState = GeminiHybridState.portfolio;
-    const hasGemini = Boolean(gemState.key === cacheKey && gemState.data);
-    const isGemLoading = Boolean(gemState.loading);
-    const gemError = (gemState.key === cacheKey && gemState.error) ? gemState.error : null;
-
-    const effectiveOverlaps = hasGemini && Array.isArray(gemState.data.overlaps)
-      ? gemState.data.overlaps.map(o => ({ severity: o.severity || 'medium', message: escapePortfolioHtml(o.message) }))
-      : (compAi ? compAi.overlaps : []);
-    const effectiveSectorSummary = hasGemini && gemState.data.sectorSummary
-      ? escapePortfolioHtml(gemState.data.sectorSummary)
-      : (compAi ? compAi.sectorSummary : '');
-    const effectiveBadge = hasGemini && gemState.data.overallStatus
-      ? {
-          label: gemState.data.overallStatus,
-          cls: gemState.data.overallStatus === 'EQUILIBRATO'
-            ? 'port-ai-status-ok'
-            : (gemState.data.overallStatus === 'ATTENZIONE' ? 'port-ai-status-warn' : 'port-ai-status-danger')
-        }
-      : compAi?.overallBadge;
-
-    const aiCompositionHtml = compAi ? `
-      <div class="port-ai-comp-box">
-        <div class="port-ai-comp-header">
-          <span class="port-ai-comp-title">
-            <span class="ai-spark-icon">✦</span>
-            ${hasGemini ? 'Valutazione Gemini' : 'Valutazione IA'}
-          </span>
-          <div style="display:flex;align-items:center;gap:5px;">
-            <button type="button" class="ai-gemini-btn" id="btnGeminiPortfolioEval" ${isGemLoading ? 'disabled' : ''} title="Analisi approfondita tramite Firebase AI Logic (Gemini)">
-              ${isGemLoading ? '⏳ Gemini...' : (hasGemini ? '✦ Aggiorna' : '✦ Gemini')}
-            </button>
-            <span class="port-ai-comp-badge ${effectiveBadge.cls}">${effectiveBadge.label}</span>
-          </div>
-        </div>
-        <div class="port-ai-comp-item">
-          <div class="port-ai-comp-label">1. Sovrapposizioni (Azioni / ETF / Certificati)</div>
-          ${effectiveOverlaps.length > 0
-            ? `<ul class="port-ai-comp-list">${effectiveOverlaps.map(o => `<li class="overlap-${o.severity}">${o.message}</li>`).join('')}</ul>`
-            : `<div class="port-ai-comp-ok">✓ Nessuna sovrapposizione rilevata tra azioni, ETF e certificati in portafoglio.</div>`
-          }
-        </div>
-        <div class="port-ai-comp-item">
-          <div class="port-ai-comp-label">2. Bilanciamento per Comparto</div>
-          <div class="port-ai-comp-text sector-${compAi.sectorStatus}">${effectiveSectorSummary}</div>
-          <div class="port-ai-sector-pills">
-            ${compAi.sortedSectors.map(sec => `
-              <span class="port-ai-sector-pill">${escapePortfolioHtml(sec.name)}: <strong>${sec.weightPct.toFixed(0)}%</strong></span>
-            `).join('')}
-          </div>
-        </div>
-        ${hasGemini && gemState.data.actionableTip ? `
-          <div class="port-ai-gemini-tip">
-            <strong>✦ Consiglio Gemini:</strong> ${escapePortfolioHtml(gemState.data.actionableTip)}
-          </div>
-        ` : ''}
-        ${gemError ? `
-          <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
-            Fallback locale attivo: ${escapePortfolioHtml(gemError)}
-          </div>
-        ` : ''}
-      </div>
-    ` : '';
-
     const isPortfolioSelected = Boolean(AppState.selectedAsset && AppState.selectedAsset.isPortfolio);
     const summaryHtml = `
       <div class="portfolio-summary-card ${isPortfolioSelected ? 'selected' : ''}" id="portfolioSummaryCard" title="Clicca per visualizzare il grafico dell'intero portafoglio">
@@ -2251,7 +2317,6 @@ function renderAssetList() {
           <span>Capitale Investito: <strong>€ ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
           <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
         </div>
-        ${aiCompositionHtml}
       </div>
     `;
 
@@ -2325,14 +2390,6 @@ function renderAssetList() {
       });
     }
 
-    const gemPortBtn = document.getElementById('btnGeminiPortfolioEval');
-    if (gemPortBtn) {
-      gemPortBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        runGeminiPortfolioEvaluation();
-      });
-    }
-
     // Attach click events on portfolio cards
     container.querySelectorAll('.portfolio-card').forEach(card => {
       card.addEventListener('click', () => {
@@ -2363,6 +2420,7 @@ function renderAssetList() {
     });
 
     renderMobileTickerCarousel();
+    renderPortfolioAiAnalysisSection();
     return;
   }
 
@@ -2493,6 +2551,7 @@ function selectAsset(asset) {
   loadNotesForAsset(asset);
   const cached = AppState.cachedBars[`${asset.symbol}_${AppState.activeTimeframe}`] || AppState.cachedBars[`${asset.symbol}_DAILY`];
   updateAiInvestmentEvaluation(asset, cached);
+  renderPortfolioAiAnalysisSection();
   updateMobileTickerCarouselActive(asset.symbol);
   loadAndRenderChart(asset, AppState.activeTimeframe);
 }
