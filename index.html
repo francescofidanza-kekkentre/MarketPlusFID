@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=48">
+  <link rel="stylesheet" href="style.css?v=49">
 </head>
 <body>
 
@@ -93,6 +93,7 @@
           <button class="chip-btn active" data-filter="portfolio">💼 Portafoglio</button>
           <button class="chip-btn" data-filter="stock">Azioni</button>
           <button class="chip-btn" data-filter="etf">ETF</button>
+          <button class="chip-btn" data-filter="bond">Obbligazioni</button>
           <button class="chip-btn" data-filter="crypto">Crypto</button>
           <button class="chip-btn" data-filter="certificate">Certificati</button>
           <button class="chip-btn" data-filter="watchlist">⭐ Preferiti</button>
@@ -740,6 +741,7 @@
           <option value="misto">Misto (Multi-Asset)</option>
           <option value="azionario">Azionario</option>
           <option value="etf">ETF</option>
+          <option value="obbligazioni">Obbligazioni</option>
           <option value="certificati">Certificati</option>
           <option value="crypto">Crypto</option>
         </select>
@@ -808,6 +810,7 @@
         <select id="newTickerType" class="calc-input" style="padding-left: 10px;">
           <option value="stock">Azione (Stock — Ticker o ISIN)</option>
           <option value="etf">ETF / Fondo Indicizzato (Ticker o ISIN)</option>
+          <option value="bond">Obbligazione / Titolo di Stato (Ticker o ISIN)</option>
           <option value="crypto">Criptovaluta (solo Ticker)</option>
           <option value="certificate">Certificato d'Investimento (ISIN / SeDeX)</option>
         </select>
@@ -1042,6 +1045,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=52"></script>
+  <script src="app.js?v=53"></script>
 </body>
 </html>

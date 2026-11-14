@@ -32,6 +32,68 @@ const DEFAULT_ASSETS = [
   { symbol: 'XRP', name: 'Ripple (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
   { symbol: 'ADA', name: 'Cardano (USDT)', type: 'crypto', exchange: 'Binance / Global', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
 
+  // Obbligazioni & Titoli di Stato (MOT / EuroTLX)
+  {
+    symbol: 'IT0005560948',
+    marketSymbol: 'IT0005560948',
+    isin: 'IT0005560948',
+    name: 'BTP Tf 4.20% Mz34 EUR',
+    type: 'bond',
+    exchange: 'Borsa Italiana (MOT)',
+    currency: 'EUR',
+    price: 103.85,
+    change: 0.14,
+    high: 104.10,
+    low: 103.60,
+    volume: '48.5M',
+    favorite: true
+  },
+  {
+    symbol: 'IT0003934657',
+    marketSymbol: 'IT0003934657',
+    isin: 'IT0003934657',
+    name: 'BTP Tf 4.00% Fb37 EUR',
+    type: 'bond',
+    exchange: 'Borsa Italiana (MOT)',
+    currency: 'EUR',
+    price: 102.40,
+    change: 0.18,
+    high: 102.70,
+    low: 102.15,
+    volume: '35.2M',
+    favorite: false
+  },
+  {
+    symbol: 'DE000BU2Z015',
+    marketSymbol: 'DE000BU2Z015',
+    isin: 'DE000BU2Z015',
+    name: 'Bund 2.60% Ag33 EUR',
+    type: 'bond',
+    exchange: 'EuroTLX / XETRA',
+    currency: 'EUR',
+    price: 101.20,
+    change: 0.09,
+    high: 101.40,
+    low: 100.95,
+    volume: '22.1M',
+    favorite: false
+  },
+  {
+    symbol: 'TLT',
+    marketSymbol: 'TLT',
+    isin: 'US4642874329',
+    name: 'iShares 20+ Year Treasury Bond',
+    type: 'bond',
+    exchange: 'NASDAQ',
+    currency: 'USD',
+    price: null,
+    change: null,
+    high: null,
+    low: null,
+    volume: null,
+    favorite: false
+  },
+
   // Certificati d'Investimento (SeDeX / EuroTLX)
   {
     symbol: 'NLBNPIT1Z123',
@@ -330,6 +392,7 @@ function formatPortfolioCompositionLabel(comp) {
     misto: 'Misto',
     azionario: 'Azionario',
     etf: 'ETF',
+    obbligazioni: 'Obbligazioni',
     certificati: 'Certificati',
     crypto: 'Crypto'
   };
@@ -580,15 +643,15 @@ function loadStoredData() {
     saveAssetsToStorage();
   }
 
-  // Ensure default certificates exist in AppState.assets
-  let hasNewCert = false;
-  DEFAULT_ASSETS.filter(a => a.type === 'certificate').forEach(cert => {
-    if (!AppState.assets.some(a => a.symbol === cert.symbol)) {
-      AppState.assets.push(cert);
-      hasNewCert = true;
+  // Ensure default certificates & bonds exist in AppState.assets
+  let hasNewDefaultCompartmentAsset = false;
+  DEFAULT_ASSETS.filter(a => a.type === 'certificate' || a.type === 'bond').forEach(defAsset => {
+    if (!AppState.assets.some(a => a.symbol === defAsset.symbol)) {
+      AppState.assets.push(defAsset);
+      hasNewDefaultCompartmentAsset = true;
     }
   });
-  if (hasNewCert) {
+  if (hasNewDefaultCompartmentAsset) {
     saveAssetsToStorage();
   }
 
@@ -1489,6 +1552,21 @@ function getPortfolioAiAdvice(asset, pos, currentPrice) {
     };
   }
 
+  if (asset.type === 'bond') {
+    if (pnlPct >= 6 && currentPrice >= 102) {
+      return {
+        action: 'PRENDI PROFITTO',
+        badgeClass: 'ai-advice-sell',
+        text: 'Prezzo sopra la pari (100) con buon guadagno in conto capitale: valuta realizzo o switch su scadenze più redditizie.'
+      };
+    }
+    return {
+      action: 'MANTIENI',
+      badgeClass: 'ai-advice-hold',
+      text: 'Posizione obbligazionaria difensiva: mantieni per flusso cedolare periodico e protezione del capitale a scadenza.'
+    };
+  }
+
   // Extreme overbought or large profit
   if (pnlPct >= 20 && rsi >= 68) {
     return {
@@ -1742,6 +1820,9 @@ function getAssetCompartmentInfo(asset) {
     return { sector: 'Indici Generali (USA / Global)', techWeight: 0.28, isBroadIndex: true };
   }
 
+  if (asset.type === 'bond' || /btp|bund|treasury|obbligazion|govt bond|corp bond/.test(text)) {
+    return { sector: 'Obbligazionario / Titoli di Stato', techWeight: 0, isBroadIndex: false };
+  }
   if (asset.type === 'etf') return { sector: 'ETF Tematico / Altro', techWeight: 0, isBroadIndex: false };
   if (asset.type === 'certificate') return { sector: 'Certificati Multi-Sottostante', techWeight: 0, isBroadIndex: false };
   return { sector: 'Azionario / Altro', techWeight: 0, isBroadIndex: false };
@@ -2011,7 +2092,7 @@ async function runGeminiPortfolioEvaluation() {
     });
 
     const activePf = getActivePortfolioObj();
-    const targetTypeMap = { azionario: 'stock', etf: 'etf', certificati: 'certificate', crypto: 'crypto' };
+    const targetTypeMap = { azionario: 'stock', etf: 'etf', obbligazioni: 'bond', certificati: 'certificate', crypto: 'crypto' };
     const preferredType = targetTypeMap[String(activePf.composition || '').toLowerCase()] || null;
     const availableCandidates = (AppState.assets || [])
       .filter(a => !AppState.portfolio?.[a.symbol])
@@ -2435,7 +2516,7 @@ function getPortfolioMetricsSnapshot() {
   const entries = getPortfolioAssetsWithPos();
   let totalEur = 0;
   let investedEur = 0;
-  const classTotals = { Azioni: 0, ETF: 0, Crypto: 0, Certificati: 0 };
+  const classTotals = { Azioni: 0, ETF: 0, Obbligazioni: 0, Crypto: 0, Certificati: 0 };
   const currencyTotals = {};
 
   const items = entries.map(({ asset, pos }) => {
@@ -2448,7 +2529,11 @@ function getPortfolioMetricsSnapshot() {
 
     const clsLabel = asset.type === 'stock'
       ? 'Azioni'
-      : (asset.type === 'etf' ? 'ETF' : (asset.type === 'crypto' ? 'Crypto' : 'Certificati'));
+      : (asset.type === 'etf'
+          ? 'ETF'
+          : (asset.type === 'bond'
+              ? 'Obbligazioni'
+              : (asset.type === 'crypto' ? 'Crypto' : 'Certificati')));
     classTotals[clsLabel] = (classTotals[clsLabel] || 0) + valEur;
 
     const ccy = (asset.currency || 'EUR').toUpperCase();
@@ -2955,7 +3040,7 @@ function openPortfolioModal(symbol) {
 
   if (symEl) symEl.textContent = asset.symbol;
   if (typeEl) {
-    typeEl.textContent = asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase();
+    typeEl.textContent = asset.type === 'certificate' ? 'CERTIFICATO' : (asset.type === 'bond' ? 'OBBLIGAZIONE' : asset.type.toUpperCase());
     typeEl.className = `asset-type-badge type-${asset.type}`;
   }
   if (nameEl) nameEl.textContent = asset.name;
@@ -3381,7 +3466,7 @@ function renderAssetList() {
           <div class="port-card-top">
             <div class="port-card-identity">
               <span class="asset-symbol">${asset.symbol}</span>
-              <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : asset.type}</span>
+              <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : (asset.type === 'bond' ? 'BOND' : asset.type)}</span>
               <span class="port-shares-pill">${pos.shares} quote</span>
             </div>
             <div class="port-card-actions">
@@ -3533,7 +3618,7 @@ function renderAssetList() {
         <div class="asset-meta">
           <div class="asset-symbol-row">
             <span class="asset-symbol">${asset.symbol}</span>
-            <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : asset.type}</span>
+            <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : (asset.type === 'bond' ? 'BOND' : asset.type)}</span>
             <button class="portfolio-btn ${isInPort ? 'in-portfolio' : ''}" data-symbol="${asset.symbol}" title="${isInPort ? 'In Portafoglio (modifica)' : 'Aggiungi al Portafoglio'}">
               ${isInPort ? '💼' : '💼+'}
             </button>
@@ -3645,7 +3730,7 @@ function updateSelectedAssetHeader() {
 
   const typeDisplay = asset.isPortfolio
     ? 'PORTAFOGLIO'
-    : (asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase());
+    : (asset.type === 'certificate' ? 'CERTIFICATO' : (asset.type === 'bond' ? 'OBBLIGAZIONE' : asset.type.toUpperCase()));
   const badgeTypeClass = asset.isPortfolio ? 'etf' : asset.type;
   document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${badgeTypeClass}" id="activeType">${typeDisplay}</span>`;
   document.getElementById('activeName').textContent = `${asset.name} • ${asset.exchange}${asset.isin ? ` • ISIN ${asset.isin}` : ''}`;
@@ -3732,11 +3817,15 @@ function updateBrokerLinks(asset) {
     binanceLink.style.display = 'none';
   }
 
-  // 3. Interactive Brokers / CED
+  // 3. Interactive Brokers / CED / MOT
   const ibkrLink = document.getElementById('linkIBKR');
   if (asset.type === 'certificate') {
     ibkrLink.href = `https://www.certificatiederivati.it/ricerca?q=${encodeURIComponent(sym)}`;
     ibkrLink.title = `Analisi Certificati e Derivati (CED) per ${sym}`;
+  } else if (asset.type === 'bond') {
+    const bondQuery = asset.isin || sym;
+    ibkrLink.href = `https://www.borsaitaliana.it/borsa/obbligazioni/ricerca-avanzata.html?isin=${encodeURIComponent(bondQuery)}`;
+    ibkrLink.title = `Scheda Obbligazione Borsa Italiana MOT / EuroTLX per ${bondQuery}`;
   } else {
     ibkrLink.href = `https://www.interactivebrokers.com/en/search/site_search.php?q=${encodeURIComponent(sym)}`;
     ibkrLink.title = 'Interactive Brokers Search';
@@ -3747,6 +3836,10 @@ function updateBrokerLinks(asset) {
   if (asset.type === 'certificate') {
     yahooLink.href = `https://www.borsaitaliana.it/borsa/cw-e-certificates/cerca.html?isin=${encodeURIComponent(sym)}`;
     yahooLink.title = `Scheda ufficiale Borsa Italiana SeDeX per ${sym}`;
+  } else if (asset.type === 'bond' && isIsinCode(asset.isin || sym)) {
+    const bondIsin = asset.isin || sym;
+    yahooLink.href = `https://www.simpletoolsforinvestors.eu/monitor_info.php?monitor=italia&timescale=DUR&yieldtype=G&currency=EUR&isin=${encodeURIComponent(bondIsin)}`;
+    yahooLink.title = `Monitor Rendimenti & Cedole Obbligazione (${bondIsin})`;
   } else {
     yahooLink.href = `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
     yahooLink.title = 'Yahoo Finance';
@@ -5278,7 +5371,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   );
 
   // Risk Profile Assessment (Plain Italian)
-  const betaVal = fund.beta || (asset.type === 'crypto' ? 2.4 : (asset.type === 'etf' ? 0.95 : 1.15));
+  const betaVal = fund.beta || (asset.type === 'crypto' ? 2.4 : (asset.type === 'bond' ? 0.35 : (asset.type === 'etf' ? 0.95 : 1.15)));
   let riskProfile = 'Medio';
   let riskColor = '#38bdf8';
   if (asset.type === 'crypto' || annVolPct > 42 || betaVal >= 1.75) {
@@ -5412,6 +5505,10 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       const effText = sharpeProxy >= 0.7 ? 'Ottimo rapporto crescita/stabilità' : 'Fondo diversificato su più aziende';
       factorAnalystsEl.textContent = `${effText} • ${y1Text}`;
       factorAnalystsEl.style.color = sharpeProxy >= 0.6 ? 'var(--color-up)' : 'var(--text-primary)';
+    } else if (asset.type === 'bond') {
+      const parDist = last.close <= 100 ? 'Quota sotto/alla pari (100): protezione capitale favorevole' : `Quota sopra la pari (${last.close.toFixed(2)})`;
+      factorAnalystsEl.textContent = `${parDist} • Strumento difensivo a reddito fisso`;
+      factorAnalystsEl.style.color = last.close <= 101 ? 'var(--color-up)' : 'var(--text-primary)';
     } else {
       const fgVal = AppState.fearGreedVal || 54;
       const fgLbl = AppState.fearGreedLabel || 'Neutrale';
@@ -5447,6 +5544,9 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     if (fund.divYield != null && fund.divYield >= 2.5) pros.push(`offre una rendita da dividendo del ${fund.divYield.toFixed(1)}% annuo`);
   } else if (asset.type === 'etf') {
     pros.push(`essendo un ETF distribuisce il rischio su un intero paniere di titoli`);
+  } else if (asset.type === 'bond') {
+    pros.push(`offre flusso cedolare periodico e minore volatilità rispetto alle azioni`);
+    if (last.close <= 100.5) pros.push(`prezzo vicino o sotto la pari (100), favorevole per il rendimento a scadenza`);
   }
 
   if (annVolPct > 38 || asset.type === 'crypto') {
@@ -6532,7 +6632,7 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
   if (isIsin && type === 'crypto') {
     return {
       exists: false,
-      errorReason: 'Le criptovalute non supportano codici ISIN. Seleziona Azione, ETF o Certificato.'
+      errorReason: 'Le criptovalute non supportano codici ISIN. Seleziona Azione, ETF, Obbligazione o Certificato.'
     };
   }
 
@@ -6824,12 +6924,12 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
     } catch (e) {}
   }
 
-  // 4. Verified ISIN fallback for all ISIN-supported compartments (stock, etf, certificate) when live quote is unavailable
+  // 4. Verified ISIN fallback for all ISIN-supported compartments (stock, etf, bond, certificate) when live quote is unavailable
   const trimmedUserName = String(enteredName || '').trim();
-  const supportsIsinType = ['stock', 'etf', 'certificate'].includes(type);
+  const supportsIsinType = ['stock', 'etf', 'bond', 'certificate'].includes(type);
   const firstFigi = isinResolution.figiRecords && isinResolution.figiRecords[0] ? isinResolution.figiRecords[0] : null;
   const hasVerifiedIsinData = Boolean(firstFigi || isinResolution.figiNames.length > 0);
-  if (isIsin && supportsIsinType && (hasVerifiedIsinData || (type === 'certificate' && trimmedUserName.length >= 2))) {
+  if (isIsin && supportsIsinType && (hasVerifiedIsinData || ((type === 'certificate' || type === 'bond') && trimmedUserName.length >= 2))) {
     const fallbackName = trimmedUserName || firstFigi?.name || isinResolution.figiNames[0];
     const fallbackTicker = (firstFigi?.ticker && !/\s/.test(firstFigi.ticker) && firstFigi.ticker.length <= 12)
       ? String(firstFigi.ticker).trim().toUpperCase()
@@ -6838,19 +6938,22 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
     const marketSym = (mappedSym.yahoo && mappedSym.yahoo[0]) || fallbackTicker;
     const exchLabel = type === 'certificate'
       ? 'SeDeX / EuroTLX (ISIN)'
-      : (firstFigi?.exchCode ? `Exchange ${firstFigi.exchCode} (ISIN)` : 'Mercato ISIN');
+      : (type === 'bond'
+          ? (firstFigi?.exchCode ? `MOT / EuroTLX (${firstFigi.exchCode})` : 'MOT / EuroTLX (ISIN)')
+          : (firstFigi?.exchCode ? `Exchange ${firstFigi.exchCode} (ISIN)` : 'Mercato ISIN'));
     const inferredCur = inferCurrencyFromSymbolOrExchange(marketSym, firstFigi?.exchCode || '');
+    const isParPriced = type === 'certificate' || type === 'bond';
     return {
       exists: true,
       isCustomIsinAsset: true,
       isCustomCertificate: type === 'certificate',
-      symbol: type === 'certificate' ? cleanSym : marketSym,
-      marketSymbol: type === 'certificate' ? cleanSym : marketSym,
+      symbol: isParPriced ? cleanSym : marketSym,
+      marketSymbol: isParPriced ? cleanSym : marketSym,
       isin: cleanSym,
       officialName: fallbackName,
       exchange: exchLabel,
-      currency: type === 'certificate' ? 'EUR' : (inferredCur || 'EUR'),
-      price: type === 'certificate' ? 100 : null,
+      currency: isParPriced ? 'EUR' : (inferredCur || 'EUR'),
+      price: isParPriced ? 100 : null,
       change: 0,
       high: null,
       low: null,
@@ -6912,7 +7015,7 @@ function setupModals() {
 
   document.getElementById('addCustomTickerBtn').addEventListener('click', () => {
     hideAddFeedback();
-    if (['stock', 'etf', 'crypto', 'certificate'].includes(AppState.activeFilter)) {
+    if (['stock', 'etf', 'bond', 'crypto', 'certificate'].includes(AppState.activeFilter)) {
       typeSelect.value = AppState.activeFilter;
     }
     updateIsinInputState();
@@ -6976,7 +7079,7 @@ function setupModals() {
     } else {
       const errorMsg = meta.errorReason
         ? meta.errorReason
-        : `✗ Nessun asset reale trovato per <strong>${queryKey}</strong> nella categoria selezionata.${isIsinCode(queryKey) && type !== 'certificate' ? '<br><span style="opacity:0.85;">Se è un certificato SeDeX/EuroTLX, seleziona <strong>Certificato d\'Investimento</strong> e inserisci il nome.</span>' : ''}`;
+        : `✗ Nessun asset reale trovato per <strong>${queryKey}</strong> nella categoria selezionata.${isIsinCode(queryKey) && !['certificate', 'bond'].includes(type) ? '<br><span style="opacity:0.85;">Se è un\'obbligazione (MOT/EuroTLX) o un certificato (SeDeX), seleziona la categoria corretta e inserisci il nome.</span>' : ''}`;
       showAddFeedback(errorMsg, 'error');
     }
   }, 400);
@@ -7016,8 +7119,8 @@ function setupModals() {
 
       // 1. Check asset existence on real markets
       if (!meta.exists) {
-        const extraHint = (isIsinCode(rawSym) && type === 'certificate' && !enteredName)
-          ? ' Inserisci anche il nome del certificato per aggiungerlo tramite ISIN.'
+        const extraHint = (isIsinCode(rawSym) && ['certificate', 'bond'].includes(type) && !enteredName)
+          ? ' Inserisci anche il nome dello strumento per aggiungerlo tramite ISIN.'
           : '';
         showAddFeedback(
           meta.errorReason
