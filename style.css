@@ -2542,6 +2542,152 @@ body {
   }
 }
 
+/* Portfolio Right Panel Tools (Salute, Simulatore, Regole) */
+.port-right-card {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 11px 12px;
+  margin-bottom: 10px;
+}
+
+.port-right-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.port-alloc-row {
+  margin-bottom: 8px;
+}
+
+.port-alloc-row:last-child {
+  margin-bottom: 0;
+}
+
+.port-alloc-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.74rem;
+  color: #e2e8f0;
+  margin-bottom: 3px;
+}
+
+.port-alloc-track {
+  height: 6px;
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.port-alloc-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  transition: width 0.25s ease;
+}
+
+.port-alloc-fill.is-warn {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.port-alloc-fill.is-ok {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.port-right-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.port-right-kpi {
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+
+.port-right-kpi .lbl {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  margin-bottom: 2px;
+}
+
+.port-right-kpi .val {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.port-sim-select {
+  width: 100%;
+  background: var(--bg-input, #0f172a);
+  color: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  outline: none;
+}
+
+.port-sim-select:focus {
+  border-color: #38bdf8;
+}
+
+.port-sim-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.port-rule-auto {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(30, 41, 59, 0.35);
+  margin-bottom: 7px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.port-rule-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.port-rule-dot.ok {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.port-rule-dot.warn {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.port-rule-dot.bad {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
 .portfolio-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);

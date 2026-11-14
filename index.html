@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=35">
+  <link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
 
@@ -342,6 +342,9 @@
         <button class="tools-tab active" data-tool="calculator">Rischio & Size</button>
         <button class="tools-tab" data-tool="certificates">Certificati</button>
         <button class="tools-tab" data-tool="checklist">Checklist Trade</button>
+        <button class="tools-tab" data-tool="port-health" style="display: none;">Salute</button>
+        <button class="tools-tab" data-tool="port-sim" style="display: none;">Simulatore</button>
+        <button class="tools-tab" data-tool="port-rules" style="display: none;">Regole</button>
         <button class="tools-tab" data-tool="journal">Note / Diario</button>
       </nav>
 
@@ -646,6 +649,15 @@
             </div>
           </div>
         </div>
+
+        <!-- Portfolio Tool 1: Salute & Allocazione Portafoglio -->
+        <div class="tool-pane" id="panePortfolioHealth"></div>
+
+        <!-- Portfolio Tool 2: Simulatore What-If / Nuovo Apporto -->
+        <div class="tool-pane" id="panePortfolioSim"></div>
+
+        <!-- Portfolio Tool 3: Regole di Ribilanciamento & Salute -->
+        <div class="tool-pane" id="panePortfolioRules"></div>
 
       </div>
     </aside>
@@ -967,6 +979,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>

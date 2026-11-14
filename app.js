@@ -1897,6 +1897,7 @@ async function runGeminiAssetEvaluation() {
 }
 
 function renderPortfolioAiAnalysisSection() {
+  updateRightPanelForSelection();
   const sectionAi = document.getElementById('section-ai');
   if (!sectionAi) return;
 
@@ -2065,6 +2066,508 @@ function renderPortfolioAiAnalysisSection() {
       e.stopPropagation();
       const sym = btn.getAttribute('data-add-symbol');
       if (sym) openPortfolioModal(sym);
+    });
+  });
+}
+
+function getPortfolioMetricsSnapshot() {
+  const entries = getPortfolioAssetsWithPos();
+  let totalEur = 0;
+  let investedEur = 0;
+  const classTotals = { Azioni: 0, ETF: 0, Crypto: 0, Certificati: 0 };
+  const currencyTotals = {};
+
+  const items = entries.map(({ asset, pos }) => {
+    const curPrice = asset.price != null ? asset.price : pos.buyPrice;
+    const valEur = convertToEur(pos.shares * curPrice, asset);
+    const invEur = convertToEur(pos.shares * pos.buyPrice, asset);
+    const pnlPct = pos.buyPrice > 0 ? ((curPrice - pos.buyPrice) / pos.buyPrice) * 100 : 0;
+    totalEur += valEur;
+    investedEur += invEur;
+
+    const clsLabel = asset.type === 'stock'
+      ? 'Azioni'
+      : (asset.type === 'etf' ? 'ETF' : (asset.type === 'crypto' ? 'Crypto' : 'Certificati'));
+    classTotals[clsLabel] = (classTotals[clsLabel] || 0) + valEur;
+
+    const ccy = (asset.currency || 'EUR').toUpperCase();
+    currencyTotals[ccy] = (currencyTotals[ccy] || 0) + valEur;
+
+    return {
+      asset,
+      pos,
+      valEur,
+      invEur,
+      pnlPct,
+      clsLabel,
+      comp: getAssetCompartmentInfo(asset)
+    };
+  });
+
+  items.forEach(item => {
+    item.weightPct = totalEur > 0 ? (item.valEur / totalEur) * 100 : 0;
+  });
+  items.sort((a, b) => b.weightPct - a.weightPct);
+
+  // Calcolo Max Drawdown & Volatilità annua stimata dalle barre composite del portafoglio
+  let maxDrawdownPct = null;
+  let annualVolPct = null;
+  const bars = (AppState.selectedAsset?.isPortfolio && Array.isArray(AppState.renderedBars))
+    ? AppState.renderedBars
+    : [];
+  if (bars.length >= 3) {
+    let peak = bars[0].close || 0;
+    let maxDd = 0;
+    const returns = [];
+    for (let i = 0; i < bars.length; i++) {
+      const c = bars[i].close;
+      if (c > peak) peak = c;
+      if (peak > 0) {
+        const dd = ((c - peak) / peak) * 100;
+        if (dd < maxDd) maxDd = dd;
+      }
+      if (i > 0 && bars[i - 1].close > 0) {
+        returns.push((c - bars[i - 1].close) / bars[i - 1].close);
+      }
+    }
+    maxDrawdownPct = Math.abs(maxDd);
+    if (returns.length >= 2) {
+      const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+      const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / (returns.length - 1);
+      const isIntraday = AppState.activeTimeframe === '1D' || AppState.activeTimeframe === '1W';
+      const periodsPerYear = isIntraday ? 252 * 7 : 252;
+      annualVolPct = Math.sqrt(variance) * Math.sqrt(periodsPerYear) * 100;
+    }
+  }
+
+  return {
+    items,
+    totalEur,
+    investedEur,
+    classTotals,
+    currencyTotals,
+    maxDrawdownPct,
+    annualVolPct
+  };
+}
+
+function updateRightPanelForSelection() {
+  const isPort = Boolean(AppState.selectedAsset && AppState.selectedAsset.isPortfolio);
+  const assetTools = ['calculator', 'certificates', 'checklist'];
+  const portTools = ['port-health', 'port-sim', 'port-rules'];
+
+  document.querySelectorAll('.tools-tab').forEach(tab => {
+    const tool = tab.getAttribute('data-tool');
+    if (assetTools.includes(tool)) {
+      tab.style.display = isPort ? 'none' : '';
+    } else if (portTools.includes(tool)) {
+      tab.style.display = isPort ? '' : 'none';
+    }
+  });
+
+  const mobileHdr = document.querySelector('#section-tools .mobile-section-header span');
+  if (mobileHdr) {
+    mobileHdr.textContent = isPort ? '💼 Strumenti Portafoglio' : '📊 Calcolatore Rischio & Strumenti';
+  }
+
+  const activeTab = document.querySelector('.tools-tab.active');
+  const activeTool = activeTab ? activeTab.getAttribute('data-tool') : 'calculator';
+
+  if (isPort) {
+    if (assetTools.includes(activeTool) || !activeTab) {
+      const healthTab = document.querySelector('.tools-tab[data-tool="port-health"]');
+      if (healthTab) healthTab.click();
+    }
+    renderPortfolioHealthPane();
+    renderPortfolioSimulatorPane();
+    renderPortfolioRulesPane();
+  } else if (portTools.includes(activeTool)) {
+    const calcTab = document.querySelector('.tools-tab[data-tool="calculator"]');
+    if (calcTab) calcTab.click();
+  }
+}
+
+function renderPortfolioHealthPane() {
+  const pane = document.getElementById('panePortfolioHealth');
+  if (!pane) return;
+
+  const snap = getPortfolioMetricsSnapshot();
+  if (snap.items.length === 0 || snap.totalEur <= 0) {
+    pane.innerHTML = `
+      <div class="port-right-card">
+        <div class="port-right-title"><span>Salute Portafoglio</span></div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          Aggiungi almeno una posizione per visualizzare allocazione, valute e metriche di rischio.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const classRows = Object.entries(snap.classTotals)
+    .filter(([, val]) => val > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, val]) => {
+      const pct = (val / snap.totalEur) * 100;
+      return `
+        <div class="port-alloc-row">
+          <div class="port-alloc-meta">
+            <span>${label}</span>
+            <strong>${pct.toFixed(1)}% (€ ${val.toLocaleString('it-IT', { maximumFractionDigits: 0 })})</strong>
+          </div>
+          <div class="port-alloc-track">
+            <div class="port-alloc-fill ${pct > 75 ? 'is-warn' : 'is-ok'}" style="width:${Math.min(100, pct).toFixed(1)}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  const ccyRows = Object.entries(snap.currencyTotals)
+    .filter(([, val]) => val > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([ccy, val]) => {
+      const pct = (val / snap.totalEur) * 100;
+      return `
+        <div class="port-alloc-row">
+          <div class="port-alloc-meta">
+            <span>Valuta ${escapePortfolioHtml(ccy)}</span>
+            <strong>${pct.toFixed(1)}%</strong>
+          </div>
+          <div class="port-alloc-track">
+            <div class="port-alloc-fill" style="width:${Math.min(100, pct).toFixed(1)}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  const topItem = snap.items[0];
+  const sortedByPnl = [...snap.items].sort((a, b) => b.pnlPct - a.pnlPct);
+  const best = sortedByPnl[0];
+  const worst = sortedByPnl[sortedByPnl.length - 1];
+
+  const posRows = snap.items.slice(0, 6).map(item => `
+    <div class="port-alloc-row">
+      <div class="port-alloc-meta">
+        <span>${escapePortfolioHtml(item.asset.symbol)}</span>
+        <strong>${item.weightPct.toFixed(1)}%</strong>
+      </div>
+      <div class="port-alloc-track">
+        <div class="port-alloc-fill ${item.weightPct > 35 ? 'is-warn' : ''}" style="width:${Math.min(100, item.weightPct).toFixed(1)}%"></div>
+      </div>
+    </div>
+  `).join('');
+
+  pane.innerHTML = `
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Metriche Aggregate</span><span>${snap.items.length} Pos.</span></div>
+      <div class="port-right-kpis">
+        <div class="port-right-kpi">
+          <div class="lbl">Concentrazione Top 1</div>
+          <div class="val" style="color:${topItem.weightPct > 35 ? '#fbbf24' : '#34d399'};">${escapePortfolioHtml(topItem.asset.symbol)} (${topItem.weightPct.toFixed(0)}%)</div>
+        </div>
+        <div class="port-right-kpi">
+          <div class="lbl">Max Drawdown (${AppState.activeTimeframe})</div>
+          <div class="val" style="color:#f87171;">${snap.maxDrawdownPct != null ? '-' + snap.maxDrawdownPct.toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div class="port-right-kpi">
+          <div class="lbl">Volatilità Annua</div>
+          <div class="val">${snap.annualVolPct != null ? snap.annualVolPct.toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div class="port-right-kpi">
+          <div class="lbl">Miglior / Peggior</div>
+          <div class="val" style="font-size:0.74rem;">
+            <span style="color:#34d399;">${escapePortfolioHtml(best.asset.symbol)} ${best.pnlPct >= 0 ? '+' : ''}${best.pnlPct.toFixed(1)}%</span>
+            ${snap.items.length > 1 ? `<br><span style="color:#f87171;">${escapePortfolioHtml(worst.asset.symbol)} ${worst.pnlPct >= 0 ? '+' : ''}${worst.pnlPct.toFixed(1)}%</span>` : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Ripartizione Asset Class</span></div>
+      ${classRows}
+    </div>
+
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Esposizione Valutaria</span></div>
+      ${ccyRows}
+    </div>
+
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Pesi Posizioni</span></div>
+      ${posRows}
+    </div>
+  `;
+}
+
+let PortfolioSimState = {
+  amountEur: 500,
+  selectedSymbol: ''
+};
+
+function renderPortfolioSimulatorPane() {
+  const pane = document.getElementById('panePortfolioSim');
+  if (!pane) return;
+
+  const snap = getPortfolioMetricsSnapshot();
+  const portfolioAssets = snap.items.map(i => i.asset);
+  const compAi = evaluatePortfolioCompositionAi(portfolioAssets, snap.totalEur);
+  const cacheKey = getPortfolioCacheKey(portfolioAssets, snap.totalEur);
+  const gemState = GeminiHybridState.portfolio;
+  const hasGemini = Boolean(gemState.key === cacheKey && gemState.data);
+  const gemSuggestions = (hasGemini && Array.isArray(gemState.data.recommendedAdditions))
+    ? gemState.data.recommendedAdditions.slice(0, 3)
+    : [];
+
+  const optionItems = [];
+  const seen = new Set();
+  gemSuggestions.forEach(s => {
+    const sym = String(s.symbol || '').trim();
+    if (!sym || seen.has(sym.toUpperCase())) return;
+    seen.add(sym.toUpperCase());
+    const inApp = (AppState.assets || []).find(a => a.symbol.toUpperCase() === sym.toUpperCase());
+    optionItems.push({
+      symbol: sym,
+      label: `✦ ${sym} — ${s.name || (inApp ? inApp.name : '')} (${s.assetType || (inApp ? inApp.type.toUpperCase() : 'AI')})`,
+      sector: inApp ? getAssetCompartmentInfo(inApp).sector : (s.assetType || 'Diversificazione Gemini'),
+      isGemini: true
+    });
+  });
+
+  (AppState.assets || [])
+    .filter(a => !AppState.portfolio?.[a.symbol])
+    .slice(0, 35)
+    .forEach(a => {
+      if (seen.has(a.symbol.toUpperCase())) return;
+      seen.add(a.symbol.toUpperCase());
+      optionItems.push({
+        symbol: a.symbol,
+        label: `${a.symbol} — ${a.name} (${a.type.toUpperCase()})`,
+        sector: getAssetCompartmentInfo(a).sector,
+        isGemini: false
+      });
+    });
+
+  if (!PortfolioSimState.selectedSymbol || !optionItems.some(o => o.symbol === PortfolioSimState.selectedSymbol)) {
+    PortfolioSimState.selectedSymbol = optionItems[0]?.symbol || '';
+  }
+
+  const chosen = optionItems.find(o => o.symbol === PortfolioSimState.selectedSymbol) || optionItems[0];
+  const addAmount = Math.max(0, Number(PortfolioSimState.amountEur) || 0);
+  const newTotal = snap.totalEur + addAmount;
+  const newAssetWeight = newTotal > 0 ? (addAmount / newTotal) * 100 : 0;
+  const topBefore = snap.items[0];
+  const topAfterPct = (topBefore && newTotal > 0) ? (topBefore.valEur / newTotal) * 100 : 0;
+
+  // Ribilanciamento per comparto
+  const sectorMapAfter = {};
+  (compAi?.sortedSectors || []).forEach(sec => {
+    const secVal = (sec.weightPct / 100) * snap.totalEur;
+    sectorMapAfter[sec.name] = (sectorMapAfter[sec.name] || 0) + secVal;
+  });
+  if (chosen && addAmount > 0) {
+    sectorMapAfter[chosen.sector] = (sectorMapAfter[chosen.sector] || 0) + addAmount;
+  }
+  const afterSectorsHtml = Object.entries(sectorMapAfter)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([secName, val]) => {
+      const pct = newTotal > 0 ? (val / newTotal) * 100 : 0;
+      return `
+        <div class="port-alloc-row">
+          <div class="port-alloc-meta">
+            <span>${escapePortfolioHtml(secName)}</span>
+            <strong>${pct.toFixed(1)}%</strong>
+          </div>
+          <div class="port-alloc-track">
+            <div class="port-alloc-fill ${pct > 65 ? 'is-warn' : 'is-ok'}" style="width:${Math.min(100, pct).toFixed(1)}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  pane.innerHTML = `
+    <div class="port-right-card">
+      <div class="port-right-title">
+        <span>Simulatore "What-If"</span>
+        ${chosen?.isGemini ? '<span class="port-sim-badge">✦ Da Gemini</span>' : ''}
+      </div>
+
+      <div class="calc-field-group" style="margin-bottom:10px;">
+        <label>Nuovo Apporto (€)<span class="helper">Liquidità da investire</span></label>
+        <div class="input-with-affix">
+          <span class="input-affix">€</span>
+          <input type="number" id="portSimAmountInput" class="calc-input" value="${addAmount}" min="0" step="50">
+        </div>
+        <div class="calc-quick-chips">
+          ${[250, 500, 1000, 2500].map(v => `
+            <span class="calc-chip port-sim-chip ${addAmount === v ? 'active' : ''}" data-sim-amt="${v}">${v.toLocaleString('it-IT')}€</span>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="calc-field-group" style="margin-bottom:4px;">
+        <label>Asset da Aggiungere<span class="helper">${gemSuggestions.length > 0 ? 'Consigli Gemini in cima' : 'Titoli disponibili'}</span></label>
+        <select id="portSimAssetSelect" class="port-sim-select">
+          ${optionItems.map(o => `
+            <option value="${escapePortfolioHtml(o.symbol)}" ${o.symbol === PortfolioSimState.selectedSymbol ? 'selected' : ''}>
+              ${escapePortfolioHtml(o.label)}
+            </option>
+          `).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Impatto Stimato (Prima → Dopo)</span></div>
+      <div class="port-right-kpis" style="margin-bottom:10px;">
+        <div class="port-right-kpi">
+          <div class="lbl">Nuovo Totale</div>
+          <div class="val">€ ${newTotal.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</div>
+        </div>
+        <div class="port-right-kpi">
+          <div class="lbl">Peso ${escapePortfolioHtml(chosen?.symbol || 'Nuovo')}</div>
+          <div class="val" style="color:#34d399;">${newAssetWeight.toFixed(1)}%</div>
+        </div>
+        ${topBefore ? `
+          <div class="port-right-kpi" style="grid-column:1 / -1;">
+            <div class="lbl">Concentrazione ${escapePortfolioHtml(topBefore.asset.symbol)}</div>
+            <div class="val">${topBefore.weightPct.toFixed(1)}% → <span style="color:${topAfterPct < topBefore.weightPct ? '#34d399' : '#f8fafc'};">${topAfterPct.toFixed(1)}%</span></div>
+          </div>
+        ` : ''}
+      </div>
+      <div class="port-right-title" style="margin-top:4px;"><span>Nuovo Bilanciamento Comparti</span></div>
+      ${afterSectorsHtml || '<div style="font-size:0.74rem;color:var(--text-muted);">Inserisci un importo per simulare l\'impatto.</div>'}
+    </div>
+  `;
+
+  const amtInput = document.getElementById('portSimAmountInput');
+  if (amtInput) {
+    amtInput.addEventListener('input', () => {
+      PortfolioSimState.amountEur = Math.max(0, parseFloat(amtInput.value) || 0);
+      renderPortfolioSimulatorPane();
+      const reopened = document.getElementById('portSimAmountInput');
+      if (reopened) {
+        reopened.focus();
+        const len = reopened.value.length;
+        reopened.setSelectionRange(len, len);
+      }
+    });
+  }
+
+  pane.querySelectorAll('.port-sim-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      PortfolioSimState.amountEur = parseFloat(chip.getAttribute('data-sim-amt')) || 0;
+      renderPortfolioSimulatorPane();
+    });
+  });
+
+  const sel = document.getElementById('portSimAssetSelect');
+  if (sel) {
+    sel.addEventListener('change', () => {
+      PortfolioSimState.selectedSymbol = sel.value;
+      renderPortfolioSimulatorPane();
+    });
+  }
+}
+
+function renderPortfolioRulesPane() {
+  const pane = document.getElementById('panePortfolioRules');
+  if (!pane) return;
+
+  const snap = getPortfolioMetricsSnapshot();
+  const portfolioAssets = snap.items.map(i => i.asset);
+  const compAi = evaluatePortfolioCompositionAi(portfolioAssets, snap.totalEur);
+
+  const topWeight = snap.items[0]?.weightPct || 0;
+  const maxPosRuleOk = snap.items.length > 0 && topWeight <= 25;
+  const sectorsCount = compAi?.sortedSectors?.length || 0;
+  const sectorRuleOk = sectorsCount >= 3;
+  const overlapsCount = compAi?.overlaps?.length || 0;
+  const overlapRuleOk = snap.items.length > 0 && overlapsCount === 0;
+
+  let savedManual = { cashReserve: false, fxCheck: false, drawdownReview: false };
+  try {
+    const raw = localStorage.getItem('mp_portfolio_rules');
+    if (raw) savedManual = { ...savedManual, ...JSON.parse(raw) };
+  } catch (e) {}
+
+  const autoChecks = [maxPosRuleOk, sectorRuleOk, overlapRuleOk].filter(Boolean).length;
+  const manualChecks = Object.values(savedManual).filter(Boolean).length;
+  const scorePct = Math.round(((autoChecks + manualChecks) / 6) * 100);
+
+  pane.innerHTML = `
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Controlli Automatici Portafoglio</span></div>
+      <div class="port-rule-auto">
+        <span class="port-rule-dot ${maxPosRuleOk ? 'ok' : (topWeight <= 40 ? 'warn' : 'bad')}"></span>
+        <div>
+          <strong>Peso max singolo titolo ≤ 25%</strong><br>
+          <span style="color:var(--text-muted);">${snap.items.length > 0 ? `Attuale top: ${escapePortfolioHtml(snap.items[0].asset.symbol)} al ${topWeight.toFixed(1)}%` : 'Nessuna posizione attiva'}</span>
+        </div>
+      </div>
+      <div class="port-rule-auto">
+        <span class="port-rule-dot ${sectorRuleOk ? 'ok' : (sectorsCount === 2 ? 'warn' : 'bad')}"></span>
+        <div>
+          <strong>Diversificazione ≥ 3 comparti</strong><br>
+          <span style="color:var(--text-muted);">Comparti attuali in portafoglio: ${sectorsCount}</span>
+        </div>
+      </div>
+      <div class="port-rule-auto" style="margin-bottom:0;">
+        <span class="port-rule-dot ${overlapRuleOk ? 'ok' : 'warn'}"></span>
+        <div>
+          <strong>Zero sovrapposizioni critiche</strong><br>
+          <span style="color:var(--text-muted);">${overlapsCount === 0 ? 'Nessuna sovrapposizione rilevata' : `${overlapsCount} sovrapposizioni rilevate`}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="port-right-card">
+      <div class="port-right-title"><span>Regole Operative & Ribilanciamento</span></div>
+      <div class="checklist-container" style="gap:8px;">
+        <label class="check-item">
+          <input type="checkbox" class="port-rule-chk" data-rule-key="cashReserve" ${savedManual.cashReserve ? 'checked' : ''}>
+          <div class="check-text">
+            <strong>Riserva Liquidità Pronta</strong>
+            <p>Mantengo liquidità dedicata per PAC o ribilanciamenti.</p>
+          </div>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" class="port-rule-chk" data-rule-key="fxCheck" ${savedManual.fxCheck ? 'checked' : ''}>
+          <div class="check-text">
+            <strong>Esposizione EUR / USD Verificata</strong>
+            <p>Il rischio cambio è coerente con il mio orizzonte.</p>
+          </div>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" class="port-rule-chk" data-rule-key="drawdownReview" ${savedManual.drawdownReview ? 'checked' : ''}>
+          <div class="check-text">
+            <strong>Revisione Posizioni in Perdita</strong>
+            <p>Ho verificato tesi e fondamentale dei titoli sotto -15%.</p>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="score-meter-card">
+      <div style="display:flex;justify-content:space-between;font-size:0.75rem;font-weight:700;">
+        <span>Salute & Disciplina Portafoglio:</span>
+        <span>${scorePct}% • ${scorePct >= 75 ? 'Ottima' : (scorePct >= 50 ? 'Migliorabile' : 'Attenzione')}</span>
+      </div>
+      <div class="score-progress-bar">
+        <div class="score-progress-fill" style="width:${scorePct}%;"></div>
+      </div>
+    </div>
+  `;
+
+  pane.querySelectorAll('.port-rule-chk').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const k = chk.getAttribute('data-rule-key');
+      savedManual[k] = chk.checked;
+      try {
+        localStorage.setItem('mp_portfolio_rules', JSON.stringify(savedManual));
+      } catch (e) {}
+      renderPortfolioRulesPane();
     });
   });
 }
@@ -3133,6 +3636,7 @@ async function loadAndRenderPortfolioChart(timeframe, options = {}) {
     renderChartFromBars(immediateBars, timeframe);
     updateSelectedAssetHeader();
     updateAiInvestmentEvaluation(AppState.selectedAsset, AppState.renderedBars);
+    renderPortfolioHealthPane();
   }
 
   if (options.renderOnly) return;
@@ -3178,6 +3682,7 @@ async function loadAndRenderPortfolioChart(timeframe, options = {}) {
         renderChartFromBars(updatedBars, timeframe);
         updateSelectedAssetHeader();
         updateAiInvestmentEvaluation(AppState.selectedAsset, AppState.renderedBars);
+        renderPortfolioHealthPane();
       }
     }
   }
@@ -4963,6 +5468,18 @@ function setupEventListeners() {
         calculateCertificatesOutput();
       }
       if (tool === 'checklist') document.getElementById('paneChecklist').classList.add('active');
+      if (tool === 'port-health') {
+        document.getElementById('panePortfolioHealth').classList.add('active');
+        renderPortfolioHealthPane();
+      }
+      if (tool === 'port-sim') {
+        document.getElementById('panePortfolioSim').classList.add('active');
+        renderPortfolioSimulatorPane();
+      }
+      if (tool === 'port-rules') {
+        document.getElementById('panePortfolioRules').classList.add('active');
+        renderPortfolioRulesPane();
+      }
       if (tool === 'journal') document.getElementById('paneJournal').classList.add('active');
     });
   });
