@@ -347,12 +347,12 @@ function openPortfolioProfileModal(portfolioId) {
   if (nameEl) nameEl.textContent = pf.name;
   if (compSel) compSel.value = pf.composition || 'misto';
   if (horSel) horSel.value = pf.horizon || '>12 MESI';
-  if (modal) modal.classList.add('active');
+  if (modal) modal.classList.add('open');
 }
 
 function closePortfolioProfileModal() {
   const modal = document.getElementById('modalPortfolioProfile');
-  if (modal) modal.classList.remove('active');
+  if (modal) modal.classList.remove('open');
   editingPortfolioProfileId = null;
 }
 
