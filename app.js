@@ -64,10 +64,55 @@ const DEFAULT_ASSETS = [
     favorite: false
   },
   {
+    symbol: 'IT0005594467',
+    marketSymbol: 'IT0005594467',
+    isin: 'IT0005594467',
+    name: 'BTP Valore Mg30 Step-Up EUR',
+    type: 'bond',
+    exchange: 'Borsa Italiana (MOT)',
+    currency: 'EUR',
+    price: 103.10,
+    change: 0.11,
+    high: 103.30,
+    low: 102.90,
+    volume: '29.4M',
+    favorite: true
+  },
+  {
+    symbol: 'IT0005532723',
+    marketSymbol: 'IT0005532723',
+    isin: 'IT0005532723',
+    name: 'BTP Tf 3.40% Ap28 EUR',
+    type: 'bond',
+    exchange: 'Borsa Italiana (MOT)',
+    currency: 'EUR',
+    price: 102.05,
+    change: 0.06,
+    high: 102.18,
+    low: 101.95,
+    volume: '26.8M',
+    favorite: false
+  },
+  {
+    symbol: 'IT0005210650',
+    marketSymbol: 'IT0005210650',
+    isin: 'IT0005210650',
+    name: 'BTP Tf 1.25% Dc26 EUR',
+    type: 'bond',
+    exchange: 'Borsa Italiana (MOT)',
+    currency: 'EUR',
+    price: 99.15,
+    change: 0.03,
+    high: 99.22,
+    low: 99.08,
+    volume: '19.6M',
+    favorite: false
+  },
+  {
     symbol: 'DE000BU2Z015',
     marketSymbol: 'DE000BU2Z015',
     isin: 'DE000BU2Z015',
-    name: 'Bund 2.60% Ag33 EUR',
+    name: 'Bund Tf 2.60% Ag33 EUR',
     type: 'bond',
     exchange: 'EuroTLX / XETRA',
     currency: 'EUR',
@@ -76,6 +121,36 @@ const DEFAULT_ASSETS = [
     high: 101.40,
     low: 100.95,
     volume: '22.1M',
+    favorite: false
+  },
+  {
+    symbol: 'FR001400L834',
+    marketSymbol: 'FR001400L834',
+    isin: 'FR001400L834',
+    name: 'OAT Tf 3.50% Nv33 EUR',
+    type: 'bond',
+    exchange: 'EuroTLX / Euronext',
+    currency: 'EUR',
+    price: 102.60,
+    change: 0.12,
+    high: 102.80,
+    low: 102.40,
+    volume: '18.3M',
+    favorite: false
+  },
+  {
+    symbol: 'SEGA.MI',
+    marketSymbol: 'SEGA-IT',
+    isin: 'IE00B4WXJJ64',
+    name: 'iShares Core € Govt Bond UCITS',
+    type: 'bond',
+    exchange: 'Borsa Italiana',
+    currency: 'EUR',
+    price: null,
+    change: null,
+    high: null,
+    low: null,
+    volume: null,
     favorite: false
   },
   {
@@ -554,6 +629,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- Storage & Data ---
+function ensureDefaultCompartmentAssets() {
+  let added = false;
+  DEFAULT_ASSETS.filter(a => a.type === 'certificate' || a.type === 'bond').forEach(defAsset => {
+    if (!AppState.assets.some(a => a.symbol === defAsset.symbol)) {
+      AppState.assets.push(defAsset);
+      added = true;
+    }
+  });
+  return added;
+}
+
 function loadStoredData() {
   const storedAssets = localStorage.getItem('marketpulse_assets');
   if (storedAssets) {
@@ -644,14 +730,7 @@ function loadStoredData() {
   }
 
   // Ensure default certificates & bonds exist in AppState.assets
-  let hasNewDefaultCompartmentAsset = false;
-  DEFAULT_ASSETS.filter(a => a.type === 'certificate' || a.type === 'bond').forEach(defAsset => {
-    if (!AppState.assets.some(a => a.symbol === defAsset.symbol)) {
-      AppState.assets.push(defAsset);
-      hasNewDefaultCompartmentAsset = true;
-    }
-  });
-  if (hasNewDefaultCompartmentAsset) {
+  if (ensureDefaultCompartmentAssets()) {
     saveAssetsToStorage();
   }
 
@@ -7344,6 +7423,7 @@ function setupModals() {
 
           if (Array.isArray(imported.assets) && imported.assets.length > 0) {
             AppState.assets = imported.assets;
+            ensureDefaultCompartmentAssets();
             localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
           }
 
@@ -7800,6 +7880,7 @@ function handleRemoteCloudData(remoteData) {
 
     if (Array.isArray(remoteData.assets) && remoteData.assets.length > 0) {
       AppState.assets = remoteData.assets;
+      ensureDefaultCompartmentAssets();
       localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
       changed = true;
     }
