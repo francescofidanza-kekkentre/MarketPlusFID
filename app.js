@@ -252,6 +252,8 @@ async function triggerCloudSync(immediate = false) {
   const payload = {
     settings: AppState.settings,
     portfolio: AppState.portfolio,
+    portfolios: AppState.portfolios,
+    activePortfolioId: AppState.activePortfolioId,
     portfolioSort: AppState.portfolioSort || localStorage.getItem('marketpulse_portfolio_sort') || 'best',
     assets: AppState.assets,
     notes: notesObj
@@ -263,8 +265,91 @@ async function triggerCloudSync(immediate = false) {
 // Il portafoglio predefinito per un nuovo utente o installazione parte sempre completamente vuoto
 const DEFAULT_PORTFOLIO = {};
 
+function getActivePortfolioObj() {
+  if (!Array.isArray(AppState.portfolios) || AppState.portfolios.length === 0) {
+    AppState.portfolios = [{
+      id: 'default',
+      name: 'Principale',
+      positions: (AppState.portfolio && typeof AppState.portfolio === 'object') ? AppState.portfolio : {}
+    }];
+  }
+  let active = AppState.portfolios.find(p => p.id === AppState.activePortfolioId);
+  if (!active) {
+    active = AppState.portfolios[0];
+    AppState.activePortfolioId = active.id;
+  }
+  if (!active.positions || typeof active.positions !== 'object') {
+    active.positions = {};
+  }
+  AppState.portfolio = active.positions;
+  return active;
+}
+
+function switchActivePortfolio(portfolioId) {
+  if (!Array.isArray(AppState.portfolios)) return;
+  const target = AppState.portfolios.find(p => p.id === portfolioId);
+  if (!target) return;
+  AppState.activePortfolioId = target.id;
+  AppState.portfolio = target.positions || {};
+  savePortfolioToStorage(true);
+  renderAssetList();
+  if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
+    updateSelectedAssetHeader();
+    loadAndRenderPortfolioChart(AppState.activeTimeframe);
+  }
+}
+
+function createNewPortfolio(name) {
+  const cleanName = String(name || '').trim().slice(0, 28);
+  if (!cleanName) return;
+  getActivePortfolioObj();
+  const newPf = {
+    id: 'pf_' + Date.now(),
+    name: cleanName,
+    positions: {}
+  };
+  AppState.portfolios.push(newPf);
+  switchActivePortfolio(newPf.id);
+}
+
+function renameActivePortfolio(newName) {
+  const cleanName = String(newName || '').trim().slice(0, 28);
+  if (!cleanName) return;
+  const active = getActivePortfolioObj();
+  active.name = cleanName;
+  savePortfolioToStorage(true);
+  renderAssetList();
+  if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
+    updateSelectedAssetHeader();
+  }
+}
+
+function deleteActivePortfolio() {
+  getActivePortfolioObj();
+  if (AppState.portfolios.length <= 1) return;
+  const active = getActivePortfolioObj();
+  const count = Object.keys(active.positions || {}).length;
+  if (count > 0 && !confirm(`Eliminare il portafoglio "${active.name}" (${count} posizioni)?`)) {
+    return;
+  }
+  AppState.portfolios = AppState.portfolios.filter(p => p.id !== active.id);
+  const next = AppState.portfolios[0];
+  AppState.activePortfolioId = next.id;
+  AppState.portfolio = next.positions || {};
+  savePortfolioToStorage(true);
+  renderAssetList();
+  if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
+    updateSelectedAssetHeader();
+    loadAndRenderPortfolioChart(AppState.activeTimeframe);
+  }
+}
+
 function savePortfolioToStorage(immediate = false) {
   try {
+    const active = getActivePortfolioObj();
+    active.positions = AppState.portfolio || {};
+    localStorage.setItem('marketpulse_portfolios', JSON.stringify(AppState.portfolios));
+    localStorage.setItem('marketpulse_active_portfolio_id', AppState.activePortfolioId);
     localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
   } catch (e) {
     console.error('[MarketPulse] Error saving portfolio:', e);
@@ -409,16 +494,38 @@ function loadStoredData() {
     saveAssetsToStorage();
   }
 
-  // Load persisted portfolio positions
+  // Load persisted portfolios (multi-portfolio with backward compatibility)
+  const storedPortfolios = localStorage.getItem('marketpulse_portfolios');
+  const storedActivePfId = localStorage.getItem('marketpulse_active_portfolio_id');
   const storedPortfolio = localStorage.getItem('marketpulse_portfolio');
-  if (storedPortfolio) {
+  let loadedMulti = false;
+
+  if (storedPortfolios) {
     try {
-      AppState.portfolio = JSON.parse(storedPortfolio);
-    } catch (e) {
-      AppState.portfolio = Object.assign({}, DEFAULT_PORTFOLIO);
+      const parsedList = JSON.parse(storedPortfolios);
+      if (Array.isArray(parsedList) && parsedList.length > 0) {
+        AppState.portfolios = parsedList.map(p => ({
+          id: p.id || ('pf_' + Math.random().toString(36).slice(2, 8)),
+          name: p.name || 'Portafoglio',
+          positions: (p.positions && typeof p.positions === 'object') ? p.positions : {}
+        }));
+        AppState.activePortfolioId = storedActivePfId || AppState.portfolios[0].id;
+        getActivePortfolioObj();
+        loadedMulti = true;
+      }
+    } catch (e) {}
+  }
+
+  if (!loadedMulti) {
+    let legacyPositions = Object.assign({}, DEFAULT_PORTFOLIO);
+    if (storedPortfolio) {
+      try {
+        legacyPositions = JSON.parse(storedPortfolio) || {};
+      } catch (e) {}
     }
-  } else {
-    AppState.portfolio = Object.assign({}, DEFAULT_PORTFOLIO);
+    AppState.portfolios = [{ id: 'default', name: 'Principale', positions: legacyPositions }];
+    AppState.activePortfolioId = 'default';
+    AppState.portfolio = legacyPositions;
     savePortfolioToStorage();
   }
 
@@ -2781,6 +2888,83 @@ function renderAssetList() {
       b.classList.toggle('active', b.getAttribute('data-sort') === AppState.portfolioSort);
     });
 
+    const activePf = getActivePortfolioObj();
+    const switcherHtml = `
+      <div class="portfolio-switcher-bar" id="portfolioSwitcherBar">
+        <div class="portfolio-switcher-pills">
+          ${AppState.portfolios.map(pf => {
+            const count = Object.keys(pf.positions || {}).length;
+            const isAct = pf.id === activePf.id;
+            return `
+              <button type="button" class="pf-pill ${isAct ? 'active' : ''}" data-pf-id="${escapePortfolioHtml(pf.id)}" title="Seleziona portafoglio ${escapePortfolioHtml(pf.name)}">
+                <span class="pf-pill-name">${escapePortfolioHtml(pf.name)}</span>
+                <span class="pf-pill-count">${count}</span>
+              </button>
+            `;
+          }).join('')}
+          <button type="button" class="pf-pill pf-pill-add" id="btnShowNewPortfolioForm" title="Crea un nuovo portafoglio">+ Nuovo</button>
+        </div>
+        <div class="pf-switcher-actions">
+          <button type="button" class="pf-mini-btn" id="btnRenamePortfolio" title="Rinomina portafoglio attivo">✏️</button>
+          ${AppState.portfolios.length > 1 ? `<button type="button" class="pf-mini-btn pf-mini-del" id="btnDeletePortfolio" title="Elimina portafoglio attivo">🗑️</button>` : ''}
+        </div>
+        <div class="pf-inline-form" id="pfInlineForm" style="display:none;">
+          <input type="text" id="pfInlineInput" class="pf-inline-input" placeholder="Nome portafoglio (es. ETF Lungo Termine)" maxlength="28">
+          <button type="button" class="pf-inline-save" id="pfInlineSaveBtn">Salva</button>
+          <button type="button" class="pf-inline-cancel" id="pfInlineCancelBtn">✕</button>
+        </div>
+      </div>
+    `;
+
+    const bindSwitcherEvents = () => {
+      container.querySelectorAll('.pf-pill[data-pf-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-pf-id');
+          if (id) switchActivePortfolio(id);
+        });
+      });
+
+      const formEl = document.getElementById('pfInlineForm');
+      const inputEl = document.getElementById('pfInlineInput');
+      const saveBtn = document.getElementById('pfInlineSaveBtn');
+      const cancelBtn = document.getElementById('pfInlineCancelBtn');
+      let formMode = 'create';
+
+      const openInline = (mode, initialVal = '') => {
+        if (!formEl || !inputEl) return;
+        formMode = mode;
+        inputEl.value = initialVal;
+        formEl.style.display = 'flex';
+        inputEl.focus();
+        inputEl.select();
+      };
+
+      const btnNew = document.getElementById('btnShowNewPortfolioForm');
+      if (btnNew) btnNew.addEventListener('click', () => openInline('create', ''));
+
+      const btnRen = document.getElementById('btnRenamePortfolio');
+      if (btnRen) btnRen.addEventListener('click', () => openInline('rename', activePf.name));
+
+      const btnDel = document.getElementById('btnDeletePortfolio');
+      if (btnDel) btnDel.addEventListener('click', () => deleteActivePortfolio());
+
+      const submitInline = () => {
+        const val = inputEl ? inputEl.value.trim() : '';
+        if (!val) return;
+        if (formMode === 'rename') renameActivePortfolio(val);
+        else createNewPortfolio(val);
+      };
+
+      if (saveBtn) saveBtn.addEventListener('click', submitInline);
+      if (cancelBtn) cancelBtn.addEventListener('click', () => { if (formEl) formEl.style.display = 'none'; });
+      if (inputEl) {
+        inputEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submitInline();
+          if (e.key === 'Escape' && formEl) formEl.style.display = 'none';
+        });
+      }
+    };
+
     const portfolioSymbols = Object.keys(AppState.portfolio || {});
     const portfolioAssets = AppState.assets.filter(asset => {
       const isOwned = portfolioSymbols.includes(asset.symbol);
@@ -2790,13 +2974,13 @@ function renderAssetList() {
       return isOwned && matchesSearch;
     });
 
-    document.getElementById('assetCountText').textContent = `${portfolioAssets.length} Posizioni in Portafoglio`;
+    document.getElementById('assetCountText').textContent = `${portfolioAssets.length} Posizioni • ${activePf.name}`;
 
     if (portfolioAssets.length === 0) {
-      container.innerHTML = `
+      container.innerHTML = switcherHtml + `
         <div class="portfolio-empty-state">
           <div style="font-size: 2.2rem; margin-bottom: 8px;">💼</div>
-          <h4 style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px;">Portafoglio vuoto</h4>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px;">${escapePortfolioHtml(activePf.name)} è vuoto</h4>
           <p style="font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 12px;">
             Aggiungi qualsiasi azione, ETF, crypto o certificato cliccando sul tasto <strong>💼+</strong> accanto all'asset.
           </p>
@@ -2805,6 +2989,7 @@ function renderAssetList() {
           </button>
         </div>
       `;
+      bindSwitcherEvents();
       const btnExp = document.getElementById('btnExploreAssetsFromEmptyPort');
       if (btnExp) {
         btnExp.onclick = () => {
@@ -2857,7 +3042,7 @@ function renderAssetList() {
       <div class="portfolio-summary-card ${isPortfolioSelected ? 'selected' : ''}" id="portfolioSummaryCard" title="Clicca per visualizzare il grafico dell'intero portafoglio">
         <div class="port-sum-row">
           <div>
-            <div class="port-sum-label">Valore Totale Portafoglio <span class="port-chart-link-pill">📈 Grafico</span></div>
+            <div class="port-sum-label">💼 ${escapePortfolioHtml(activePf.name)} <span class="port-chart-link-pill">📈 Grafico</span></div>
             <div class="port-sum-val">€ ${totalCurrentValueEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div style="text-align: right;">
@@ -2885,7 +3070,7 @@ function renderAssetList() {
       const isPnlUp = pnlCashNative >= 0;
 
       const currentValEur = convertToEur(currentValNative, asset);
-      const investedEur = convertToEur(investedNative, asset);
+      const weightPct = totalCurrentValueEur > 0 ? (currentValEur / totalCurrentValueEur) * 100 : 0;
       const pnlCashEur = convertToEur(pnlCashNative, asset);
 
       const isNonEur = (asset.currency || '').toUpperCase() !== 'EUR';
@@ -2895,7 +3080,7 @@ function renderAssetList() {
       const advice = getPortfolioAiAdvice(asset, pos, curPrice);
 
       return `
-        <div class="portfolio-card ${isSelected ? 'selected' : ''}" data-symbol="${asset.symbol}">
+        <div class="portfolio-card ${isSelected ? 'selected' : ''} ${isPnlUp ? 'is-up' : 'is-down'}" data-symbol="${asset.symbol}">
           <div class="port-card-top">
             <div class="port-card-identity">
               <span class="asset-symbol">${asset.symbol}</span>
@@ -2903,10 +3088,13 @@ function renderAssetList() {
               <span class="port-shares-pill">${pos.shares} quote</span>
             </div>
             <div class="port-card-actions">
+              <span class="port-weight-pill" title="Peso della posizione nel portafoglio">Peso ${weightPct.toFixed(0)}%</span>
               <button class="port-edit-btn" data-action="edit" data-symbol="${asset.symbol}" title="Modifica posizione">✏️</button>
               <button class="port-edit-btn" data-action="delete" data-symbol="${asset.symbol}" title="Rimuovi dal portafoglio">🗑️</button>
             </div>
           </div>
+
+          <div class="port-card-asset-name">${escapePortfolioHtml(asset.name)}</div>
 
           <div class="port-card-metrics">
             <div>
@@ -2920,6 +3108,10 @@ function renderAssetList() {
             </div>
           </div>
 
+          <div class="port-weight-bar-track" title="Quota sul totale del portafoglio: ${weightPct.toFixed(1)}%">
+            <div class="port-weight-bar-fill" style="width:${Math.min(100, weightPct).toFixed(1)}%"></div>
+          </div>
+
           <!-- IA Suggestion Box -->
           <div class="port-ai-advice-box">
             <div class="port-ai-header">
@@ -2931,7 +3123,18 @@ function renderAssetList() {
       `;
     }).join('');
 
-    container.innerHTML = summaryHtml + cardsHtml;
+    const holdingsGroupHtml = `
+      <div class="portfolio-holdings-group">
+        <div class="portfolio-holdings-header">
+          <span>TITOLI IN PORTAFOGLIO</span>
+          <span class="portfolio-holdings-badge">✓ ${portfolioAssets.length} ${portfolioAssets.length === 1 ? 'asset' : 'asset'}</span>
+        </div>
+        ${cardsHtml}
+      </div>
+    `;
+
+    container.innerHTML = switcherHtml + summaryHtml + holdingsGroupHtml;
+    bindSwitcherEvents();
 
     const sumCard = document.getElementById('portfolioSummaryCard');
     if (sumCard) {
@@ -6880,8 +7083,19 @@ function handleRemoteCloudData(remoteData) {
       changed = true;
     }
 
-    if (remoteData.portfolio && typeof remoteData.portfolio === 'object') {
-      AppState.portfolio = remoteData.portfolio;
+    if (Array.isArray(remoteData.portfolios) && remoteData.portfolios.length > 0) {
+      AppState.portfolios = remoteData.portfolios;
+      AppState.activePortfolioId = remoteData.activePortfolioId || remoteData.portfolios[0].id;
+      getActivePortfolioObj();
+      localStorage.setItem('marketpulse_portfolios', JSON.stringify(AppState.portfolios));
+      localStorage.setItem('marketpulse_active_portfolio_id', AppState.activePortfolioId);
+      localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
+      changed = true;
+    } else if (remoteData.portfolio && typeof remoteData.portfolio === 'object') {
+      const active = getActivePortfolioObj();
+      active.positions = remoteData.portfolio;
+      AppState.portfolio = active.positions;
+      localStorage.setItem('marketpulse_portfolios', JSON.stringify(AppState.portfolios));
       localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
       changed = true;
     }
@@ -6932,6 +7146,8 @@ function getLocalBackupPayload() {
   return {
     settings: AppState.settings,
     portfolio: AppState.portfolio,
+    portfolios: AppState.portfolios,
+    activePortfolioId: AppState.activePortfolioId,
     portfolioSort: AppState.portfolioSort || localStorage.getItem('marketpulse_portfolio_sort') || 'best',
     assets: AppState.assets,
     notes: notesObj
