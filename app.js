@@ -1324,6 +1324,419 @@ function getPortfolioAiAdvice(asset, pos, currentPrice) {
   };
 }
 
+function escapePortfolioHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function normalizePortfolioTicker(sym) {
+  return String(sym || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^\^/, '')
+    .replace(/\.(MI|DE|PA|AS|L|SW|MC|TO|BR|VI|LS|HK|T)$/i, '')
+    .replace(/-(IT|FR|NL|GB|CH|ES|CA|USD|EUR|USDT)$/i, '');
+}
+
+const PORTFOLIO_SECTOR_MAP = {
+  // Tecnologia & Semiconduttori
+  NVDA: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  AAPL: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  MSFT: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  GOOGL: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  GOOG: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  META: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  ASML: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  AMD: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  INTC: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  AVGO: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  TSM: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  QCOM: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  MU: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  ARM: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  ORCL: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  CRM: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  ADBE: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  NFLX: { sector: 'Tecnologia & Semiconduttori', techWeight: 0.8 },
+  STM: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  STMMI: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  SOXX: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  SMH: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  XLK: { sector: 'Tecnologia & Semiconduttori', techWeight: 1.0 },
+  QQQ: { sector: 'Tecnologia & Semiconduttori', techWeight: 0.65 },
+  QQQM: { sector: 'Tecnologia & Semiconduttori', techWeight: 0.65 },
+  EQQQ: { sector: 'Tecnologia & Semiconduttori', techWeight: 0.65 },
+  NDX: { sector: 'Tecnologia & Semiconduttori', techWeight: 0.65 },
+
+  // Finanziario & Banche
+  ISP: { sector: 'Finanziario & Banche', techWeight: 0 },
+  UCG: { sector: 'Finanziario & Banche', techWeight: 0 },
+  BAMI: { sector: 'Finanziario & Banche', techWeight: 0 },
+  BMED: { sector: 'Finanziario & Banche', techWeight: 0 },
+  FBK: { sector: 'Finanziario & Banche', techWeight: 0 },
+  G: { sector: 'Finanziario & Banche', techWeight: 0 },
+  MB: { sector: 'Finanziario & Banche', techWeight: 0 },
+  BPE: { sector: 'Finanziario & Banche', techWeight: 0 },
+  JPM: { sector: 'Finanziario & Banche', techWeight: 0 },
+  BAC: { sector: 'Finanziario & Banche', techWeight: 0 },
+  GS: { sector: 'Finanziario & Banche', techWeight: 0 },
+  MS: { sector: 'Finanziario & Banche', techWeight: 0 },
+  V: { sector: 'Finanziario & Banche', techWeight: 0.2 },
+  MA: { sector: 'Finanziario & Banche', techWeight: 0.2 },
+  XLF: { sector: 'Finanziario & Banche', techWeight: 0 },
+
+  // Energia & Utilities
+  ENI: { sector: 'Energia & Utilities', techWeight: 0 },
+  ENEL: { sector: 'Energia & Utilities', techWeight: 0 },
+  SNAM: { sector: 'Energia & Utilities', techWeight: 0 },
+  SRG: { sector: 'Energia & Utilities', techWeight: 0 },
+  TRN: { sector: 'Energia & Utilities', techWeight: 0 },
+  HER: { sector: 'Energia & Utilities', techWeight: 0 },
+  A2A: { sector: 'Energia & Utilities', techWeight: 0 },
+  XOM: { sector: 'Energia & Utilities', techWeight: 0 },
+  CVX: { sector: 'Energia & Utilities', techWeight: 0 },
+  SHEL: { sector: 'Energia & Utilities', techWeight: 0 },
+  TTE: { sector: 'Energia & Utilities', techWeight: 0 },
+  XLE: { sector: 'Energia & Utilities', techWeight: 0 },
+
+  // Consumi, Auto & Lusso
+  TSLA: { sector: 'Consumi, Auto & Lusso', techWeight: 0.3 },
+  AMZN: { sector: 'Consumi, Auto & Lusso', techWeight: 0.45 },
+  RACE: { sector: 'Consumi, Auto & Lusso', techWeight: 0 },
+  STLA: { sector: 'Consumi, Auto & Lusso', techWeight: 0 },
+  MC: { sector: 'Consumi, Auto & Lusso', techWeight: 0 },
+  LVMH: { sector: 'Consumi, Auto & Lusso', techWeight: 0 },
+  NKE: { sector: 'Consumi, Auto & Lusso', techWeight: 0 },
+  XLY: { sector: 'Consumi, Auto & Lusso', techWeight: 0.2 },
+
+  // Industria & Infrastrutture
+  ALO: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+  LDO: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+  PRY: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+  CAT: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+  BA: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+  SIE: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+  XLI: { sector: 'Industria & Infrastrutture', techWeight: 0 },
+
+  // Salute & Farmaceutica
+  LLY: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  NVO: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  JNJ: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  UNH: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  PFE: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  REC: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  AMP: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+  XLV: { sector: 'Salute & Farmaceutica', techWeight: 0 },
+
+  // Materie Prime & Oro
+  GLD: { sector: 'Materie Prime & Oro', techWeight: 0 },
+  IAU: { sector: 'Materie Prime & Oro', techWeight: 0 },
+  SGLD: { sector: 'Materie Prime & Oro', techWeight: 0 },
+  SLV: { sector: 'Materie Prime & Oro', techWeight: 0 },
+  GDX: { sector: 'Materie Prime & Oro', techWeight: 0 },
+
+  // Indici Generali / Broad ETF
+  SPY: { sector: 'Indici Generali (USA / Global)', techWeight: 0.32, isBroadIndex: true },
+  VOO: { sector: 'Indici Generali (USA / Global)', techWeight: 0.32, isBroadIndex: true },
+  IVV: { sector: 'Indici Generali (USA / Global)', techWeight: 0.32, isBroadIndex: true },
+  CSSPX: { sector: 'Indici Generali (USA / Global)', techWeight: 0.32, isBroadIndex: true },
+  GSPC: { sector: 'Indici Generali (USA / Global)', techWeight: 0.32, isBroadIndex: true },
+  VWCE: { sector: 'Indici Generali (USA / Global)', techWeight: 0.24, isBroadIndex: true },
+  URTH: { sector: 'Indici Generali (USA / Global)', techWeight: 0.25, isBroadIndex: true },
+  SWDA: { sector: 'Indici Generali (USA / Global)', techWeight: 0.25, isBroadIndex: true },
+  IWDA: { sector: 'Indici Generali (USA / Global)', techWeight: 0.25, isBroadIndex: true },
+  ACWI: { sector: 'Indici Generali (USA / Global)', techWeight: 0.24, isBroadIndex: true },
+  FTSEMIB: { sector: 'Indici Italia (FTSE MIB)', techWeight: 0.02, isBroadIndex: true },
+  SX5E: { sector: 'Indici Europa (EuroStoxx)', techWeight: 0.14, isBroadIndex: true }
+};
+
+const PORTFOLIO_INDEX_CONSTITUENTS = {
+  SP500: {
+    label: 'S&P 500',
+    etfs: ['SPY', 'VOO', 'IVV', 'CSSPX'],
+    indices: ['GSPC'],
+    members: ['NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'GOOG', 'META', 'TSLA', 'AVGO', 'JPM', 'LLY', 'XOM', 'V', 'MA', 'UNH', 'ORCL', 'NFLX']
+  },
+  NASDAQ100: {
+    label: 'Nasdaq 100',
+    etfs: ['QQQ', 'QQQM', 'EQQQ'],
+    indices: ['NDX'],
+    members: ['NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'GOOG', 'META', 'TSLA', 'AVGO', 'ASML', 'AMD', 'INTC', 'QCOM', 'MU', 'ARM', 'ADBE', 'NFLX']
+  },
+  WORLD: {
+    label: 'Azionario Globale',
+    etfs: ['VWCE', 'URTH', 'SWDA', 'IWDA', 'ACWI'],
+    indices: [],
+    members: ['NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'GOOG', 'META', 'TSLA', 'ASML', 'AVGO', 'JPM', 'LLY', 'XOM', 'V', 'MA']
+  },
+  SEMICONDUCTORS: {
+    label: 'Semiconduttori',
+    etfs: ['SOXX', 'SMH'],
+    indices: [],
+    members: ['NVDA', 'ASML', 'AVGO', 'AMD', 'TSM', 'INTC', 'QCOM', 'MU', 'ARM', 'STM', 'STMMI']
+  },
+  FTSEMIB: {
+    label: 'FTSE MIB',
+    etfs: [],
+    indices: ['FTSEMIB'],
+    members: ['ISP', 'UCG', 'ENI', 'ENEL', 'RACE', 'STLA', 'G', 'LDO', 'PRY', 'BAMI', 'BMED', 'FBK', 'MB', 'BPE', 'SRG', 'TRN', 'STM', 'STMMI', 'REC', 'AMP']
+  }
+};
+
+function getAssetCompartmentInfo(asset) {
+  if (asset.type === 'crypto') {
+    return { sector: 'Criptovalute', techWeight: 0, isBroadIndex: false };
+  }
+
+  const certData = asset.certificateData || {};
+  const candidates = [
+    normalizePortfolioTicker(asset.symbol),
+    normalizePortfolioTicker(asset.marketSymbol),
+    normalizePortfolioTicker(certData.underlyingTicker)
+  ].filter(Boolean);
+
+  for (const key of candidates) {
+    if (PORTFOLIO_SECTOR_MAP[key]) {
+      return PORTFOLIO_SECTOR_MAP[key];
+    }
+  }
+
+  const text = `${asset.name || ''} ${certData.underlying || ''} ${asset.sector || ''}`.toLowerCase();
+  if (/semicond|chip|tech|software|cloud|cyber|ai |nasdaq|nvidia|apple|microsoft|alphabet|meta|asml/.test(text)) {
+    return { sector: 'Tecnologia & Semiconduttori', techWeight: 0.9, isBroadIndex: false };
+  }
+  if (/bank|banc|intesa|unicredit|financ|assicur|generali|mediobanca/.test(text)) {
+    return { sector: 'Finanziario & Banche', techWeight: 0, isBroadIndex: false };
+  }
+  if (/eni|enel|oil|gas|energ|utilit|petrol|renew/.test(text)) {
+    return { sector: 'Energia & Utilities', techWeight: 0, isBroadIndex: false };
+  }
+  if (/auto|tesla|ferrari|stellantis|luxury|lusso|amazon|retail|consum/.test(text)) {
+    return { sector: 'Consumi, Auto & Lusso', techWeight: 0, isBroadIndex: false };
+  }
+  if (/alstom|leonardo|prysmian|industr|aerosp|defense|difesa|infrastr/.test(text)) {
+    return { sector: 'Industria & Infrastrutture', techWeight: 0, isBroadIndex: false };
+  }
+  if (/pharma|health|salute|bio|med/.test(text)) {
+    return { sector: 'Salute & Farmaceutica', techWeight: 0, isBroadIndex: false };
+  }
+  if (/gold|oro|silver|argento|commodit|materie/.test(text)) {
+    return { sector: 'Materie Prime & Oro', techWeight: 0, isBroadIndex: false };
+  }
+  if (/ftse mib/.test(text)) {
+    return { sector: 'Indici Italia (FTSE MIB)', techWeight: 0.02, isBroadIndex: true };
+  }
+  if (/s&p 500|sp500|msci world|all-world|all world/.test(text)) {
+    return { sector: 'Indici Generali (USA / Global)', techWeight: 0.28, isBroadIndex: true };
+  }
+
+  if (asset.type === 'etf') return { sector: 'ETF Tematico / Altro', techWeight: 0, isBroadIndex: false };
+  if (asset.type === 'certificate') return { sector: 'Certificati Multi-Sottostante', techWeight: 0, isBroadIndex: false };
+  return { sector: 'Azionario / Altro', techWeight: 0, isBroadIndex: false };
+}
+
+function getCertificateUnderlyingTokens(asset) {
+  const certData = asset.certificateData || {};
+  const tokens = new Set();
+  const add = (val) => {
+    const norm = normalizePortfolioTicker(val);
+    if (norm && norm.length >= 2) tokens.add(norm);
+  };
+  add(asset.marketSymbol);
+  add(certData.underlyingTicker);
+
+  // Support single or basket/worst-of underlyings separated by , / • -
+  const rawUnderlying = String(certData.underlying || '').trim();
+  if (rawUnderlying) {
+    rawUnderlying.split(/[,/|•]+/).forEach(part => {
+      const clean = part.trim().toUpperCase();
+      if (clean) tokens.add(clean);
+    });
+  }
+  return Array.from(tokens);
+}
+
+function evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur) {
+  if (!portfolioAssets || portfolioAssets.length === 0 || totalCurrentValueEur <= 0) {
+    return null;
+  }
+
+  const items = portfolioAssets.map(asset => {
+    const pos = AppState.portfolio[asset.symbol];
+    const curPrice = asset.price != null ? asset.price : (pos ? pos.buyPrice : 0);
+    const valEur = pos ? convertToEur(pos.shares * curPrice, asset) : 0;
+    const weightPct = totalCurrentValueEur > 0 ? (valEur / totalCurrentValueEur) * 100 : 0;
+    const baseSym = normalizePortfolioTicker(asset.symbol);
+    const marketBase = normalizePortfolioTicker(asset.marketSymbol);
+    const compInfo = getAssetCompartmentInfo(asset);
+    return {
+      asset,
+      symbol: asset.symbol,
+      baseSym,
+      marketBase,
+      type: asset.type,
+      valueEur: valEur,
+      weightPct,
+      sector: compInfo.sector,
+      techWeight: compInfo.techWeight,
+      isBroadIndex: Boolean(compInfo.isBroadIndex)
+    };
+  });
+
+  // 1) Overlap detection across Stocks, ETFs, and Certificates
+  const overlaps = [];
+  const seenOverlapKeys = new Set();
+  const addOverlap = (key, severity, message) => {
+    if (seenOverlapKeys.has(key)) return;
+    seenOverlapKeys.add(key);
+    overlaps.push({ severity, message });
+  };
+
+  const stocks = items.filter(i => i.type === 'stock');
+  const etfs = items.filter(i => i.type === 'etf');
+  const certs = items.filter(i => i.type === 'certificate');
+
+  // 1A. Stock <-> Certificate direct underlying overlap
+  stocks.forEach(st => {
+    const stNameWords = String(st.asset.name || '').toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+    certs.forEach(ct => {
+      const certTokens = getCertificateUnderlyingTokens(ct.asset);
+      const certText = `${ct.asset.name || ''} ${(ct.asset.certificateData || {}).underlying || ''}`.toLowerCase();
+      const tickerMatch = certTokens.includes(st.baseSym) || (st.marketBase && certTokens.includes(st.marketBase));
+      const nameMatch = stNameWords.some(w => !['corp', 'corporation', 'group', 'holding', 'inc.', 's.p.a.'].includes(w) && certText.includes(w));
+      if (tickerMatch || nameMatch) {
+        addOverlap(
+          `stock-cert-${st.baseSym}-${ct.symbol}`,
+          'high',
+          `<strong>${escapePortfolioHtml(st.symbol)}</strong> (Azione) coincide con il sottostante di <strong>${escapePortfolioHtml(ct.symbol)}</strong> (Certificato): doppia esposizione diretta.`
+        );
+      }
+    });
+  });
+
+  // 1B. Certificate <-> Certificate same underlying
+  for (let i = 0; i < certs.length; i++) {
+    for (let j = i + 1; j < certs.length; j++) {
+      const a = certs[i];
+      const b = certs[j];
+      const tokA = normalizePortfolioTicker((a.asset.certificateData || {}).underlyingTicker || a.marketBase);
+      const tokB = normalizePortfolioTicker((b.asset.certificateData || {}).underlyingTicker || b.marketBase);
+      if (tokA && tokB && tokA === tokB) {
+        addOverlap(
+          `cert-cert-${[a.symbol, b.symbol].sort().join('-')}`,
+          'medium',
+          `I certificati <strong>${escapePortfolioHtml(a.symbol)}</strong> e <strong>${escapePortfolioHtml(b.symbol)}</strong> condividono lo stesso sottostante (${escapePortfolioHtml(tokA)}).`
+        );
+      }
+    }
+  }
+
+  // 1C. Stock <-> ETF / Index Certificate look-through overlap
+  Object.entries(PORTFOLIO_INDEX_CONSTITUENTS).forEach(([bucketKey, bucket]) => {
+    const matchingEtfs = etfs.filter(e => bucket.etfs.includes(e.baseSym));
+    const matchingCerts = certs.filter(c => {
+      const cTok = normalizePortfolioTicker((c.asset.certificateData || {}).underlyingTicker || c.marketBase);
+      const cText = `${c.asset.name || ''} ${(c.asset.certificateData || {}).underlying || ''}`.toUpperCase();
+      return bucket.indices.includes(cTok) || cText.includes(bucket.label.toUpperCase());
+    });
+    const matchingStocks = stocks.filter(s => bucket.members.includes(s.baseSym) || bucket.members.includes(s.marketBase));
+
+    // Stock + ETF/Cert on same index
+    if (matchingStocks.length > 0 && (matchingEtfs.length > 0 || matchingCerts.length > 0)) {
+      const stockList = matchingStocks.map(s => escapePortfolioHtml(s.symbol)).join(', ');
+      const vehicles = [
+        ...matchingEtfs.map(e => `${escapePortfolioHtml(e.symbol)} (ETF)`),
+        ...matchingCerts.map(c => `${escapePortfolioHtml(c.symbol)} (Cert)`)
+      ].join(', ');
+      addOverlap(
+        `lookthrough-${bucketKey}-${stockList}`,
+        'medium',
+        `<strong>${stockList}</strong> (Azioni) già incluse nell'esposizione <em>${escapePortfolioHtml(bucket.label)}</em> di <strong>${vehicles}</strong>.`
+      );
+    }
+
+    // ETF + Index Certificate on exact same index (e.g. SPY + Turbo S&P 500)
+    if (matchingEtfs.length > 0 && matchingCerts.length > 0) {
+      const etfList = matchingEtfs.map(e => escapePortfolioHtml(e.symbol)).join(', ');
+      const certList = matchingCerts.map(c => escapePortfolioHtml(c.symbol)).join(', ');
+      addOverlap(
+        `etf-cert-${bucketKey}`,
+        'high',
+        `Sovrapposizione diretta su indice <em>${escapePortfolioHtml(bucket.label)}</em> tra ETF (<strong>${etfList}</strong>) e Certificato (<strong>${certList}</strong>).`
+      );
+    }
+  });
+
+  // 1D. Broad US/Global ETF <-> ETF redundancy (e.g. SPY + QQQ / URTH / VWCE)
+  const usGlobalEtfs = etfs.filter(e => ['SPY', 'VOO', 'IVV', 'CSSPX', 'QQQ', 'QQQM', 'EQQQ', 'VWCE', 'URTH', 'SWDA', 'IWDA', 'ACWI', 'SOXX', 'SMH'].includes(e.baseSym));
+  if (usGlobalEtfs.length >= 2) {
+    const etfSyms = usGlobalEtfs.map(e => `<strong>${escapePortfolioHtml(e.symbol)}</strong>`).join(' + ');
+    addOverlap(
+      `etf-etf-us-global`,
+      'medium',
+      `Possibile ridondanza tra ETF (${etfSyms}): forte sovrapposizione sui titoli mega-cap USA/Tech.`
+    );
+  }
+
+  // 2) Sector / Compartment balance analysis
+  const sectorTotals = {};
+  let effectiveTechEur = 0;
+
+  items.forEach(item => {
+    if (!sectorTotals[item.sector]) {
+      sectorTotals[item.sector] = { name: item.sector, valueEur: 0, weightPct: 0, symbols: [] };
+    }
+    sectorTotals[item.sector].valueEur += item.valueEur;
+    sectorTotals[item.sector].weightPct += item.weightPct;
+    sectorTotals[item.sector].symbols.push(item.symbol);
+    effectiveTechEur += item.valueEur * item.techWeight;
+  });
+
+  const sortedSectors = Object.values(sectorTotals).sort((a, b) => b.weightPct - a.weightPct);
+  const topSector = sortedSectors[0];
+  const effectiveTechPct = totalCurrentValueEur > 0 ? (effectiveTechEur / totalCurrentValueEur) * 100 : 0;
+
+  let sectorStatus = 'balanced'; // 'balanced' | 'warning' | 'danger'
+  let sectorSummary = '';
+
+  if (items.length === 1) {
+    sectorStatus = 'warning';
+    sectorSummary = `Portafoglio concentrato al <strong>100%</strong> su una sola posizione (<strong>${escapePortfolioHtml(items[0].symbol)}</strong> • ${escapePortfolioHtml(topSector.name)}). Aggiungi altri strumenti per diversificare.`;
+  } else if (topSector.weightPct >= 50) {
+    sectorStatus = 'danger';
+    sectorSummary = `<strong>Forte sbilanciamento</strong> verso <strong>${escapePortfolioHtml(topSector.name)}</strong> (<strong>${topSector.weightPct.toFixed(1)}%</strong> del portafoglio: ${topSector.symbols.map(escapePortfolioHtml).join(', ')}).`;
+  } else if (topSector.weightPct >= 38) {
+    sectorStatus = 'warning';
+    sectorSummary = `<strong>Sbilanciamento moderato</strong> verso <strong>${escapePortfolioHtml(topSector.name)}</strong> (<strong>${topSector.weightPct.toFixed(1)}%</strong> del totale).`;
+  } else if (effectiveTechPct >= 48 && topSector.name !== 'Tecnologia & Semiconduttori') {
+    sectorStatus = 'warning';
+    sectorSummary = `Esposizione diretta bilanciata, ma considerando i pesi interni di ETF/Indici l'esposizione effettiva al comparto <strong>Tecnologia</strong> sale al <strong>~${effectiveTechPct.toFixed(0)}%</strong>.`;
+  } else {
+    sectorStatus = 'balanced';
+    sectorSummary = `<strong>Composizione equilibrata</strong>: nessun comparto supera la soglia critica (principale: ${escapePortfolioHtml(topSector.name)} al <strong>${topSector.weightPct.toFixed(1)}%</strong>).`;
+  }
+
+  // Overall AI Verdict Pill
+  const hasHighOverlap = overlaps.some(o => o.severity === 'high');
+  let overallBadge = { label: 'EQUILIBRATO', cls: 'port-ai-status-ok' };
+  if (sectorStatus === 'danger' || hasHighOverlap) {
+    overallBadge = { label: hasHighOverlap && sectorStatus !== 'danger' ? 'SOVRAPPOSIZIONI' : 'SBILANCIATO', cls: 'port-ai-status-danger' };
+  } else if (sectorStatus === 'warning' || overlaps.length > 0) {
+    overallBadge = { label: 'ATTENZIONE', cls: 'port-ai-status-warn' };
+  }
+
+  return {
+    overallBadge,
+    overlaps,
+    sectorStatus,
+    sectorSummary,
+    sortedSectors: sortedSectors.slice(0, 4)
+  };
+}
+
 let currentPortfolioModalSymbol = null;
 
 function openPortfolioModal(symbol) {
@@ -1545,6 +1958,32 @@ function renderAssetList() {
     const totalPnlPct = totalInvestedEur > 0 ? (totalPnlCashEur / totalInvestedEur) * 100 : 0;
     const isTotalPnlUp = totalPnlCashEur >= 0;
 
+    const compAi = evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur);
+    const aiCompositionHtml = compAi ? `
+      <div class="port-ai-comp-box">
+        <div class="port-ai-comp-header">
+          <span class="port-ai-comp-title"><span class="ai-spark-icon">✦</span> Valutazione IA Composizione</span>
+          <span class="port-ai-comp-badge ${compAi.overallBadge.cls}">${compAi.overallBadge.label}</span>
+        </div>
+        <div class="port-ai-comp-item">
+          <div class="port-ai-comp-label">1. Sovrapposizioni (Azioni / ETF / Certificati)</div>
+          ${compAi.overlaps.length > 0
+            ? `<ul class="port-ai-comp-list">${compAi.overlaps.map(o => `<li class="overlap-${o.severity}">${o.message}</li>`).join('')}</ul>`
+            : `<div class="port-ai-comp-ok">✓ Nessuna sovrapposizione rilevata tra azioni, ETF e certificati in portafoglio.</div>`
+          }
+        </div>
+        <div class="port-ai-comp-item">
+          <div class="port-ai-comp-label">2. Bilanciamento per Comparto</div>
+          <div class="port-ai-comp-text sector-${compAi.sectorStatus}">${compAi.sectorSummary}</div>
+          <div class="port-ai-sector-pills">
+            ${compAi.sortedSectors.map(sec => `
+              <span class="port-ai-sector-pill">${escapePortfolioHtml(sec.name)}: <strong>${sec.weightPct.toFixed(0)}%</strong></span>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    ` : '';
+
     const summaryHtml = `
       <div class="portfolio-summary-card">
         <div class="port-sum-row">
@@ -1563,6 +2002,7 @@ function renderAssetList() {
           <span>Capitale Investito: <strong>€ ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
           <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
         </div>
+        ${aiCompositionHtml}
       </div>
     `;
 
