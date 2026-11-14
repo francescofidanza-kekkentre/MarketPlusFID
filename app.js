@@ -2276,8 +2276,8 @@ function renderPortfolioHealthPane() {
         <div class="port-right-kpi">
           <div class="lbl">Miglior / Peggior</div>
           <div class="val" style="font-size:0.74rem;">
-            <span style="color:#34d399;">${escapePortfolioHtml(best.asset.symbol)} ${best.pnlPct >= 0 ? '+' : ''}${best.pnlPct.toFixed(1)}%</span>
-            ${snap.items.length > 1 ? `<br><span style="color:#f87171;">${escapePortfolioHtml(worst.asset.symbol)} ${worst.pnlPct >= 0 ? '+' : ''}${worst.pnlPct.toFixed(1)}%</span>` : ''}
+            <span style="color:${best.pnlPct >= 0 ? '#34d399' : '#f87171'};">${escapePortfolioHtml(best.asset.symbol)} ${best.pnlPct >= 0 ? '+' : ''}${best.pnlPct.toFixed(1)}%</span>
+            ${snap.items.length > 1 ? `<br><span style="color:${worst.pnlPct >= 0 ? '#34d399' : '#f87171'};">${escapePortfolioHtml(worst.asset.symbol)} ${worst.pnlPct >= 0 ? '+' : ''}${worst.pnlPct.toFixed(1)}%</span>` : ''}
           </div>
         </div>
       </div>
