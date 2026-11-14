@@ -9,7 +9,8 @@ export const DEFAULT_FIREBASE_CONFIG = {
   storageBucket: "marketpulsepro-682ff.firebasestorage.app",
   messagingSenderId: "802500095620",
   appId: "1:802500095620:web:7ca805e438b4a8c436dcd1",
-  measurementId: "G-GPVTD25Z4L"
+  measurementId: "G-GPVTD25Z4L",
+  recaptchaSiteKey: "6LcSYyAuAAAAAJtjLobtfUX_73dalDLdxPd4S3jX"
 };
 
 /**

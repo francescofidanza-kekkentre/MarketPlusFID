@@ -6,6 +6,8 @@ import { getFirebaseConfig } from './firebase-config.js';
 let app = null;
 let auth = null;
 let db = null;
+let aiInstance = null;
+let appCheckInitialized = false;
 let currentUser = null;
 let unsubscribeSnapshot = null;
 let syncTimeout = null;
@@ -15,7 +17,9 @@ let isApplyingRemoteData = false;
 let initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
     signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut,
     onAuthStateChanged, sendPasswordResetEmail, getFirestore, doc, getDoc, setDoc,
-    onSnapshot, serverTimestamp, setPersistence, indexedDBLocalPersistence, browserLocalPersistence;
+    onSnapshot, serverTimestamp, setPersistence, indexedDBLocalPersistence, browserLocalPersistence,
+    getAI, getGenerativeModel, GoogleAIBackend, Schema,
+    initializeAppCheck, ReCaptchaEnterpriseProvider;
 
 /**
  * Carica dinamicamente gli SDK Firebase da CDN ufficiale
@@ -23,9 +27,11 @@ let initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPa
 async function loadFirebaseModules() {
   if (initializeApp) return true;
   try {
-    const appMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const authMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
-    const firestoreMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const appMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js');
+    const authMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js');
+    const firestoreMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js');
+    const aiMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-ai.js');
+    const appCheckMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-app-check.js');
 
     initializeApp = appMod.initializeApp;
     getAuth = authMod.getAuth;
@@ -48,10 +54,37 @@ async function loadFirebaseModules() {
     setDoc = firestoreMod.setDoc;
     onSnapshot = firestoreMod.onSnapshot;
     serverTimestamp = firestoreMod.serverTimestamp;
+
+    getAI = aiMod.getAI;
+    getGenerativeModel = aiMod.getGenerativeModel;
+    GoogleAIBackend = aiMod.GoogleAIBackend;
+    Schema = aiMod.Schema;
+
+    initializeAppCheck = appCheckMod.initializeAppCheck;
+    ReCaptchaEnterpriseProvider = appCheckMod.ReCaptchaEnterpriseProvider;
     return true;
   } catch (err) {
     console.error('[Firebase] Errore caricamento SDK da CDN:', err);
     return false;
+  }
+}
+
+function initAppCheckIfConfigured(config) {
+  if (appCheckInitialized || !app || !initializeAppCheck || !ReCaptchaEnterpriseProvider) return;
+  const siteKey = config?.recaptchaSiteKey;
+  if (!siteKey) return;
+  try {
+    const host = typeof location !== 'undefined' ? location.hostname : '';
+    if (host === 'localhost' || host === '127.0.0.1') {
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(siteKey),
+      isTokenAutoRefreshEnabled: true
+    });
+    appCheckInitialized = true;
+  } catch (err) {
+    console.warn('[Firebase App Check] Errore inizializzazione:', err);
   }
 }
 
@@ -74,8 +107,16 @@ export async function initFirebaseSync({ onAuthUpdate, onDataUpdate, getLocalSta
 
   try {
     app = initializeApp(config);
+    initAppCheckIfConfigured(config);
     auth = getAuth(app);
     db = getFirestore(app);
+    if (getAI && GoogleAIBackend) {
+      try {
+        aiInstance = getAI(app, { backend: new GoogleAIBackend() });
+      } catch (aiErr) {
+        console.warn('[Firebase AI Logic] Inizializzazione differita:', aiErr);
+      }
+    }
 
     // Configura persistenza di sessione persistente tra riaperture (IndexedDB / LocalStorage)
     if (setPersistence) {
@@ -306,5 +347,121 @@ export async function resetPasswordEmail(email) {
  */
 export function getCurrentUser() {
   return currentUser;
+}
+
+const GEMINI_MODEL_NAME = 'gemini-3.8-flash';
+
+async function ensureFirebaseAiReady() {
+  if (aiInstance) return aiInstance;
+  const config = getFirebaseConfig();
+  if (!config || !config.apiKey || !config.projectId) {
+    throw new Error('Configurazione Firebase mancante');
+  }
+  const loaded = await loadFirebaseModules();
+  if (!loaded || !getAI || !GoogleAIBackend) {
+    throw new Error('SDK Firebase AI Logic non disponibile');
+  }
+  if (!app) {
+    app = initializeApp(config);
+  }
+  initAppCheckIfConfigured(config);
+  aiInstance = getAI(app, { backend: new GoogleAIBackend() });
+  return aiInstance;
+}
+
+/**
+ * Valuta la composizione del portafoglio tramite Firebase AI Logic (Gemini Developer API)
+ * con risposta JSON strutturata. In caso di errore restituisce { ok: false, error }.
+ */
+export async function analyzePortfolioWithGemini(portfolioContext) {
+  try {
+    const ai = await ensureFirebaseAiReady();
+    const responseSchema = Schema.object({
+      properties: {
+        overallStatus: Schema.string({
+          enum: ['EQUILIBRATO', 'ATTENZIONE', 'SOVRAPPOSIZIONI', 'SBILANCIATO']
+        }),
+        overlaps: Schema.array({
+          items: Schema.object({
+            severity: Schema.string({ enum: ['high', 'medium'] }),
+            message: Schema.string()
+          })
+        }),
+        sectorSummary: Schema.string(),
+        actionableTip: Schema.string()
+      }
+    });
+
+    const model = getGenerativeModel(ai, {
+      model: GEMINI_MODEL_NAME,
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 1024,
+        responseMimeType: 'application/json',
+        responseSchema
+      }
+    });
+
+    const prompt = [
+      'Sei un analista finanziario quantitativo. Rispondi in italiano chiaro, conciso e professionale.',
+      'Analizza questo portafoglio (pesi percentuali già calcolati, non inventare numeri diversi):',
+      JSON.stringify(portfolioContext),
+      'Valuta rigorosamente:',
+      '1) Sovrapposizioni tra azioni singole, ETF (anche look-through su indici/settori come S&P 500, Nasdaq 100, MSCI World, Semiconduttori, FTSE MIB) e certificati (sottostante diretto o worst-of). Se non ci sono sovrapposizioni, restituisci overlaps: [].',
+      '2) Sbilanciamento verso un comparto/settore o area geografica.',
+      '3) Un breve consiglio operativo concreto (actionableTip, max 22 parole).'
+    ].join('\n');
+
+    const result = await model.generateContent(prompt);
+    const text = result?.response?.text();
+    if (!text) throw new Error('Risposta Gemini vuota');
+    const parsed = JSON.parse(text);
+    return { ok: true, model: GEMINI_MODEL_NAME, data: parsed };
+  } catch (err) {
+    console.warn('[Firebase AI Logic] Fallback locale portafoglio:', err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Analisi approfondita di un singolo titolo (o portafoglio) tramite Firebase AI Logic.
+ */
+export async function analyzeAssetWithGemini(assetContext) {
+  try {
+    const ai = await ensureFirebaseAiReady();
+    const responseSchema = Schema.object({
+      properties: {
+        verdict: Schema.string(),
+        riskProfile: Schema.string(),
+        narrative: Schema.string()
+      }
+    });
+
+    const model = getGenerativeModel(ai, {
+      model: GEMINI_MODEL_NAME,
+      generationConfig: {
+        temperature: 0.35,
+        maxOutputTokens: 900,
+        responseMimeType: 'application/json',
+        responseSchema
+      }
+    });
+
+    const prompt = [
+      'Sei un analista finanziario. Rispondi in italiano sintetico e oggettivo (max 90 parole per narrative).',
+      'Basati esclusivamente sui dati tecnici/fondamentali forniti (senza inventare prezzi):',
+      JSON.stringify(assetContext),
+      'Restituisci verdict (es. "ACQUISTO GRADUALE", "MANTENIMENTO", "CAUTELA"), riskProfile (es. "Rischio: Moderato") e narrative.'
+    ].join('\n');
+
+    const result = await model.generateContent(prompt);
+    const text = result?.response?.text();
+    if (!text) throw new Error('Risposta Gemini vuota');
+    const parsed = JSON.parse(text);
+    return { ok: true, model: GEMINI_MODEL_NAME, data: parsed };
+  } catch (err) {
+    console.warn('[Firebase AI Logic] Fallback locale asset:', err);
+    return { ok: false, error: err?.message || String(err) };
+  }
 }
 

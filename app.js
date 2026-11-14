@@ -1736,6 +1736,158 @@ function evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur) {
   };
 }
 
+const GeminiHybridState = {
+  portfolio: { key: null, data: null, model: null, loading: false, error: null },
+  assets: {} // keyed by `${symbol}_${timeframe}`
+};
+
+function getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur) {
+  if (!portfolioAssets || portfolioAssets.length === 0 || totalCurrentValueEur <= 0) return '';
+  return portfolioAssets
+    .map(a => {
+      const pos = AppState.portfolio[a.symbol];
+      const curPrice = a.price != null ? a.price : (pos ? pos.buyPrice : 0);
+      const valEur = pos ? convertToEur(pos.shares * curPrice, a) : 0;
+      const pct = Math.round((valEur / totalCurrentValueEur) * 100);
+      return `${a.symbol}:${pct}`;
+    })
+    .sort()
+    .join('|');
+}
+
+async function runGeminiPortfolioEvaluation() {
+  const entries = getPortfolioAssetsWithPos();
+  if (entries.length === 0 || GeminiHybridState.portfolio.loading) return;
+
+  let totalEur = 0;
+  entries.forEach(({ asset, pos }) => {
+    const p = asset.price != null ? asset.price : pos.buyPrice;
+    totalEur += convertToEur(pos.shares * p, asset);
+  });
+  if (totalEur <= 0) return;
+
+  const portfolioAssets = entries.map(e => e.asset);
+  const cacheKey = getPortfolioCacheKey(portfolioAssets, totalEur);
+  const localEval = evaluatePortfolioCompositionAi(portfolioAssets, totalEur);
+
+  GeminiHybridState.portfolio = { key: cacheKey, data: null, model: null, loading: true, error: null };
+  renderAssetList();
+
+  try {
+    const mod = await getFirebaseModule();
+    if (!mod || typeof mod.analyzePortfolioWithGemini !== 'function') {
+      throw new Error('Modulo Firebase AI Logic non caricato');
+    }
+
+    const holdingsPayload = entries.map(({ asset, pos }) => {
+      const curPrice = asset.price != null ? asset.price : pos.buyPrice;
+      const valEur = convertToEur(pos.shares * curPrice, asset);
+      const weightPct = Number(((valEur / totalEur) * 100).toFixed(1));
+      const comp = getAssetCompartmentInfo(asset);
+      const certData = asset.certificateData || {};
+      return {
+        symbol: asset.symbol,
+        name: asset.name,
+        type: asset.type,
+        weightPct,
+        localCompartment: comp.sector,
+        underlying: certData.underlying || certData.underlyingTicker || null
+      };
+    });
+
+    const res = await mod.analyzePortfolioWithGemini({
+      positionsCount: holdingsPayload.length,
+      holdings: holdingsPayload,
+      localCompartmentBreakdown: (localEval?.sortedSectors || []).map(s => ({
+        sector: s.name,
+        weightPct: Number(s.weightPct.toFixed(1))
+      }))
+    });
+
+    if (res && res.ok && res.data) {
+      GeminiHybridState.portfolio = {
+        key: cacheKey,
+        data: res.data,
+        model: res.model || 'gemini-3.8-flash',
+        loading: false,
+        error: null
+      };
+    } else {
+      throw new Error(res?.error || 'Servizio Gemini non disponibile');
+    }
+  } catch (err) {
+    GeminiHybridState.portfolio = {
+      key: cacheKey,
+      data: null,
+      model: null,
+      loading: false,
+      error: err?.message || 'Fallback locale attivo'
+    };
+  }
+  renderAssetList();
+}
+
+async function runGeminiAssetEvaluation() {
+  const asset = AppState.selectedAsset;
+  if (!asset) return;
+  const btn = document.getElementById('btnGeminiAssetEval');
+  const verdictEl = document.getElementById('aiVerdictBadge');
+  const riskEl = document.getElementById('aiRiskProfileBadge');
+  const narrativeEl = document.getElementById('aiNarrativeText');
+  const cacheKey = `${asset.symbol}_${AppState.activeTimeframe}`;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Gemini...';
+  }
+
+  try {
+    const mod = await getFirebaseModule();
+    if (!mod || typeof mod.analyzeAssetWithGemini !== 'function') {
+      throw new Error('Modulo Firebase AI Logic non caricato');
+    }
+
+    const bars = AppState.renderedBars || [];
+    const last = bars.length > 0 ? bars[bars.length - 1] : null;
+    const payload = {
+      symbol: asset.symbol,
+      name: asset.name,
+      type: asset.type,
+      timeframe: AppState.activeTimeframe,
+      currency: asset.currency || 'EUR',
+      price: asset.price,
+      changePct: asset.change,
+      rsi: last?.rsi ?? null,
+      ema20: last?.ema20 ?? null,
+      ema50: last?.ema50 ?? null,
+      fundamentals: asset.fundamentals || null,
+      certificateData: asset.certificateData || null
+    };
+
+    const res = await mod.analyzeAssetWithGemini(payload);
+    if (res && res.ok && res.data) {
+      GeminiHybridState.assets[cacheKey] = res.data;
+      if (verdictEl && res.data.verdict) verdictEl.textContent = `✦ ${res.data.verdict}`;
+      if (riskEl && res.data.riskProfile) riskEl.textContent = res.data.riskProfile;
+      if (narrativeEl && res.data.narrative) {
+        narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(res.data.narrative)}`;
+      }
+      if (btn) btn.textContent = '✦ Gemini ✓';
+    } else {
+      throw new Error(res?.error || 'Gemini non disponibile');
+    }
+  } catch (err) {
+    console.warn('[Hybrid AI] Fallback locale mantenuto:', err);
+    if (btn) {
+      btn.textContent = '✦ Fallback Locale';
+      btn.title = err?.message || 'Abilita Firebase AI Logic per usare Gemini';
+      setTimeout(() => { if (btn) btn.textContent = '✦ Gemini'; }, 3000);
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 let currentPortfolioModalSymbol = null;
 
 function openPortfolioModal(symbol) {
@@ -2016,28 +2168,67 @@ function renderAssetList() {
     const isTotalPnlUp = totalPnlCashEur >= 0;
 
     const compAi = evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur);
+    const cacheKey = getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur);
+    const gemState = GeminiHybridState.portfolio;
+    const hasGemini = Boolean(gemState.key === cacheKey && gemState.data);
+    const isGemLoading = Boolean(gemState.loading);
+    const gemError = (gemState.key === cacheKey && gemState.error) ? gemState.error : null;
+
+    const effectiveOverlaps = hasGemini && Array.isArray(gemState.data.overlaps)
+      ? gemState.data.overlaps.map(o => ({ severity: o.severity || 'medium', message: escapePortfolioHtml(o.message) }))
+      : (compAi ? compAi.overlaps : []);
+    const effectiveSectorSummary = hasGemini && gemState.data.sectorSummary
+      ? escapePortfolioHtml(gemState.data.sectorSummary)
+      : (compAi ? compAi.sectorSummary : '');
+    const effectiveBadge = hasGemini && gemState.data.overallStatus
+      ? {
+          label: gemState.data.overallStatus,
+          cls: gemState.data.overallStatus === 'EQUILIBRATO'
+            ? 'port-ai-status-ok'
+            : (gemState.data.overallStatus === 'ATTENZIONE' ? 'port-ai-status-warn' : 'port-ai-status-danger')
+        }
+      : compAi?.overallBadge;
+
     const aiCompositionHtml = compAi ? `
       <div class="port-ai-comp-box">
         <div class="port-ai-comp-header">
-          <span class="port-ai-comp-title"><span class="ai-spark-icon">✦</span> Valutazione IA Composizione</span>
-          <span class="port-ai-comp-badge ${compAi.overallBadge.cls}">${compAi.overallBadge.label}</span>
+          <span class="port-ai-comp-title">
+            <span class="ai-spark-icon">✦</span>
+            ${hasGemini ? 'Valutazione Gemini' : 'Valutazione IA'}
+          </span>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <button type="button" class="ai-gemini-btn" id="btnGeminiPortfolioEval" ${isGemLoading ? 'disabled' : ''} title="Analisi approfondita tramite Firebase AI Logic (Gemini)">
+              ${isGemLoading ? '⏳ Gemini...' : (hasGemini ? '✦ Aggiorna' : '✦ Gemini')}
+            </button>
+            <span class="port-ai-comp-badge ${effectiveBadge.cls}">${effectiveBadge.label}</span>
+          </div>
         </div>
         <div class="port-ai-comp-item">
           <div class="port-ai-comp-label">1. Sovrapposizioni (Azioni / ETF / Certificati)</div>
-          ${compAi.overlaps.length > 0
-            ? `<ul class="port-ai-comp-list">${compAi.overlaps.map(o => `<li class="overlap-${o.severity}">${o.message}</li>`).join('')}</ul>`
+          ${effectiveOverlaps.length > 0
+            ? `<ul class="port-ai-comp-list">${effectiveOverlaps.map(o => `<li class="overlap-${o.severity}">${o.message}</li>`).join('')}</ul>`
             : `<div class="port-ai-comp-ok">✓ Nessuna sovrapposizione rilevata tra azioni, ETF e certificati in portafoglio.</div>`
           }
         </div>
         <div class="port-ai-comp-item">
           <div class="port-ai-comp-label">2. Bilanciamento per Comparto</div>
-          <div class="port-ai-comp-text sector-${compAi.sectorStatus}">${compAi.sectorSummary}</div>
+          <div class="port-ai-comp-text sector-${compAi.sectorStatus}">${effectiveSectorSummary}</div>
           <div class="port-ai-sector-pills">
             ${compAi.sortedSectors.map(sec => `
               <span class="port-ai-sector-pill">${escapePortfolioHtml(sec.name)}: <strong>${sec.weightPct.toFixed(0)}%</strong></span>
             `).join('')}
           </div>
         </div>
+        ${hasGemini && gemState.data.actionableTip ? `
+          <div class="port-ai-gemini-tip">
+            <strong>✦ Consiglio Gemini:</strong> ${escapePortfolioHtml(gemState.data.actionableTip)}
+          </div>
+        ` : ''}
+        ${gemError ? `
+          <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
+            Modalità fallback locale attiva (Firebase AI Logic non ancora abilitato o offline).
+          </div>
+        ` : ''}
       </div>
     ` : '';
 
@@ -2131,6 +2322,14 @@ function renderAssetList() {
           const chartSection = document.getElementById('section-chart');
           if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
         }
+      });
+    }
+
+    const gemPortBtn = document.getElementById('btnGeminiPortfolioEval');
+    if (gemPortBtn) {
+      gemPortBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        runGeminiPortfolioEvaluation();
       });
     }
 
@@ -4578,6 +4777,13 @@ function setupEventListeners() {
       saveAssetsToStorage();
       updateSelectedAssetHeader();
       renderAssetList();
+    });
+  }
+
+  const gemAssetBtn = document.getElementById('btnGeminiAssetEval');
+  if (gemAssetBtn) {
+    gemAssetBtn.addEventListener('click', () => {
+      runGeminiAssetEvaluation();
     });
   }
 

@@ -2336,6 +2336,57 @@ body {
   padding: 2px 6px;
 }
 
+.ai-gemini-btn {
+  font-size: 0.63rem;
+  font-weight: 700;
+  color: #e9d5ff;
+  background: rgba(139, 92, 246, 0.22);
+  border: 1px solid rgba(167, 139, 250, 0.5);
+  border-radius: 5px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ai-gemini-btn:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.38);
+  border-color: #c4b5fd;
+  color: #fff;
+}
+
+.ai-gemini-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.port-ai-gemini-tip {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(167, 139, 250, 0.3);
+  font-size: 0.7rem;
+  color: #ddd6fe;
+}
+
+.port-ai-fallback-note {
+  margin-top: 6px;
+  font-size: 0.64rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.ai-gemini-source-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #ddd6fe;
+  background: rgba(139, 92, 246, 0.25);
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+}
+
 .portfolio-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
