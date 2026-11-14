@@ -2226,7 +2226,7 @@ function renderAssetList() {
         ` : ''}
         ${gemError ? `
           <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
-            Modalità fallback locale attiva (Firebase AI Logic non ancora abilitato o offline).
+            Fallback locale attivo: ${escapePortfolioHtml(gemError)}
           </div>
         ` : ''}
       </div>

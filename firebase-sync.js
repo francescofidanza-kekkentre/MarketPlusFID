@@ -378,13 +378,15 @@ export async function analyzePortfolioWithGemini(portfolioContext) {
     const ai = await ensureFirebaseAiReady();
     const responseSchema = Schema.object({
       properties: {
-        overallStatus: Schema.string({
+        overallStatus: Schema.enumString({
           enum: ['EQUILIBRATO', 'ATTENZIONE', 'SOVRAPPOSIZIONI', 'SBILANCIATO']
         }),
         overlaps: Schema.array({
           items: Schema.object({
-            severity: Schema.string({ enum: ['high', 'medium'] }),
-            message: Schema.string()
+            properties: {
+              severity: Schema.enumString({ enum: ['high', 'medium'] }),
+              message: Schema.string()
+            }
           })
         }),
         sectorSummary: Schema.string(),
