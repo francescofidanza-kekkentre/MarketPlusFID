@@ -2440,8 +2440,103 @@ body {
   color: #ede9fe;
 }
 
+.port-ai-wide-grid .port-ai-item-suggestions {
+  grid-column: 1 / -1;
+  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.port-ai-wide-grid .port-ai-item-suggestions .port-ai-comp-label {
+  color: #6ee7b7;
+}
+
+.port-ai-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.port-ai-suggestion-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.port-ai-suggestion-card.is-clickable {
+  cursor: pointer;
+}
+
+.port-ai-suggestion-card.is-clickable:hover {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.port-ai-suggestion-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.port-ai-suggestion-sym {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.port-ai-suggestion-type {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(52, 211, 153, 0.16);
+  color: #a7f3d0;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.port-ai-suggestion-add {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  background: rgba(16, 185, 129, 0.22);
+  color: #d1fae5;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.port-ai-suggestion-add:hover {
+  background: rgba(16, 185, 129, 0.4);
+  color: #fff;
+}
+
+.port-ai-suggestion-name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.port-ai-suggestion-reason {
+  font-size: 0.71rem;
+  line-height: 1.35;
+  color: #94a3b8;
+}
+
 @media (max-width: 768px) {
-  .port-ai-wide-grid {
+  .port-ai-wide-grid,
+  .port-ai-suggestions-grid {
     grid-template-columns: 1fr;
     gap: 10px;
   }

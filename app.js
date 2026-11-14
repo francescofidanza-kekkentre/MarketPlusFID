@@ -226,7 +226,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=32');
+    FirebaseModule = await import('./firebase-sync.js?v=35');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -1796,13 +1796,19 @@ async function runGeminiPortfolioEvaluation() {
       };
     });
 
+    const availableCandidates = (AppState.assets || [])
+      .filter(a => !AppState.portfolio?.[a.symbol])
+      .slice(0, 60)
+      .map(a => ({ symbol: a.symbol, name: a.name, type: a.type }));
+
     const res = await mod.analyzePortfolioWithGemini({
       positionsCount: holdingsPayload.length,
       holdings: holdingsPayload,
       localCompartmentBreakdown: (localEval?.sortedSectors || []).map(s => ({
         sector: s.name,
         weightPct: Number(s.weightPct.toFixed(1))
-      }))
+      })),
+      availableCandidates
     });
 
     if (res && res.ok && res.data) {
@@ -2001,6 +2007,34 @@ function renderPortfolioAiAnalysisSection() {
             <div class="port-ai-comp-text port-ai-gemini-text">${escapePortfolioHtml(gemState.data.actionableTip)}</div>
           </div>
         ` : ''}
+        ${hasGemini && Array.isArray(gemState.data.recommendedAdditions) && gemState.data.recommendedAdditions.length > 0 ? `
+          <div class="port-ai-comp-item port-ai-item-suggestions">
+            <div class="port-ai-comp-label">4. ✦ Migliori 3 Asset da Aggiungere (su base Consiglio Gemini)</div>
+            <div class="port-ai-suggestions-grid">
+              ${gemState.data.recommendedAdditions.slice(0, 3).map(item => {
+                const rawSym = String(item.symbol || '').trim();
+                const inAppAsset = (AppState.assets || []).find(a => a.symbol.toUpperCase() === rawSym.toUpperCase());
+                const symEsc = escapePortfolioHtml(rawSym);
+                const nameEsc = escapePortfolioHtml(item.name || '');
+                const typeEsc = escapePortfolioHtml(item.assetType || (inAppAsset ? inAppAsset.type.toUpperCase() : 'ASSET'));
+                const reasonEsc = escapePortfolioHtml(item.reason || '');
+                return `
+                  <div class="port-ai-suggestion-card ${inAppAsset ? 'is-clickable' : ''}" ${inAppAsset ? `data-suggest-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Clicca per aprire il grafico di ${escapePortfolioHtml(inAppAsset.symbol)}"` : ''}>
+                    <div class="port-ai-suggestion-top">
+                      <span class="port-ai-suggestion-sym">${symEsc}</span>
+                      <div style="display:flex;align-items:center;gap:4px;">
+                        <span class="port-ai-suggestion-type">${typeEsc}</span>
+                        ${inAppAsset ? `<button type="button" class="port-ai-suggestion-add" data-add-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Aggiungi ${escapePortfolioHtml(inAppAsset.symbol)} al portafoglio">+</button>` : ''}
+                      </div>
+                    </div>
+                    <div class="port-ai-suggestion-name">${nameEsc}</div>
+                    <div class="port-ai-suggestion-reason">${reasonEsc}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
       </div>
       ${gemError ? `
         <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
@@ -2017,6 +2051,22 @@ function renderPortfolioAiAnalysisSection() {
       runGeminiPortfolioEvaluation();
     });
   }
+
+  portBox.querySelectorAll('.port-ai-suggestion-card[data-suggest-symbol]').forEach(card => {
+    card.addEventListener('click', () => {
+      const sym = card.getAttribute('data-suggest-symbol');
+      const found = (AppState.assets || []).find(a => a.symbol === sym);
+      if (found) selectAsset(found);
+    });
+  });
+
+  portBox.querySelectorAll('.port-ai-suggestion-add[data-add-symbol]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sym = btn.getAttribute('data-add-symbol');
+      if (sym) openPortfolioModal(sym);
+    });
+  });
 }
 
 let currentPortfolioModalSymbol = null;
