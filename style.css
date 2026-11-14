@@ -2911,6 +2911,20 @@ body {
   padding: 2px 8px;
 }
 
+.port-ai-budget-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 6px;
+  padding: 2px 7px;
+  margin: 2px 0;
+}
+
 .portfolio-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);

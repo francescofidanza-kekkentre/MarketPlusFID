@@ -407,6 +407,8 @@ export async function analyzePortfolioWithGemini(portfolioContext) {
               symbol: Schema.string(),
               name: Schema.string(),
               assetType: Schema.string(),
+              suggestedAllocationPct: Schema.number(),
+              suggestedBudgetEur: Schema.number(),
               reason: Schema.string()
             }
           })
@@ -432,8 +434,9 @@ export async function analyzePortfolioWithGemini(portfolioContext) {
       '1) Sovrapposizioni tra azioni singole, ETF (anche look-through su indici/settori come S&P 500, Nasdaq 100, MSCI World, Semiconduttori, FTSE MIB) e certificati (sottostante diretto o worst-of). Se non ci sono sovrapposizioni, restituisci overlaps: [].',
       '2) Sbilanciamento verso un comparto/settore o area geografica.',
       '3) Un breve consiglio operativo concreto (actionableTip, max 22 parole).',
-      '4) Basandoti direttamente sul consiglio espresso in actionableTip, suggerisci i migliori 3 asset da aggiungere al portafoglio (recommendedAdditions: esattamente 3 elementi con symbol, name, assetType es. ETF/Azione/Crypto/Certificato, e reason di max 14 parole coerente con actionableTip). Se nel contesto è presente availableCandidates, scegli prioritariamente ticker reali da quella lista (non già presenti in holdings).',
-      '5) Se nel contesto è presente portfolioProfile (composition e horizon), adatta il tono e i 3 asset suggeriti alla composizione target e all\'orizzonte temporale dichiarati dall\'utente.'
+      '4) Basandoti direttamente sul consiglio espresso in actionableTip, suggerisci i migliori 3 asset da aggiungere al portafoglio (recommendedAdditions: esattamente 3 elementi con symbol, name, assetType es. ETF/Azione/Crypto/Certificato, suggestedAllocationPct con somma 100, suggestedBudgetEur calcolato sul budgetEur del portfolioProfile, e reason di max 14 parole coerente con actionableTip). Se nel contesto è presente availableCandidates, scegli prioritariamente ticker reali da quella lista (non già presenti in holdings).',
+      '5) Se nel contesto è presente portfolioProfile (composition, horizon, budgetEur, riskProfile), adatta rigorosamente asset, pesi percentuali e suddivisione del budget in Euro alla composizione target, all\'orizzonte temporale e al profilo di rischio quantitativo (Conservativo: bassa volatilità e difesa; Bilanciato: nucleo core 60-70% + tattico 30-40%; Aggressivo: focus crescita/alpha fino al 30% di drawdown).',
+      '6) Se positionsCount === 0 (portafoglio appena creato, ancora vuoto): imposta overlaps: [], overallStatus: "EQUILIBRATO", descrivi in sectorSummary come strutturare il budgetEur in base a composizione, orizzonte e rischio, dai in actionableTip un consiglio operativo su come entrare gradualmente o dividere il capitale, e proponi in recommendedAdditions i 3 migliori asset iniziali con relativa quota % e importo €.'
     ].join('\n');
 
     const result = await model.generateContent(prompt);

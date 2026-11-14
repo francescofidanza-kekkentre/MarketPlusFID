@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=45">
+  <link rel="stylesheet" href="style.css?v=48">
 </head>
 <body>
 
@@ -56,7 +56,7 @@
     <!-- Header Actions -->
     <div class="header-actions">
       <div class="search-box">
-        <input type="text" id="globalSearch" class="search-input" placeholder="Cerca ticker o nome..." autocomplete="off">
+        <input type="text" id="globalSearch" class="search-input" placeholder="Cerca ticker, nome o ISIN..." autocomplete="off">
         <span class="search-kbd">/</span>
       </div>
 
@@ -749,9 +749,27 @@
         <label>2) Orizzonte Temporale</label>
         <select id="pfProfileHorizonSelect" class="port-sim-select">
           <option value="1 MESE">1 MESE</option>
+          <option value="3 MESI">3 MESI</option>
           <option value="6 MESI">6 MESI</option>
           <option value="12 MESI">12 MESI</option>
           <option value=">12 MESI">&gt;12 MESI</option>
+        </select>
+      </div>
+
+      <div class="calc-field-group">
+        <label>3) Budget Portafoglio (€)<span class="helper">Capitale da allocare</span></label>
+        <div class="input-with-affix">
+          <span class="input-affix">€</span>
+          <input type="number" id="pfProfileBudgetInput" class="calc-input" value="2000" min="50" step="100" placeholder="es. 2000">
+        </div>
+      </div>
+
+      <div class="calc-field-group">
+        <label>4) Profilo di Rischio (Target Drawdown & Stile)</label>
+        <select id="pfProfileRiskSelect" class="port-sim-select">
+          <option value="conservativo">Conservativo (DD max 5-8% • Difesa capitale)</option>
+          <option value="bilanciato">Bilanciato (DD max 12-15% • Core + Tattico)</option>
+          <option value="aggressivo">Aggressivo (DD max 25-30% • Alta crescita / Beta)</option>
         </select>
       </div>
 
@@ -771,8 +789,13 @@
       </div>
 
       <div class="calc-field-group">
-        <label>Simbolo Ticker (es. TSLA, BTC, VWCE)</label>
-        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="AAPL" style="padding-left: 10px; text-transform: uppercase;">
+        <label>Simbolo Ticker o ISIN (es. TSLA, BTC, VWCE, IE00BK5BQT80)</label>
+        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="AAPL o IE00BK5BQT80" style="padding-left: 10px; text-transform: uppercase;">
+      </div>
+
+      <div class="calc-field-group">
+        <label>Codice ISIN <span style="opacity:0.65; font-weight:400;">(opzionale — Azioni, ETF e Certificati)</span></label>
+        <input type="text" id="newTickerIsin" class="calc-input" placeholder="es. US0378331005 o IE00BK5BQT80" maxlength="12" style="padding-left: 10px; text-transform: uppercase;">
       </div>
 
       <div class="calc-field-group">
@@ -783,9 +806,9 @@
       <div class="calc-field-group">
         <label>Tipologia Asset</label>
         <select id="newTickerType" class="calc-input" style="padding-left: 10px;">
-          <option value="stock">Azione (Stock)</option>
-          <option value="etf">ETF / Fondo Indicizzato</option>
-          <option value="crypto">Criptovaluta</option>
+          <option value="stock">Azione (Stock — Ticker o ISIN)</option>
+          <option value="etf">ETF / Fondo Indicizzato (Ticker o ISIN)</option>
+          <option value="crypto">Criptovaluta (solo Ticker)</option>
           <option value="certificate">Certificato d'Investimento (ISIN / SeDeX)</option>
         </select>
       </div>
@@ -1019,6 +1042,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=46"></script>
+  <script src="app.js?v=52"></script>
 </body>
 </html>

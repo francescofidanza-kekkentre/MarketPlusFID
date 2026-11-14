@@ -226,7 +226,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=44');
+    FirebaseModule = await import('./firebase-sync.js?v=50');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -314,6 +314,8 @@ function createNewPortfolio(name) {
     name: cleanName,
     composition: 'misto',
     horizon: '>12 MESI',
+    budgetEur: 2000,
+    riskProfile: 'bilanciato',
     positions: {}
   };
   AppState.portfolios.push(newPf);
@@ -334,6 +336,30 @@ function formatPortfolioCompositionLabel(comp) {
   return map[String(comp || 'misto').toLowerCase()] || 'Misto';
 }
 
+function normalizePortfolioRiskKey(risk) {
+  const r = String(risk || 'bilanciato').toLowerCase();
+  if (r === 'basso' || r === 'conservativo') return 'conservativo';
+  if (r === 'alto' || r === 'aggressivo') return 'aggressivo';
+  return 'bilanciato';
+}
+
+function formatPortfolioRiskLabel(risk, verbose = false) {
+  const key = normalizePortfolioRiskKey(risk);
+  if (key === 'conservativo') {
+    return verbose
+      ? 'Conservativo (Drawdown max 5-8%, focus difesa capitale, bassa volatilità, core difensivo/cedole)'
+      : 'Conservativo';
+  }
+  if (key === 'aggressivo') {
+    return verbose
+      ? 'Aggressivo (Drawdown max 25-30%, focus crescita/alpha, alto beta su tech/crypto/singoli titoli)'
+      : 'Aggressivo';
+  }
+  return verbose
+    ? 'Bilanciato (Drawdown max 12-15%, nucleo core 60-70% + satellite tattico 30-40%, linea mercato)'
+    : 'Bilanciato';
+}
+
 function openPortfolioProfileModal(portfolioId) {
   const pf = (AppState.portfolios || []).find(p => p.id === portfolioId) || getActivePortfolioObj();
   if (!pf) return;
@@ -343,10 +369,14 @@ function openPortfolioProfileModal(portfolioId) {
   const nameEl = document.getElementById('pfProfileModalName');
   const compSel = document.getElementById('pfProfileCompositionSelect');
   const horSel = document.getElementById('pfProfileHorizonSelect');
+  const budgetInp = document.getElementById('pfProfileBudgetInput');
+  const riskSel = document.getElementById('pfProfileRiskSelect');
 
   if (nameEl) nameEl.textContent = pf.name;
   if (compSel) compSel.value = pf.composition || 'misto';
   if (horSel) horSel.value = pf.horizon || '>12 MESI';
+  if (budgetInp) budgetInp.value = pf.budgetEur > 0 ? pf.budgetEur : 2000;
+  if (riskSel) riskSel.value = normalizePortfolioRiskKey(pf.riskProfile);
   if (modal) modal.classList.add('open');
 }
 
@@ -364,13 +394,20 @@ function savePortfolioProfileModal() {
   }
   const compSel = document.getElementById('pfProfileCompositionSelect');
   const horSel = document.getElementById('pfProfileHorizonSelect');
+  const budgetInp = document.getElementById('pfProfileBudgetInput');
+  const riskSel = document.getElementById('pfProfileRiskSelect');
+
   pf.composition = compSel ? compSel.value : (pf.composition || 'misto');
   pf.horizon = horSel ? horSel.value : (pf.horizon || '>12 MESI');
+  const parsedBudget = budgetInp ? parseFloat(budgetInp.value) : NaN;
+  pf.budgetEur = (!isNaN(parsedBudget) && parsedBudget >= 50) ? Math.round(parsedBudget) : (pf.budgetEur || 2000);
+  pf.riskProfile = riskSel ? riskSel.value : (pf.riskProfile || 'medio');
 
   savePortfolioToStorage(true);
   closePortfolioProfileModal();
   renderAssetList();
-  renderPortfolioAiAnalysisSection();
+  selectPortfolioOverview();
+  runGeminiPortfolioEvaluation();
 }
 
 function renameActivePortfolio(newName) {
@@ -568,9 +605,14 @@ function loadStoredData() {
         AppState.portfolios = parsedList.map(p => ({
           id: p.id || ('pf_' + Math.random().toString(36).slice(2, 8)),
           name: p.name || 'Portafoglio',
+          composition: p.composition || 'misto',
+          horizon: p.horizon || '>12 MESI',
+          budgetEur: p.budgetEur > 0 ? p.budgetEur : 2000,
+          riskProfile: p.riskProfile || 'medio',
           positions: (p.positions && typeof p.positions === 'object') ? p.positions : {}
         }));
-        AppState.activePortfolioId = storedActivePfId || AppState.portfolios[0].id;
+        const mainPf = AppState.portfolios.find(p => p.id === 'default') || AppState.portfolios[0];
+        AppState.activePortfolioId = mainPf.id;
         getActivePortfolioObj();
         loadedMulti = true;
       }
@@ -1911,8 +1953,12 @@ const GeminiHybridState = {
 };
 
 function getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur) {
-  if (!portfolioAssets || portfolioAssets.length === 0 || totalCurrentValueEur <= 0) return '';
-  return portfolioAssets
+  const activePf = getActivePortfolioObj();
+  const profileKey = `${activePf.id}_${activePf.composition || 'misto'}_${activePf.horizon || '>12 MESI'}_${activePf.budgetEur || 2000}_${activePf.riskProfile || 'medio'}`;
+  if (!portfolioAssets || portfolioAssets.length === 0 || totalCurrentValueEur <= 0) {
+    return `empty_${profileKey}`;
+  }
+  return `${profileKey}|` + portfolioAssets
     .map(a => {
       const pos = AppState.portfolio[a.symbol];
       const curPrice = a.price != null ? a.price : (pos ? pos.buyPrice : 0);
@@ -1925,19 +1971,18 @@ function getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur) {
 }
 
 async function runGeminiPortfolioEvaluation() {
+  if (GeminiHybridState.portfolio.loading) return;
   const entries = getPortfolioAssetsWithPos();
-  if (entries.length === 0 || GeminiHybridState.portfolio.loading) return;
 
   let totalEur = 0;
   entries.forEach(({ asset, pos }) => {
     const p = asset.price != null ? asset.price : pos.buyPrice;
     totalEur += convertToEur(pos.shares * p, asset);
   });
-  if (totalEur <= 0) return;
 
   const portfolioAssets = entries.map(e => e.asset);
   const cacheKey = getPortfolioCacheKey(portfolioAssets, totalEur);
-  const localEval = evaluatePortfolioCompositionAi(portfolioAssets, totalEur);
+  const localEval = entries.length > 0 ? evaluatePortfolioCompositionAi(portfolioAssets, totalEur) : null;
 
   GeminiHybridState.portfolio = { key: cacheKey, data: null, model: null, loading: true, error: null };
   renderAssetList();
@@ -1952,7 +1997,7 @@ async function runGeminiPortfolioEvaluation() {
     const holdingsPayload = entries.map(({ asset, pos }) => {
       const curPrice = asset.price != null ? asset.price : pos.buyPrice;
       const valEur = convertToEur(pos.shares * curPrice, asset);
-      const weightPct = Number(((valEur / totalEur) * 100).toFixed(1));
+      const weightPct = totalEur > 0 ? Number(((valEur / totalEur) * 100).toFixed(1)) : 0;
       const comp = getAssetCompartmentInfo(asset);
       const certData = asset.certificateData || {};
       return {
@@ -1965,18 +2010,27 @@ async function runGeminiPortfolioEvaluation() {
       };
     });
 
+    const activePf = getActivePortfolioObj();
+    const targetTypeMap = { azionario: 'stock', etf: 'etf', certificati: 'certificate', crypto: 'crypto' };
+    const preferredType = targetTypeMap[String(activePf.composition || '').toLowerCase()] || null;
     const availableCandidates = (AppState.assets || [])
       .filter(a => !AppState.portfolio?.[a.symbol])
+      .sort((a, b) => {
+        if (!preferredType) return 0;
+        const aMatch = a.type === preferredType ? 0 : 1;
+        const bMatch = b.type === preferredType ? 0 : 1;
+        return aMatch - bMatch;
+      })
       .slice(0, 60)
       .map(a => ({ symbol: a.symbol, name: a.name, type: a.type }));
-
-    const activePf = getActivePortfolioObj();
     const res = await mod.analyzePortfolioWithGemini({
       positionsCount: holdingsPayload.length,
       portfolioProfile: {
         name: activePf.name,
         composition: formatPortfolioCompositionLabel(activePf.composition),
-        horizon: activePf.horizon || '>12 MESI'
+        horizon: activePf.horizon || '>12 MESI',
+        budgetEur: activePf.budgetEur || 2000,
+        riskProfile: formatPortfolioRiskLabel(activePf.riskProfile, true)
       },
       holdings: holdingsPayload,
       localCompartmentBreakdown: (localEval?.sortedSectors || []).map(s => ({
@@ -2085,6 +2139,72 @@ async function runGeminiAssetEvaluation() {
   }
 }
 
+function renderGeminiSuggestedAssetsGrid(recommendedAdditions) {
+  if (!Array.isArray(recommendedAdditions) || recommendedAdditions.length === 0) return '';
+  const activePf = getActivePortfolioObj();
+  const totalBudget = activePf.budgetEur > 0 ? activePf.budgetEur : 2000;
+  return `
+    <div class="port-ai-suggestions-grid">
+      ${recommendedAdditions.slice(0, 3).map(item => {
+        const rawSym = String(item.symbol || '').trim();
+        const inAppAsset = (AppState.assets || []).find(a => a.symbol.toUpperCase() === rawSym.toUpperCase());
+        const symEsc = escapePortfolioHtml(rawSym);
+        const nameEsc = escapePortfolioHtml(item.name || '');
+        const typeEsc = escapePortfolioHtml(item.assetType || (inAppAsset ? inAppAsset.type.toUpperCase() : 'ASSET'));
+        const reasonEsc = escapePortfolioHtml(item.reason || '');
+        const allocPct = Number(item.suggestedAllocationPct);
+        const allocEurRaw = Number(item.suggestedBudgetEur);
+        const allocEur = (!isNaN(allocEurRaw) && allocEurRaw > 0)
+          ? allocEurRaw
+          : ((!isNaN(allocPct) && allocPct > 0) ? Math.round((allocPct / 100) * totalBudget) : null);
+        const budgetPill = (!isNaN(allocPct) && allocPct > 0)
+          ? `<div class="port-ai-budget-pill">💰 ${Math.round(allocPct)}%${allocEur != null ? ` • € ${Math.round(allocEur).toLocaleString('it-IT')}` : ''}</div>`
+          : '';
+        return `
+          <div class="port-ai-suggestion-card ${inAppAsset ? 'is-clickable' : ''}" ${inAppAsset ? `data-suggest-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Clicca per aprire il grafico di ${escapePortfolioHtml(inAppAsset.symbol)}"` : ''}>
+            <div class="port-ai-suggestion-top">
+              <span class="port-ai-suggestion-sym">${symEsc}</span>
+              <div style="display:flex;align-items:center;gap:4px;">
+                <span class="port-ai-suggestion-type">${typeEsc}</span>
+                ${inAppAsset ? `<button type="button" class="port-ai-suggestion-add" data-add-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Aggiungi ${escapePortfolioHtml(inAppAsset.symbol)} al portafoglio">+</button>` : ''}
+              </div>
+            </div>
+            <div class="port-ai-suggestion-name">${nameEsc}</div>
+            ${budgetPill}
+            <div class="port-ai-suggestion-reason">${reasonEsc}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function bindGeminiPortfolioBoxEvents(portBox) {
+  const gemPortBtn = document.getElementById('btnGeminiPortfolioEval');
+  if (gemPortBtn) {
+    gemPortBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runGeminiPortfolioEvaluation();
+    });
+  }
+
+  portBox.querySelectorAll('.port-ai-suggestion-card[data-suggest-symbol]').forEach(card => {
+    card.addEventListener('click', () => {
+      const sym = card.getAttribute('data-suggest-symbol');
+      const found = (AppState.assets || []).find(a => a.symbol === sym);
+      if (found) selectAsset(found);
+    });
+  });
+
+  portBox.querySelectorAll('.port-ai-suggestion-add[data-add-symbol]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sym = btn.getAttribute('data-add-symbol');
+      if (sym) openPortfolioModal(sym);
+    });
+  });
+}
+
 function renderPortfolioAiAnalysisSection() {
   updateRightPanelForSelection();
   const sectionAi = document.getElementById('section-ai');
@@ -2118,14 +2238,66 @@ function renderPortfolioAiAnalysisSection() {
 
   const entries = getPortfolioAssetsWithPos();
   if (entries.length === 0) {
+    const activePf = getActivePortfolioObj();
+    const emptyKey = getPortfolioCacheKey([], 0);
+    const gemState = GeminiHybridState.portfolio;
+    const hasGemini = Boolean(gemState.key === emptyKey && gemState.data);
+    const isGemLoading = Boolean(gemState.loading);
+    const gemError = (gemState.key === emptyKey && gemState.error) ? gemState.error : null;
+
     portBox.innerHTML = `
       <div class="port-ai-comp-box port-ai-comp-wide">
         <div class="port-ai-comp-header">
-          <span class="port-ai-comp-title"><span class="ai-spark-icon">✦</span> Valutazione IA Composizione Portafoglio</span>
+          <span class="port-ai-comp-title">
+            <span class="ai-spark-icon">✦</span>
+            ${hasGemini ? `Piano Gemini: ${escapePortfolioHtml(activePf.name)}` : `Progetta Portafoglio con Gemini`}
+          </span>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="port-profile-chip">📊 ${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))}</span>
+            <span class="port-profile-chip">⏱ ${escapePortfolioHtml(activePf.horizon || '>12 MESI')}</span>
+            <span class="port-profile-chip">💰 € ${(activePf.budgetEur || 2000).toLocaleString('it-IT')}</span>
+            <span class="port-profile-chip">🛡️ ${escapePortfolioHtml(formatPortfolioRiskLabel(activePf.riskProfile))}</span>
+            <button type="button" class="ai-gemini-btn" id="btnGeminiPortfolioEval" ${isGemLoading ? 'disabled' : ''}>
+              ${isGemLoading ? '⏳ Gemini...' : (hasGemini ? '✦ Aggiorna' : '✦ Progetta con Gemini')}
+            </button>
+          </div>
         </div>
-        <div class="port-ai-comp-text">Aggiungi almeno una posizione nel portafoglio per analizzare sovrapposizioni e bilanciamento per comparto.</div>
+        ${isGemLoading ? `
+          <div class="port-ai-comp-text" style="margin-top:8px;">
+            ⏳ Gemini sta progettando la composizione ideale per <strong>${escapePortfolioHtml(activePf.name)}</strong> (${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))} • ${escapePortfolioHtml(activePf.horizon || '>12 MESI')})...
+          </div>
+        ` : (hasGemini ? `
+          <div class="port-ai-wide-grid">
+            <div class="port-ai-comp-item" style="grid-column: 1 / -1;">
+              <div class="port-ai-comp-label">1. Strategia di Composizione Suggerita</div>
+              <div class="port-ai-comp-text">${escapePortfolioHtml(gemState.data.sectorSummary || '')}</div>
+            </div>
+            ${gemState.data.actionableTip ? `
+              <div class="port-ai-comp-item port-ai-item-gemini">
+                <div class="port-ai-comp-label">2. ✦ Consiglio Gemini</div>
+                <div class="port-ai-comp-text port-ai-gemini-text">${escapePortfolioHtml(gemState.data.actionableTip)}</div>
+              </div>
+            ` : ''}
+            ${Array.isArray(gemState.data.recommendedAdditions) && gemState.data.recommendedAdditions.length > 0 ? `
+              <div class="port-ai-comp-item port-ai-item-suggestions">
+                <div class="port-ai-comp-label">3. ✦ Migliori 3 Asset per Iniziare (clicca + per aggiungere)</div>
+                ${renderGeminiSuggestedAssetsGrid(gemState.data.recommendedAdditions)}
+              </div>
+            ` : ''}
+          </div>
+        ` : `
+          <div class="port-ai-comp-text" style="margin-top:6px;">
+            Portafoglio ancora vuoto. Premi <strong>✦ Progetta con Gemini</strong> per ottenere una proposta di allocazione su misura per <strong>${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))}</strong> (${escapePortfolioHtml(activePf.horizon || '>12 MESI')}) con i 3 migliori asset da inserire.
+          </div>
+        `)}
+        ${gemError ? `
+          <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
+            Fallback locale: ${escapePortfolioHtml(gemError)}
+          </div>
+        ` : ''}
       </div>
     `;
+    bindGeminiPortfolioBoxEvents(portBox);
     return;
   }
 
@@ -3178,6 +3350,8 @@ function renderAssetList() {
         <div class="port-sum-profile-row">
           <span class="port-profile-chip">📊 ${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))}</span>
           <span class="port-profile-chip">⏱ ${escapePortfolioHtml(activePf.horizon || '>12 MESI')}</span>
+          <span class="port-profile-chip">💰 € ${(activePf.budgetEur || 2000).toLocaleString('it-IT')}</span>
+          <span class="port-profile-chip">🛡️ ${escapePortfolioHtml(formatPortfolioRiskLabel(activePf.riskProfile))}</span>
         </div>
       </div>
     `;
@@ -3311,7 +3485,8 @@ function renderAssetList() {
 
     const matchesSearch = !search ||
       asset.symbol.toUpperCase().includes(search) ||
-      asset.name.toUpperCase().includes(search);
+      asset.name.toUpperCase().includes(search) ||
+      (asset.isin && asset.isin.toUpperCase().includes(search));
 
     return matchesFilter && matchesSearch;
   });
@@ -3473,7 +3648,7 @@ function updateSelectedAssetHeader() {
     : (asset.type === 'certificate' ? 'CERTIFICATO' : asset.type.toUpperCase());
   const badgeTypeClass = asset.isPortfolio ? 'etf' : asset.type;
   document.getElementById('activeSymbol').innerHTML = `${asset.symbol} <span class="asset-type-badge type-${badgeTypeClass}" id="activeType">${typeDisplay}</span>`;
-  document.getElementById('activeName').textContent = `${asset.name} • ${asset.exchange}`;
+  document.getElementById('activeName').textContent = `${asset.name} • ${asset.exchange}${asset.isin ? ` • ISIN ${asset.isin}` : ''}`;
 
   const isUp = (asset.change ?? 0) >= 0;
   const changeEl = document.getElementById('activeChange');
@@ -6229,9 +6404,141 @@ function isAssetNameCoherent(enteredName, officialName, symbol = '') {
   return matchedCount >= 1 && matchRatio >= 0.6;
 }
 
+function isIsinCode(val) {
+  return /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(String(val || '').trim().toUpperCase());
+}
+
+function yahooSymbolToCnbcVariants(ySym) {
+  const s = String(ySym || '').trim().toUpperCase();
+  if (!s) return [];
+  const out = [s];
+  const dotIdx = s.lastIndexOf('.');
+  if (dotIdx > 0) {
+    const base = s.slice(0, dotIdx);
+    const suf = s.slice(dotIdx + 1);
+    const map = { MI: 'IT', DE: 'DE', PA: 'FR', AS: 'NL', L: 'GB', SW: 'CH', MC: 'ES', BR: 'BE', TO: 'CA', HK: 'HK' };
+    if (map[suf]) out.push(`${base}-${map[suf]}`);
+    out.push(base);
+  }
+  return out;
+}
+
+function mapOpenFigiToMarketSymbols(ticker, exchCode) {
+  const t = String(ticker || '').trim().toUpperCase();
+  const ex = String(exchCode || '').trim().toUpperCase();
+  if (!t || t.length > 14 || /\s/.test(t)) return { cnbc: [], yahoo: [] };
+  const cnbc = [];
+  const yahoo = [];
+  if (['US', 'UN', 'UW', 'UQ', 'UA', 'UP', 'UR'].includes(ex)) {
+    cnbc.push(t);
+    yahoo.push(t);
+  } else if (ex === 'IM') {
+    cnbc.push(`${t}-IT`, `${t}.MI`);
+    yahoo.push(`${t}.MI`);
+  } else if (['GY', 'GR', 'GF', 'GD'].includes(ex)) {
+    cnbc.push(`${t}-DE`, `${t}.DE`);
+    yahoo.push(`${t}.DE`);
+  } else if (ex === 'FP') {
+    cnbc.push(`${t}-FR`, `${t}.PA`);
+    yahoo.push(`${t}.PA`);
+  } else if (ex === 'NA') {
+    cnbc.push(`${t}-NL`, `${t}.AS`);
+    yahoo.push(`${t}.AS`);
+  } else if (ex === 'LN') {
+    cnbc.push(`${t}-GB`, `${t}.L`);
+    yahoo.push(`${t}.L`);
+  } else if (['SW', 'SE', 'VX'].includes(ex)) {
+    cnbc.push(`${t}-CH`, `${t}.SW`);
+    yahoo.push(`${t}.SW`);
+  } else if (ex === 'SM') {
+    cnbc.push(`${t}-ES`, `${t}.MC`);
+    yahoo.push(`${t}.MC`);
+  } else {
+    cnbc.push(t);
+    yahoo.push(t);
+  }
+  return { cnbc, yahoo };
+}
+
+async function resolveIsinCandidates(isin) {
+  const cleanIsin = String(isin || '').trim().toUpperCase();
+  const cnbcCandidates = [];
+  const yahooCandidates = [];
+  const figiNames = [];
+  const figiRecords = [];
+  const addUnique = (arr, val) => {
+    const v = String(val || '').trim().toUpperCase();
+    if (v && !arr.includes(v)) arr.push(v);
+  };
+
+  const yahooSearchTask = (async () => {
+    try {
+      const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}&quotesCount=10&newsCount=0`;
+      const payload = await fetchUrlViaKeylessGateways(
+        searchUrl,
+        true,
+        (d) => d && Array.isArray(d.quotes)
+      );
+      if (payload && Array.isArray(payload.quotes)) {
+        for (const q of payload.quotes) {
+          if (!q || !q.symbol) continue;
+          addUnique(yahooCandidates, q.symbol);
+          for (const cv of yahooSymbolToCnbcVariants(q.symbol)) {
+            addUnique(cnbcCandidates, cv);
+          }
+          const qName = q.longname || q.shortname;
+          if (qName && !figiNames.includes(qName)) figiNames.push(String(qName).trim());
+        }
+      }
+    } catch (e) {}
+  })();
+
+  const openFigiTask = (async () => {
+    try {
+      const res = await fetchWithTimeout('https://api.openfigi.com/v3/mapping', 5000, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([{ idType: 'ID_ISIN', idValue: cleanIsin }])
+      });
+      if (res && res.ok) {
+        const json = await res.json();
+        const items = Array.isArray(json) && json[0]?.data ? json[0].data : [];
+        const priorityExch = ['IM', 'GY', 'FP', 'NA', 'LN', 'SW', 'US', 'UN', 'UW', 'UQ'];
+        items.sort((a, b) => {
+          const ia = priorityExch.indexOf(String(a?.exchCode || '').toUpperCase());
+          const ib = priorityExch.indexOf(String(b?.exchCode || '').toUpperCase());
+          return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        });
+        for (const item of items.slice(0, 12)) {
+          if (item?.name && !figiNames.includes(item.name)) figiNames.push(String(item.name).trim());
+          if (item?.name || item?.ticker) figiRecords.push(item);
+          const mapped = mapOpenFigiToMarketSymbols(item?.ticker, item?.exchCode);
+          mapped.cnbc.forEach(s => addUnique(cnbcCandidates, s));
+          mapped.yahoo.forEach(s => addUnique(yahooCandidates, s));
+        }
+      }
+    } catch (e) {}
+  })();
+
+  await Promise.all([yahooSearchTask, openFigiTask]);
+  return { cnbcCandidates, yahooCandidates, figiNames, figiRecords };
+}
+
 async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
   const cleanSym = String(rawSymbol || '').trim().toUpperCase();
   if (!cleanSym) return { exists: false };
+
+  const isIsin = isIsinCode(cleanSym);
+  if (isIsin && type === 'crypto') {
+    return {
+      exists: false,
+      errorReason: 'Le criptovalute non supportano codici ISIN. Seleziona Azione, ETF o Certificato.'
+    };
+  }
+
+  const isinResolution = isIsin
+    ? await resolveIsinCandidates(cleanSym)
+    : { cnbcCandidates: [], yahooCandidates: [], figiNames: [], figiRecords: [] };
 
   // 1. Cryptocurrency validation via Binance Spot API + CNBC crypto metadata
   if (type === 'crypto') {
@@ -6294,13 +6601,17 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
     return { exists: false };
   }
 
-  // 2. Stock & ETF validation via CNBC Native-CORS Symbol Lookup + Quote API (US, Italy, Europe, UK, Global)
+  // 2. Stock, ETF & Certificate validation via ISIN resolution + CNBC Native-CORS Symbol Lookup + Quote API
   const baseSym = cleanSym.split(/[.\-^]/)[0].trim();
   const cands = [];
   const addCand = (s) => {
     const u = String(s || '').trim().toUpperCase();
     if (u && !cands.includes(u)) cands.push(u);
   };
+
+  if (isIsin) {
+    isinResolution.cnbcCandidates.forEach(addCand);
+  }
 
   // If user provided an exchange suffix (Yahoo .MI/.DE/.PA/.AS/.L/.SW or CNBC -IT/-DE/-FR/-NL/-GB/-CH), expand both formats first
   if (cleanSym.includes('.') || cleanSym.includes('-')) {
@@ -6464,6 +6775,7 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
         exists: true,
         symbol: displaySymbol,
         marketSymbol: matchedSym,
+        isin: isIsin ? cleanSym : null,
         officialName: String(chosen.name || chosen.shortName).trim(),
         exchange: exchangeName,
         currency,
@@ -6477,33 +6789,74 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
     }
   } catch (e) {}
 
-  // 3. Fallback check via Yahoo Finance chart metadata
-  try {
-    const tempAsset = { symbol: cleanSym, type };
-    const data = await fetchYahooChartRaw(tempAsset, '5d', '1d', true);
-    if (isValidYahooChartPayload(data)) {
-      const { resObj, parsed } = parseYahooBarsFromResponse(data);
-      const meta = resObj?.meta || {};
-      const price = meta.regularMarketPrice || (parsed.length > 0 ? parsed[parsed.length - 1].close : null);
-      const officialName = meta.longName || meta.shortName || meta.symbol;
-      if (price != null && price > 0 && officialName) {
-        applyYahooMetaToAsset(tempAsset, resObj, parsed, '1d', '5d');
-        return {
-          exists: true,
-          symbol: cleanSym,
-          marketSymbol: meta.symbol || cleanSym,
-          officialName: String(officialName).trim(),
-          exchange: tempAsset.exchange || meta.exchangeName || 'Stock Exchange',
-          currency: tempAsset.currency || inferCurrencyFromSymbolOrExchange(cleanSym, meta.exchangeName),
-          price: tempAsset.price,
-          change: tempAsset.change ?? 0,
-          high: tempAsset.high || null,
-          low: tempAsset.low || null,
-          volume: tempAsset.volume || null
-        };
+  // 3. Fallback check via Yahoo Finance chart metadata (including ISIN-resolved Yahoo tickers)
+  const yahooSymbolsToTry = (isIsin && isinResolution.yahooCandidates.length > 0)
+    ? isinResolution.yahooCandidates.slice(0, 5)
+    : [cleanSym];
+  for (const ySym of yahooSymbolsToTry) {
+    try {
+      const tempAsset = { symbol: ySym, type };
+      const data = await fetchYahooChartRaw(tempAsset, '5d', '1d', true);
+      if (isValidYahooChartPayload(data)) {
+        const { resObj, parsed } = parseYahooBarsFromResponse(data);
+        const meta = resObj?.meta || {};
+        const price = meta.regularMarketPrice || (parsed.length > 0 ? parsed[parsed.length - 1].close : null);
+        const officialName = meta.longName || meta.shortName || meta.symbol || isinResolution.figiNames[0];
+        if (price != null && price > 0 && officialName) {
+          applyYahooMetaToAsset(tempAsset, resObj, parsed, '1d', '5d');
+          const resolvedSym = String(meta.symbol || ySym).trim().toUpperCase();
+          return {
+            exists: true,
+            symbol: resolvedSym,
+            marketSymbol: resolvedSym,
+            isin: isIsin ? cleanSym : null,
+            officialName: String(officialName).trim(),
+            exchange: tempAsset.exchange || meta.exchangeName || 'Stock Exchange',
+            currency: tempAsset.currency || inferCurrencyFromSymbolOrExchange(resolvedSym, meta.exchangeName),
+            price: tempAsset.price,
+            change: tempAsset.change ?? 0,
+            high: tempAsset.high || null,
+            low: tempAsset.low || null,
+            volume: tempAsset.volume || null
+          };
+        }
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
+
+  // 4. Verified ISIN fallback for all ISIN-supported compartments (stock, etf, certificate) when live quote is unavailable
+  const trimmedUserName = String(enteredName || '').trim();
+  const supportsIsinType = ['stock', 'etf', 'certificate'].includes(type);
+  const firstFigi = isinResolution.figiRecords && isinResolution.figiRecords[0] ? isinResolution.figiRecords[0] : null;
+  const hasVerifiedIsinData = Boolean(firstFigi || isinResolution.figiNames.length > 0);
+  if (isIsin && supportsIsinType && (hasVerifiedIsinData || (type === 'certificate' && trimmedUserName.length >= 2))) {
+    const fallbackName = trimmedUserName || firstFigi?.name || isinResolution.figiNames[0];
+    const fallbackTicker = (firstFigi?.ticker && !/\s/.test(firstFigi.ticker) && firstFigi.ticker.length <= 12)
+      ? String(firstFigi.ticker).trim().toUpperCase()
+      : cleanSym;
+    const mappedSym = firstFigi ? mapOpenFigiToMarketSymbols(fallbackTicker, firstFigi.exchCode) : { yahoo: [] };
+    const marketSym = (mappedSym.yahoo && mappedSym.yahoo[0]) || fallbackTicker;
+    const exchLabel = type === 'certificate'
+      ? 'SeDeX / EuroTLX (ISIN)'
+      : (firstFigi?.exchCode ? `Exchange ${firstFigi.exchCode} (ISIN)` : 'Mercato ISIN');
+    const inferredCur = inferCurrencyFromSymbolOrExchange(marketSym, firstFigi?.exchCode || '');
+    return {
+      exists: true,
+      isCustomIsinAsset: true,
+      isCustomCertificate: type === 'certificate',
+      symbol: type === 'certificate' ? cleanSym : marketSym,
+      marketSymbol: type === 'certificate' ? cleanSym : marketSym,
+      isin: cleanSym,
+      officialName: fallbackName,
+      exchange: exchLabel,
+      currency: type === 'certificate' ? 'EUR' : (inferredCur || 'EUR'),
+      price: type === 'certificate' ? 100 : null,
+      change: 0,
+      high: null,
+      low: null,
+      volume: null
+    };
+  }
 
   return { exists: false };
 }
@@ -6513,6 +6866,7 @@ function setupModals() {
   // Add Ticker Modal
   const modalAdd = document.getElementById('modalAddTicker');
   const symInput = document.getElementById('newTickerSymbol');
+  const isinInput = document.getElementById('newTickerIsin');
   const nameInput = document.getElementById('newTickerName');
   const typeSelect = document.getElementById('newTickerType');
   const feedbackEl = document.getElementById('addTickerFeedback');
@@ -6548,8 +6902,20 @@ function setupModals() {
     }
   };
 
+  const updateIsinInputState = () => {
+    if (!isinInput) return;
+    const isCrypto = typeSelect.value === 'crypto';
+    isinInput.disabled = isCrypto;
+    isinInput.placeholder = isCrypto ? 'Non disponibile per Criptovalute' : 'es. US0378331005 o IE00BK5BQT80';
+    if (isCrypto) isinInput.value = '';
+  };
+
   document.getElementById('addCustomTickerBtn').addEventListener('click', () => {
     hideAddFeedback();
+    if (['stock', 'etf', 'crypto', 'certificate'].includes(AppState.activeFilter)) {
+      typeSelect.value = AppState.activeFilter;
+    }
+    updateIsinInputState();
     modalAdd.classList.add('open');
     symInput.focus();
   });
@@ -6559,23 +6925,36 @@ function setupModals() {
     hideAddFeedback();
   });
 
-  // Live preview when user types symbol, name, or changes asset type
+  // Live preview when user types symbol, ISIN, name, or changes asset type
   const triggerSymbolPreview = debounce(async () => {
-    const rawSym = symInput.value.trim().toUpperCase();
+    const rawSymField = symInput.value.trim().toUpperCase();
+    const rawIsinField = isinInput ? isinInput.value.trim().toUpperCase() : '';
+    if (isinInput && isIsinCode(rawSymField) && !rawIsinField && typeSelect.value !== 'crypto') {
+      isinInput.value = rawSymField;
+    }
+    const queryKey = rawSymField || (isIsinCode(rawIsinField) ? rawIsinField : '');
     const enteredName = nameInput.value.trim();
     const type = typeSelect.value;
-    if (!rawSym || rawSym.length < 1) {
+    if (!queryKey || queryKey.length < 1) {
       hideAddFeedback();
       return;
     }
-    const meta = await verifyAndFetchAssetMetadata(rawSym, type, enteredName);
-    if (symInput.value.trim().toUpperCase() !== rawSym) return;
+    const meta = await verifyAndFetchAssetMetadata(queryKey, type, enteredName);
+    const currentKey = symInput.value.trim().toUpperCase() || (isinInput ? isinInput.value.trim().toUpperCase() : '');
+    if (currentKey !== queryKey) return;
     if (meta.exists) {
       const curSym = getCurrencySymbol(meta.currency);
       const safeOfficial = meta.officialName.replace(/"/g, '&quot;');
-      const needsNameFill = !enteredName || !isAssetNameCoherent(enteredName, meta.officialName, meta.symbol);
+      if (isIsinCode(queryKey) && !enteredName && meta.officialName) {
+        nameInput.value = meta.officialName;
+      }
+      const currentName = nameInput.value.trim();
+      const needsNameFill = !currentName || (!meta.isCustomIsinAsset && !isAssetNameCoherent(currentName, meta.officialName, meta.symbol));
+      const resolvedIsin = meta.isin || (isIsinCode(rawIsinField) ? rawIsinField : null);
+      const isinTag = resolvedIsin ? ` • ISIN: <strong>${resolvedIsin}</strong>` : '';
+      const priceTag = (meta.price != null && !meta.isCustomCertificate) ? ` • Prezzo: <strong>${formatCurrency(meta.price, meta.currency)}</strong>` : '';
       showAddFeedback(
-        `✓ Asset rilevato sui mercati: <strong>${meta.officialName}</strong> (${meta.marketSymbol} • ${meta.exchange} • Valuta: <strong>${meta.currency} ${curSym.trim()}</strong> • Prezzo: <strong>${formatCurrency(meta.price, meta.currency)}</strong>)` +
+        `✓ ${meta.isCustomIsinAsset ? 'Asset ISIN verificato' : 'Asset rilevato sui mercati'}: <strong>${meta.officialName}</strong> (${meta.marketSymbol}${isinTag} • ${meta.exchange} • Valuta: <strong>${meta.currency} ${curSym.trim()}</strong>${priceTag})` +
         (needsNameFill
           ? `<br><button type="button" id="previewApplyNameBtn" style="margin-top: 6px; padding: 3px 9px; border-radius: 5px; border: 1px solid rgba(56, 189, 248, 0.5); background: rgba(56, 189, 248, 0.18); color: #fff; font-size: 0.72rem; cursor: pointer; font-weight: 600;">Imposta nome: "${safeOfficial}"</button>`
           : ''),
@@ -6585,7 +6964,7 @@ function setupModals() {
       if (previewBtn) {
         previewBtn.addEventListener('click', () => {
           nameInput.value = meta.officialName;
-          if (symInput.value.trim().toUpperCase() !== meta.symbol) {
+          if (!isIsinCode(rawSymField) && symInput.value.trim().toUpperCase() !== meta.symbol) {
             symInput.value = meta.symbol;
           }
           showAddFeedback(
@@ -6595,47 +6974,74 @@ function setupModals() {
         });
       }
     } else {
-      showAddFeedback(
-        `✗ Nessun asset reale trovato per <strong>${rawSym}</strong> nella categoria selezionata.`,
-        'error'
-      );
+      const errorMsg = meta.errorReason
+        ? meta.errorReason
+        : `✗ Nessun asset reale trovato per <strong>${queryKey}</strong> nella categoria selezionata.${isIsinCode(queryKey) && type !== 'certificate' ? '<br><span style="opacity:0.85;">Se è un certificato SeDeX/EuroTLX, seleziona <strong>Certificato d\'Investimento</strong> e inserisci il nome.</span>' : ''}`;
+      showAddFeedback(errorMsg, 'error');
     }
   }, 400);
 
   symInput.addEventListener('input', triggerSymbolPreview);
+  if (isinInput) isinInput.addEventListener('input', triggerSymbolPreview);
   nameInput.addEventListener('input', triggerSymbolPreview);
-  typeSelect.addEventListener('change', triggerSymbolPreview);
+  typeSelect.addEventListener('change', () => {
+    updateIsinInputState();
+    triggerSymbolPreview();
+  });
 
   submitBtn.addEventListener('click', async () => {
-    const rawSym = symInput.value.trim().toUpperCase();
+    const rawSymField = symInput.value.trim().toUpperCase();
+    const rawIsinField = isinInput ? isinInput.value.trim().toUpperCase() : '';
+    const rawSym = rawSymField || (isIsinCode(rawIsinField) ? rawIsinField : '');
     const enteredName = nameInput.value.trim();
     const type = typeSelect.value;
+    const rawIsIsin = isIsinCode(rawSym) || isIsinCode(rawIsinField);
 
-    if (!rawSym || !enteredName) {
-      showAddFeedback('⚠️ Inserisci sia il <strong>Simbolo Ticker</strong> sia il <strong>Nome dell\'asset</strong>.', 'warning');
+    if (rawIsinField && !isIsinCode(rawIsinField)) {
+      showAddFeedback('⚠️ Il <strong>Codice ISIN</strong> inserito non è valido (formato atteso: 12 caratteri, es. <code>IE00BK5BQT80</code>).', 'warning');
+      return;
+    }
+
+    if (!rawSym || (!enteredName && !isIsinCode(rawSym))) {
+      showAddFeedback('⚠️ Inserisci il <strong>Simbolo Ticker o ISIN</strong> e il <strong>Nome dell\'asset</strong> (per ISIN quotati il nome viene compilato automaticamente).', 'warning');
       return;
     }
 
     const origBtnText = submitBtn.textContent;
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Verifica esistenza e coerenza sui mercati...';
+    submitBtn.textContent = rawIsIsin ? 'Risoluzione ISIN e verifica sui mercati...' : 'Verifica esistenza e coerenza sui mercati...';
 
     try {
       const meta = await verifyAndFetchAssetMetadata(rawSym, type, enteredName);
 
       // 1. Check asset existence on real markets
       if (!meta.exists) {
+        const extraHint = (isIsinCode(rawSym) && type === 'certificate' && !enteredName)
+          ? ' Inserisci anche il nome del certificato per aggiungerlo tramite ISIN.'
+          : '';
         showAddFeedback(
-          `❌ <strong>Asset inesistente:</strong> il simbolo <strong>${rawSym}</strong> non esiste sui mercati (${type.toUpperCase()}). Verifica il ticker inserito.`,
+          meta.errorReason
+            ? `❌ ${meta.errorReason}`
+            : `❌ <strong>Asset inesistente:</strong> il codice <strong>${rawSym}</strong> non è stato trovato sui mercati (${type.toUpperCase()}).${extraHint}`,
           'error'
         );
         return;
       }
 
-      // Check duplicate symbol
+      const finalName = enteredName || meta.officialName;
+      if (!enteredName && finalName) {
+        nameInput.value = finalName;
+      }
+
+      const resolvedIsin = type === 'crypto'
+        ? null
+        : (isIsinCode(rawIsinField) ? rawIsinField : (meta.isin || (isIsinCode(rawSym) ? rawSym : null)));
+
+      // Check duplicate symbol or ISIN
       const existingAsset = AppState.assets.find(
         a => a.symbol.toUpperCase() === meta.symbol.toUpperCase() ||
-             (a.marketSymbol && a.marketSymbol.toUpperCase() === meta.marketSymbol.toUpperCase())
+             (a.marketSymbol && a.marketSymbol.toUpperCase() === meta.marketSymbol.toUpperCase()) ||
+             (resolvedIsin && a.isin && a.isin.toUpperCase() === resolvedIsin.toUpperCase())
       );
       if (existingAsset) {
         showAddFeedback(
@@ -6646,10 +7052,10 @@ function setupModals() {
       }
 
       // 2. Check coherence between user-entered name and official asset name
-      if (!isAssetNameCoherent(enteredName, meta.officialName, meta.symbol)) {
+      if (!meta.isCustomIsinAsset && !isAssetNameCoherent(finalName, meta.officialName, meta.symbol)) {
         const safeOfficial = meta.officialName.replace(/"/g, '&quot;');
         showAddFeedback(
-          `⚠️ <strong>Nome non coerente con l'asset:</strong> il ticker <strong>${meta.marketSymbol}</strong> esiste sui mercati (${meta.exchange}, valuta <strong>${meta.currency}</strong>), ma corrisponde a <strong>"${meta.officialName}"</strong> e non a <em>"${enteredName}"</em>.<br>` +
+          `⚠️ <strong>Nome non coerente con l'asset:</strong> il ticker <strong>${meta.marketSymbol}</strong> esiste sui mercati (${meta.exchange}, valuta <strong>${meta.currency}</strong>), ma corrisponde a <strong>"${meta.officialName}"</strong> e non a <em>"${finalName}"</em>.<br>` +
           `<button type="button" id="applyOfficialNameBtn" style="margin-top: 7px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.2); color: #fff; font-size: 0.74rem; cursor: pointer; font-weight: 600;">Usa nome ufficiale: "${safeOfficial}"</button>`,
           'warning'
         );
@@ -6666,11 +7072,12 @@ function setupModals() {
         return;
       }
 
-      // 3. Create asset with real market price, exchange, and imported currency
+      // 3. Create asset with real market price, exchange, ISIN, and imported currency
       const newAsset = {
         symbol: meta.symbol,
         marketSymbol: meta.marketSymbol,
-        name: enteredName,
+        isin: resolvedIsin,
+        name: finalName,
         type: type,
         exchange: meta.exchange,
         currency: meta.currency,
@@ -6692,6 +7099,7 @@ function setupModals() {
 
       // Clear form
       symInput.value = '';
+      if (isinInput) isinInput.value = '';
       nameInput.value = '';
     } finally {
       submitBtn.disabled = false;
