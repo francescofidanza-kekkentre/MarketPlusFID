@@ -3603,8 +3603,7 @@ function renderAssetList() {
       sumCard.addEventListener('click', () => {
         selectPortfolioOverview();
         if (window.innerWidth <= 900) {
-          const chartSection = document.getElementById('section-chart');
-          if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+          setMobileActivePage('section-chart');
         }
       });
     }
@@ -3617,8 +3616,7 @@ function renderAssetList() {
         if (found) {
           selectAsset(found);
           if (window.innerWidth <= 900) {
-            const chartSection = document.getElementById('section-chart');
-            if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+            setMobileActivePage('section-chart');
           }
         }
       });
@@ -3727,8 +3725,7 @@ function renderAssetList() {
       if (found) {
         selectAsset(found);
         if (window.innerWidth <= 900) {
-          const chartSection = document.getElementById('section-chart');
-          if (chartSection) chartSection.scrollIntoView({ behavior: 'smooth' });
+          setMobileActivePage('section-chart');
         }
       }
     });
@@ -5283,8 +5280,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
         if (certTab) certTab.click();
         populateCertificateDetails(asset);
         if (window.innerWidth <= 900) {
-          const toolsSection = document.getElementById('section-tools');
-          if (toolsSection) toolsSection.scrollIntoView({ behavior: 'smooth' });
+          setMobileActivePage('section-tools');
         }
       };
     }
@@ -5785,8 +5781,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       calculateRiskOutput();
 
       if (window.innerWidth <= 900) {
-        const toolsSection = document.getElementById('section-tools');
-        if (toolsSection) toolsSection.scrollIntoView({ behavior: 'smooth' });
+        setMobileActivePage('section-tools');
       }
 
       const origHtml = btnApplyTradePlan.innerHTML;
@@ -6387,8 +6382,7 @@ function setupEventListeners() {
         : AppState.assets.find(a => a.type === 'certificate');
       if (cert) {
         selectAsset(cert);
-        const chartSec = document.getElementById('section-chart');
-        if (chartSec) chartSec.scrollIntoView({ behavior: 'smooth' });
+        setMobileActivePage('section-chart');
       }
     });
   }
@@ -6495,44 +6489,43 @@ function updateMobileTickerCarouselActive(activeSymbol) {
   });
 }
 
+function setMobileActivePage(targetId) {
+  const validPages = ['section-chart', 'section-ai', 'section-tools', 'section-watchlist'];
+  const pageId = validPages.includes(targetId) ? targetId : 'section-chart';
+  document.body.setAttribute('data-mobile-page', pageId);
+
+  const navBtns = document.querySelectorAll('.mob-nav-btn');
+  navBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-target') === pageId);
+  });
+
+  if (window.innerWidth <= 900) {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  if (pageId === 'section-chart' && AppState.renderedBars && AppState.renderedBars.length > 0) {
+    requestAnimationFrame(() => {
+      if (typeof renderMainChart === 'function') renderMainChart(AppState.renderedBars);
+      if (typeof renderRsiChart === 'function') renderRsiChart(AppState.renderedBars);
+      if (typeof renderMacdChart === 'function') renderMacdChart(AppState.renderedBars);
+    });
+  }
+}
+
 function setupMobileBottomNav() {
   const navBtns = document.querySelectorAll('.mob-nav-btn');
   if (!navBtns || navBtns.length === 0) return;
 
+  const initialBtn = document.querySelector('.mob-nav-btn.active');
+  const initialPage = initialBtn ? initialBtn.getAttribute('data-target') : 'section-chart';
+  setMobileActivePage(initialPage);
+
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetId = btn.getAttribute('data-target');
-      const targetEl = document.getElementById(targetId);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        navBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-      }
+      setMobileActivePage(targetId);
     });
   });
-
-  // Track active section as user scrolls vertically on mobile
-  if ('IntersectionObserver' in window) {
-    const sectionIds = ['section-chart', 'section-ai', 'section-tools', 'section-watchlist'];
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const id = entry.target.id;
-          navBtns.forEach(btn => {
-            if (btn.getAttribute('data-target') === id) {
-              navBtns.forEach(b => b.classList.remove('active'));
-              btn.classList.add('active');
-            }
-          });
-        }
-      });
-    }, { threshold: 0.25 });
-
-    sectionIds.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
-    });
-  }
 }
 
 // --- Chart Crosshair Interaction (Touch + Mouse) ---

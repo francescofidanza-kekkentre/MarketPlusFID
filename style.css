@@ -2044,6 +2044,45 @@ body {
     width: 18px;
     height: 18px;
   }
+
+  /* Multi-Page Mobile Navigation (Exclusive Page View per Bottom Tab) */
+  body[data-mobile-page="section-chart"] #section-ai,
+  body[data-mobile-page="section-chart"] #section-tools,
+  body[data-mobile-page="section-chart"] #section-watchlist {
+    display: none !important;
+  }
+
+  body[data-mobile-page="section-ai"] .broker-shortcuts-bar,
+  body[data-mobile-page="section-ai"] .chart-toolbar,
+  body[data-mobile-page="section-ai"] #chartWrapper,
+  body[data-mobile-page="section-ai"] #rsiSubchartWrapper,
+  body[data-mobile-page="section-ai"] #macdSubchartWrapper,
+  body[data-mobile-page="section-ai"] #section-tools,
+  body[data-mobile-page="section-ai"] #section-watchlist {
+    display: none !important;
+  }
+
+  body[data-mobile-page="section-tools"] .app-panel-center,
+  body[data-mobile-page="section-tools"] #section-watchlist {
+    display: none !important;
+  }
+
+  body[data-mobile-page="section-watchlist"] .app-panel-center,
+  body[data-mobile-page="section-watchlist"] #section-tools {
+    display: none !important;
+  }
+
+  body[data-mobile-page="section-watchlist"] .asset-list {
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+
+  body[data-mobile-page] .app-panel-left,
+  body[data-mobile-page] .app-panel-right,
+  body[data-mobile-page] .app-panel-center {
+    border-top: none !important;
+    min-height: calc(100dvh - 120px);
+  }
 }
 
 /* --- Certificate Section Styling --- */
