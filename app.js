@@ -2683,9 +2683,13 @@ function updateRightPanelForSelection() {
   const assetTools = ['calculator', 'certificates', 'checklist'];
   const portTools = ['port-health', 'port-sim', 'port-rules'];
 
+  const isCertificateAsset = !isPort && AppState.selectedAsset && AppState.selectedAsset.type === 'certificate';
+
   document.querySelectorAll('.tools-tab').forEach(tab => {
     const tool = tab.getAttribute('data-tool');
-    if (assetTools.includes(tool)) {
+    if (tool === 'certificates') {
+      tab.style.display = isCertificateAsset ? '' : 'none';
+    } else if (assetTools.includes(tool)) {
       tab.style.display = isPort ? 'none' : '';
     } else if (portTools.includes(tool)) {
       tab.style.display = isPort ? '' : 'none';
@@ -2708,7 +2712,7 @@ function updateRightPanelForSelection() {
     renderPortfolioHealthPane();
     renderPortfolioSimulatorPane();
     renderPortfolioRulesPane();
-  } else if (portTools.includes(activeTool)) {
+  } else if (portTools.includes(activeTool) || (activeTool === 'certificates' && !isCertificateAsset)) {
     const calcTab = document.querySelector('.tools-tab[data-tool="calculator"]');
     if (calcTab) calcTab.click();
   }
@@ -3602,9 +3606,6 @@ function renderAssetList() {
     if (sumCard) {
       sumCard.addEventListener('click', () => {
         selectPortfolioOverview();
-        if (window.innerWidth <= 900) {
-          setMobileActivePage('section-chart');
-        }
       });
     }
 
@@ -3616,7 +3617,7 @@ function renderAssetList() {
         if (found) {
           selectAsset(found);
           if (window.innerWidth <= 900) {
-            setMobileActivePage('section-chart');
+            setMobileActivePage('page-analysis');
           }
         }
       });
@@ -3725,7 +3726,7 @@ function renderAssetList() {
       if (found) {
         selectAsset(found);
         if (window.innerWidth <= 900) {
-          setMobileActivePage('section-chart');
+          setMobileActivePage('page-analysis');
         }
       }
     });
@@ -3784,6 +3785,9 @@ function formatCurrency(val, assetOrCurrency) {
 // --- Select Asset ---
 function selectAsset(asset) {
   AppState.selectedAsset = asset;
+  if (asset && !asset.isPortfolio) {
+    AppState.lastRealAsset = asset;
+  }
   renderAssetList();
   updateSelectedAssetHeader();
   updateBrokerLinks(asset);
@@ -5280,7 +5284,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
         if (certTab) certTab.click();
         populateCertificateDetails(asset);
         if (window.innerWidth <= 900) {
-          setMobileActivePage('section-tools');
+          setMobileActivePage('page-risk');
         }
       };
     }
@@ -5781,7 +5785,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       calculateRiskOutput();
 
       if (window.innerWidth <= 900) {
-        setMobileActivePage('section-tools');
+        setMobileActivePage('page-risk');
       }
 
       const origHtml = btnApplyTradePlan.innerHTML;
@@ -6382,7 +6386,7 @@ function setupEventListeners() {
         : AppState.assets.find(a => a.type === 'certificate');
       if (cert) {
         selectAsset(cert);
-        setMobileActivePage('section-chart');
+        setMobileActivePage('page-analysis');
       }
     });
   }
@@ -6489,9 +6493,28 @@ function updateMobileTickerCarouselActive(activeSymbol) {
   });
 }
 
+function ensureRealAssetSelectedForMobile() {
+  if (AppState.selectedAsset && !AppState.selectedAsset.isPortfolio) {
+    return AppState.selectedAsset;
+  }
+  const candidate = AppState.lastRealAsset || (AppState.assets && AppState.assets[0]) || null;
+  if (candidate) {
+    selectAsset(candidate);
+  }
+  return candidate;
+}
+
+function syncCategoryChipActiveState(filterKey) {
+  document.querySelectorAll('.chip-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-filter') === filterKey);
+  });
+}
+
 function setMobileActivePage(targetId) {
-  const validPages = ['section-chart', 'section-ai', 'section-tools', 'section-watchlist'];
-  const pageId = validPages.includes(targetId) ? targetId : 'section-chart';
+  const validPages = ['page-watchlist', 'page-analysis', 'page-risk', 'page-portfolio'];
+  const pageId = validPages.includes(targetId) ? targetId : 'page-watchlist';
+  const isMobile = window.innerWidth <= 900;
+
   document.body.setAttribute('data-mobile-page', pageId);
 
   const navBtns = document.querySelectorAll('.mob-nav-btn');
@@ -6499,16 +6522,34 @@ function setMobileActivePage(targetId) {
     btn.classList.toggle('active', btn.getAttribute('data-target') === pageId);
   });
 
-  if (window.innerWidth <= 900) {
-    window.scrollTo({ top: 0, behavior: 'auto' });
-  }
+  if (isMobile) {
+    if (pageId === 'page-watchlist') {
+      if (AppState.activeFilter === 'portfolio') {
+        AppState.activeFilter = 'stock';
+        syncCategoryChipActiveState('stock');
+        renderAssetList();
+      }
+    } else if (pageId === 'page-analysis') {
+      ensureRealAssetSelectedForMobile();
+      if (AppState.renderedBars && AppState.renderedBars.length > 0) {
+        requestAnimationFrame(() => {
+          if (typeof renderMainChart === 'function') renderMainChart(AppState.renderedBars);
+          if (typeof renderRsiChart === 'function') renderRsiChart(AppState.renderedBars);
+          if (typeof renderMacdChart === 'function') renderMacdChart(AppState.renderedBars);
+        });
+      }
+    } else if (pageId === 'page-risk') {
+      ensureRealAssetSelectedForMobile();
+      updateRightPanelMode();
+    } else if (pageId === 'page-portfolio') {
+      if (AppState.activeFilter !== 'portfolio') {
+        AppState.activeFilter = 'portfolio';
+        syncCategoryChipActiveState('portfolio');
+        renderAssetList();
+      }
+    }
 
-  if (pageId === 'section-chart' && AppState.renderedBars && AppState.renderedBars.length > 0) {
-    requestAnimationFrame(() => {
-      if (typeof renderMainChart === 'function') renderMainChart(AppState.renderedBars);
-      if (typeof renderRsiChart === 'function') renderRsiChart(AppState.renderedBars);
-      if (typeof renderMacdChart === 'function') renderMacdChart(AppState.renderedBars);
-    });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }
 }
 
@@ -6517,7 +6558,7 @@ function setupMobileBottomNav() {
   if (!navBtns || navBtns.length === 0) return;
 
   const initialBtn = document.querySelector('.mob-nav-btn.active');
-  const initialPage = initialBtn ? initialBtn.getAttribute('data-target') : 'section-chart';
+  const initialPage = initialBtn ? initialBtn.getAttribute('data-target') : 'page-watchlist';
   setMobileActivePage(initialPage);
 
   navBtns.forEach(btn => {

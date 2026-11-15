@@ -2046,33 +2046,35 @@ body {
   }
 
   /* Multi-Page Mobile Navigation (Exclusive Page View per Bottom Tab) */
-  body[data-mobile-page="section-chart"] #section-ai,
-  body[data-mobile-page="section-chart"] #section-tools,
-  body[data-mobile-page="section-chart"] #section-watchlist {
+  body[data-mobile-page="page-watchlist"] .app-panel-center,
+  body[data-mobile-page="page-watchlist"] #section-tools,
+  body[data-mobile-page="page-watchlist"] .chip-btn[data-filter="portfolio"] {
     display: none !important;
   }
 
-  body[data-mobile-page="section-ai"] .broker-shortcuts-bar,
-  body[data-mobile-page="section-ai"] .chart-toolbar,
-  body[data-mobile-page="section-ai"] #chartWrapper,
-  body[data-mobile-page="section-ai"] #rsiSubchartWrapper,
-  body[data-mobile-page="section-ai"] #macdSubchartWrapper,
-  body[data-mobile-page="section-ai"] #section-tools,
-  body[data-mobile-page="section-ai"] #section-watchlist {
+  body[data-mobile-page="page-watchlist"] .asset-list {
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+
+  body[data-mobile-page="page-analysis"] #section-watchlist,
+  body[data-mobile-page="page-analysis"] #section-tools {
     display: none !important;
   }
 
-  body[data-mobile-page="section-tools"] .app-panel-center,
-  body[data-mobile-page="section-tools"] #section-watchlist {
+  body[data-mobile-page="page-risk"] .app-panel-center,
+  body[data-mobile-page="page-risk"] #section-watchlist {
     display: none !important;
   }
 
-  body[data-mobile-page="section-watchlist"] .app-panel-center,
-  body[data-mobile-page="section-watchlist"] #section-tools {
+  body[data-mobile-page="page-portfolio"] .app-panel-center,
+  body[data-mobile-page="page-portfolio"] #section-tools,
+  body[data-mobile-page="page-portfolio"] .category-chips-wrapper,
+  body[data-mobile-page="page-portfolio"] .watchlist-summary-bar {
     display: none !important;
   }
 
-  body[data-mobile-page="section-watchlist"] .asset-list {
+  body[data-mobile-page="page-portfolio"] .asset-list {
     max-height: none !important;
     overflow-y: visible !important;
   }
