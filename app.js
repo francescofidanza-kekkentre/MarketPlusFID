@@ -8371,7 +8371,9 @@ function setupKeyboardShortcuts() {
   });
 }
 
-let helpGuideCacheHtml = null;
+let helpGuideParsedData = null;
+
+const HELP_SECTION_ICONS = ['📋', '📈', '🛡️', '💼'];
 
 function formatHelpInlineMarkdown(text) {
   return escapePortfolioHtml(text)
@@ -8412,6 +8414,11 @@ function renderSimpleHelpMarkdown(mdText) {
       html.push(`<h2>${formatHelpInlineMarkdown(trimmed.slice(3))}</h2>`);
       continue;
     }
+    if (trimmed.startsWith('### ')) {
+      closeLists();
+      html.push(`<h3>${formatHelpInlineMarkdown(trimmed.slice(4))}</h3>`);
+      continue;
+    }
     if (/^\d+\.\s+/.test(trimmed)) {
       if (inUl) { html.push('</ul>'); inUl = false; }
       if (!inOl) { html.push('<ol>'); inOl = true; }
@@ -8431,14 +8438,117 @@ function renderSimpleHelpMarkdown(mdText) {
   return html.join('');
 }
 
+function parseHelpGuideMarkdown(mdText) {
+  const lines = String(mdText || '').replace(/\r/g, '').split('\n');
+  const introLines = [];
+  const sections = [];
+  let current = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('## ')) {
+      if (current) sections.push(current);
+      current = {
+        title: trimmed.slice(3).trim(),
+        summary: '',
+        bodyLines: []
+      };
+      continue;
+    }
+    if (!current) {
+      if (trimmed && !trimmed.startsWith('# ') && trimmed !== '---') {
+        introLines.push(trimmed);
+      }
+      continue;
+    }
+    if (trimmed === '---') continue;
+    if (!current.summary && trimmed && !trimmed.startsWith('#')) {
+      current.summary = trimmed;
+    }
+    current.bodyLines.push(line);
+  }
+  if (current) sections.push(current);
+
+  return {
+    intro: introLines.join(' '),
+    sections
+  };
+}
+
+function renderHelpGuideIndexPage() {
+  const body = document.getElementById('helpGuideContent');
+  if (!body || !helpGuideParsedData) return;
+
+  const { intro, sections } = helpGuideParsedData;
+  body.innerHTML = `
+    ${intro ? `<p class="help-guide-intro">${formatHelpInlineMarkdown(intro)}</p>` : ''}
+    <div class="help-index-list">
+      ${sections.map((sec, idx) => `
+        <button type="button" class="help-index-row" data-help-index="${idx}">
+          <span class="help-index-icon">${HELP_SECTION_ICONS[idx] || '📘'}</span>
+          <span class="help-index-text">
+            <div class="help-index-title">${escapePortfolioHtml(sec.title)}</div>
+            <div class="help-index-summary">${escapePortfolioHtml(sec.summary)}</div>
+          </span>
+          <span class="help-index-arrow">›</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+  body.scrollTop = 0;
+
+  body.querySelectorAll('.help-index-row[data-help-index]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.getAttribute('data-help-index'));
+      if (!isNaN(idx)) renderHelpGuideDetailPage(idx);
+    });
+  });
+}
+
+function renderHelpGuideDetailPage(index) {
+  const body = document.getElementById('helpGuideContent');
+  if (!body || !helpGuideParsedData) return;
+  const sections = helpGuideParsedData.sections || [];
+  const sec = sections[index];
+  if (!sec) {
+    renderHelpGuideIndexPage();
+    return;
+  }
+
+  const icon = HELP_SECTION_ICONS[index] || '📘';
+  const detailMd = `## ${icon} ${sec.title}\n\n${sec.bodyLines.join('\n')}`;
+
+  body.innerHTML = `
+    <div class="help-detail-topbar">
+      <button type="button" class="help-back-btn" id="helpGuideBackBtn">← Torna alle Istruzioni</button>
+      <div class="help-detail-nav">
+        <button type="button" class="help-nav-mini-btn" id="helpGuidePrevBtn" ${index <= 0 ? 'disabled' : ''}>‹ Prec</button>
+        <button type="button" class="help-nav-mini-btn" id="helpGuideNextBtn" ${index >= sections.length - 1 ? 'disabled' : ''}>Succ ›</button>
+      </div>
+    </div>
+    <div class="help-detail-content">
+      ${renderSimpleHelpMarkdown(detailMd)}
+    </div>
+  `;
+  body.scrollTop = 0;
+
+  document.getElementById('helpGuideBackBtn')?.addEventListener('click', () => renderHelpGuideIndexPage());
+  document.getElementById('helpGuidePrevBtn')?.addEventListener('click', () => {
+    if (index > 0) renderHelpGuideDetailPage(index - 1);
+  });
+  document.getElementById('helpGuideNextBtn')?.addEventListener('click', () => {
+    if (index < sections.length - 1) renderHelpGuideDetailPage(index + 1);
+  });
+}
+
 async function openHelpGuideModal() {
   const modal = document.getElementById('modalHelpGuide');
   const body = document.getElementById('helpGuideContent');
   if (!modal || !body) return;
   modal.classList.add('open');
 
-  if (helpGuideCacheHtml) {
-    body.innerHTML = helpGuideCacheHtml;
+  if (helpGuideParsedData && helpGuideParsedData.sections.length > 0) {
+    renderHelpGuideIndexPage();
     return;
   }
 
@@ -8447,16 +8557,21 @@ async function openHelpGuideModal() {
     const res = await fetch('./ISTRUZIONI.md', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const md = await res.text();
-    helpGuideCacheHtml = renderSimpleHelpMarkdown(md);
-    body.innerHTML = helpGuideCacheHtml;
+    helpGuideParsedData = parseHelpGuideMarkdown(md);
+    if (helpGuideParsedData.sections.length > 0) {
+      renderHelpGuideIndexPage();
+    } else {
+      body.innerHTML = renderSimpleHelpMarkdown(md);
+    }
   } catch (err) {
-    body.innerHTML = renderSimpleHelpMarkdown(
-      '# Guida Rapida MarketPulse Pro\n' +
-      '- **Watchlist**: cerca per nome, ticker o ISIN e clicca su un asset per selezionarlo.\n' +
-      '- **Analisi Asset**: visualizza grafico, indicatori tecnici e Valutazione IA.\n' +
-      '- **Rischio**: calcola position sizing, stop loss, take profit e R:R sull\'asset selezionato.\n' +
-      '- **Portafoglio**: gestisci i portafogli, controlla P&L, composizione e simulatore What-If.'
+    helpGuideParsedData = parseHelpGuideMarkdown(
+      'Seleziona una delle 4 aree principali:\n\n' +
+      '## 1. Watchlist & Ricerca Asset\nCerca per nome, ticker o ISIN e gestisci i preferiti.\n\n' +
+      '## 2. Analisi Asset, Grafici & Valutazione IA\nVisualizza grafico, indicatori tecnici e Valutazione IA.\n\n' +
+      '## 3. Gestione del Rischio & Certificati\nCalcola position sizing, stop loss, take profit e R:R sull\'asset selezionato.\n\n' +
+      '## 4. Gestione Portafogli, Composizione & Impostazioni\nGestisci portafogli, P&L, sovrapposizioni, simulatore What-If e backup.'
     );
+    renderHelpGuideIndexPage();
   }
 }
 

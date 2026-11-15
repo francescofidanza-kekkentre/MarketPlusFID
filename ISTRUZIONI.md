@@ -1,63 +1,102 @@
-# Guida all'Uso di MarketPulse Pro
+# Guida Completa a MarketPulse Pro
 
-Benvenuto in **MarketPulse Pro**, l'applicazione per il monitoraggio dei mercati finanziari, l'analisi tecnica degli asset, la gestione del rischio e il controllo dei portafogli su **Desktop e Mobile**.
-
----
-
-## 1. Struttura dell'Interfaccia e Tab
-
-L'app è organizzata in quattro aree principali (affiancate su Desktop, accessibili dalla barra inferiore su Mobile):
-
-1. **Watchlist**:
-   - Mostra tutti gli asset monitorati filtrabili per categoria: *Azioni*, *ETF*, *Obbligazioni*, *Crypto*, *Certificati* e *Preferiti* (`⭐`).
-   - Cliccando su un asset lo selezioni per visualizzarne grafico, analisi IA e calcolo del rischio.
-   - Usa la stellina `★` per aggiungere o rimuovere un titolo dai *Preferiti*.
-   - Usa la barra di ricerca in alto per trovare rapidamente un titolo per **nome, ticker o ISIN**.
-
-2. **Analisi Asset**:
-   - Visualizza il grafico interattivo dell'asset selezionato in modalità **Candele** o **Linea**, con cambio timeframe (`1G`, `1S`, `1M`, `3M`, `1A`).
-   - Attiva o nascondi gli indicatori tecnici: **EMA 20 / 50**, **Bande di Bollinger**, **RSI (14)** e **MACD**.
-   - Consulta il pannello **Valutazione IA**: mostra grado di fiducia (`0-100`), verdetto sintetico, livello di rischio, punti di forza/attenzione e livelli operativi indicativi (ingresso, stop loss, target).
-
-3. **Rischio**:
-   - Calcolatore di **Position Sizing** sempre riferito all'asset attualmente selezionato.
-   - Inserisci **Capitale Totale**, **% di Rischio Massimo**, **Prezzo d'Ingresso**, **Stop Loss** e **Take Profit** per ottenere subito:
-     - Numero di quote da acquistare.
-     - Rischio monetario massimo e guadagno potenziale.
-     - Rapporto Rischio/Rendimento (**R:R Ratio**).
-   - Completa la **Checklist Pre-Trade** e salva le tue note operative per singolo asset.
-   - Per i **Certificati** è disponibile la sezione dedicata all'analisi della barriera, sottostante e rendimento cedolare.
-
-4. **Portafoglio**:
-   - Crea e gestisci uno o più portafogli personalizzati (es. composizione, orizzonte temporale, budget e profilo di rischio).
-   - Seleziona un portafoglio per vedere in basso gli asset contenuti, il valore attuale, il rendimento (**P&L**) e il peso percentuale di ciascuna posizione.
-   - Aggiungi o aggiorna una posizione cliccando sul pulsante `+` di qualsiasi titolo, indicando numero di quote e Prezzo Medio di Carico (PMC).
-   - Consulta la **Valutazione IA Composizione Portafoglio** per individuare eventuali sovrapposizioni tra azioni, ETF e certificati e verificare il bilanciamento settoriale, oppure usa il **Simulatore "What-If"** per testare l'impatto di un nuovo acquisto.
+Seleziona una delle **4 aree principali** qui sotto per aprire la pagina di dettaglio con spiegazioni passo-passo, indicatori e consigli operativi.
 
 ---
 
-## 2. Aggiungere Nuovi Asset
+## 1. Watchlist & Ricerca Asset
+Monitora Azioni, ETF, Obbligazioni, Crypto e Certificati, filtra per categoria, gestisci i Preferiti e aggiungi nuovi titoli per nome, ticker o ISIN.
 
-1. Premi **`+ Aggiungi`** nella sezione Watchlist.
-2. Inserisci il **nome dell'azienda/strumento**, il **Ticker** oppure il codice **ISIN** e avvia la ricerca.
-3. Scegli il risultato corretto dalla lista proposta (oppure compila manualmente i campi per i Certificati) e conferma per aggiungerlo alla tua watchlist.
+### Panoramica della Sezione
+La **Watchlist** è il punto di partenza per esplorare il mercato su Desktop (colonna sinistra) e su Mobile (primo tab in basso). Ogni riga mostra il simbolo, il nome dello strumento, il prezzo aggiornato e la variazione percentuale.
+
+### Filtri per Categoria e Preferiti
+- Usa i pulsanti rapidi in alto (**Portafoglio**, **Azioni**, **ETF**, **Obbligazioni**, **Crypto**, **Certificati**, **Preferiti ⭐**) per restringere subito la lista.
+- Clicca sull'icona a forma di **stella (★)** accanto a un titolo per aggiungerlo o rimuoverlo dai tuoi **Preferiti**.
+- Clicca su qualsiasi riga per selezionare l'asset: il grafico, l'analisi IA e il calcolatore di rischio si aggiorneranno automaticamente su quel titolo.
+
+### Ricerca Rapida e Aggiunta di Nuovi Titoli
+- **Barra di ricerca in alto**: digita il **nome dell'azienda** (es. *Ferrari*, *Apple*), il **Ticker** (es. *NVDA*, *VWCE.DE*) oppure il codice **ISIN** per trovare subito un titolo già presente o cercarne uno nuovo.
+- **Pulsante `+ Aggiungi`**:
+  1. Inserisci **nome, ticker o ISIN** nel campo di ricerca del modale e premi **Cerca**.
+  2. Seleziona il titolo esatto tra i risultati trovati: l'app riconosce automaticamente categoria, valuta e borsa di riferimento.
+  3. Per i **Certificati** puoi inserire manualmente ISIN, sottostante, barriera, cedola e scadenza.
+
+### Scorciatoie Utili (Desktop)
+- Premi `/` per spostare subito il cursore nella barra di ricerca.
+- Premi `F` per aggiungere o togliere dai Preferiti l'asset selezionato.
 
 ---
 
-## 3. Impostazioni, Backup e Installazione
+## 2. Analisi Asset, Grafici & Valutazione IA
+Analizza il grafico interattivo, attiva gli indicatori tecnici (EMA, Bollinger, RSI, MACD) e consulta il verdetto sintetico con i livelli operativi.
 
-- **Impostazioni (icona ingranaggio)**: scegli la valuta di visualizzazione (`EUR` o `USD`), la frequenza di aggiornamento prezzi ed esegui il backup manuale tramite **Esporta / Importa Dati**.
-- **Account (icona profilo)**: permette di accedere per sincronizzare watchlist, portafogli e impostazioni tra più dispositivi.
-- **Installa App**: puoi installare l'app come applicazione autonoma sul tuo computer o smartphone tramite il pulsante **Installa App** o dal menu del browser.
+### Grafico Interattivo e Timeframe
+- Scegli il tipo di visualizzazione tra **Candele giapponesi** (per leggere apertura, massimo, minimo e chiusura) e **Grafico a Linea**.
+- Seleziona l'orizzonte temporale desiderato tra **`1G`**, **`1S`**, **`1M`**, **`3M`** e **`1A`** (su Desktop anche con i tasti `1` – `5`).
+- Passa il cursore o trascina il dito sul grafico per attivare il **Crosshair** e leggere i valori esatti di prezzo e volume barra per barra.
+
+### Indicatori Tecnici Integrati
+- **EMA 20 & EMA 50**: medie mobili esponenziali per individuare il trend di breve e medio periodo e possibili incroci rialzisti/ribassisti.
+- **Bande di Bollinger (20, 2)**: mostrano la fascia di volatilità normale del prezzo e aiutano a riconoscere eccessi o compressioni.
+- **RSI (14)**: oscillatore di forza relativa (`< 30` area di ipervenduto, `> 70` area di ipercomprato).
+- **MACD (12, 26, 9)**: misura il momentum tramite linea MACD, linea Signal e istogramma.
+
+### Come Leggere la Valutazione IA
+- **Grado di Fiducia (`0–100`) e Verdetto**: sintesi automatica basata su trend, momentum, volatilità e fondamentali disponibili.
+- **Livello di Rischio**: indica se la volatilità attuale dell'asset è bassa, moderata o elevata.
+- **Pro, Contro e Piano Operativo**: riepilogo chiaro dei punti di forza, dei rischi principali e dei livelli indicativi di **Ingresso**, **Stop Loss** e **Target**.
+
+### Scorciatoie Utili (Desktop)
+- `C` : Alterna Candele / Linea
+- `R` : Mostra / Nascondi RSI
+- `M` : Mostra / Nascondi MACD
 
 ---
 
-## 4. Scorciatoie da Tastiera (Desktop)
+## 3. Gestione del Rischio & Certificati
+Calcola la dimensione esatta della posizione (Position Sizing), verifica il rapporto Rischio/Rendimento (R:R), compila la checklist pre-trade e analizza i Certificati.
 
-- `/` : Porta il cursore nella barra di ricerca
-- `1` – `5` : Cambia rapidamente il timeframe (`1G`, `1S`, `1M`, `3M`, `1A`)
-- `C` : Alterna grafico a Candele / Linea
-- `R` : Mostra / Nascondi oscillatore RSI
-- `M` : Mostra / Nascondi oscillatore MACD
-- `F` : Aggiungi / Rimuovi dai Preferiti
-- `Esc` : Chiudi finestre e pannelli aperti
+### Calcolatore di Position Sizing
+Tutti i calcoli della scheda **Rischio** si riferiscono automaticamente all'asset selezionato in quel momento:
+1. Inserisci il tuo **Capitale Totale** disponibile.
+2. Imposta la **% di Rischio Massimo** per singola operazione (in genere `1% – 2%`).
+3. Inserisci o conferma **Prezzo d'Ingresso**, **Stop Loss** e **Take Profit**.
+4. L'app calcola automaticamente:
+   - **Numero di quote/azioni** da acquistare per rispettare il rischio massimo impostato.
+   - **Rischio monetario massimo** in caso di Stop Loss.
+   - **Guadagno potenziale** al raggiungimento del Take Profit.
+   - **Rapporto Rischio/Rendimento (`R:R`)**: valori pari o superiori a `1 : 2` indicano un setup matematicamente favorevole.
+
+### Checklist Pre-Trade & Diario Operativo
+- Spunta le voci della **Checklist Disciplinare** prima di aprire una posizione per verificare che trend, rischio e timing siano coerenti.
+- Usa il riquadro **Note Operative** per salvare appunti e livelli chiave specifici per ciascun asset.
+
+### Analisi Dedicata ai Certificati
+Quando selezioni un **Certificato**, la sezione dedicata permette di valutare:
+- **Distanza dalla Barriera (%)**: margine di sicurezza rispetto al livello critico di protezione del capitale.
+- **Sottostante e Scadenza**: controllo rapido del rendimento potenziale cedolare e della struttura del prodotto.
+
+---
+
+## 4. Gestione Portafogli, Composizione & Impostazioni
+Crea più portafogli, monitora P&L e pesi percentuali, verifica sovrapposizioni settoriali, simula nuovi acquisti e gestisci backup e sincronizzazione.
+
+### Creazione e Gestione di Più Portafogli
+- Puoi creare più portafogli separati (es. *Core Lungo Termine*, *Tattico*, *Dividendi*) impostando **Composizione target**, **Orizzonte temporale**, **Budget** e **Profilo di rischio**.
+- Selezionando un portafoglio vedi subito in basso l'elenco completo degli asset contenuti, con **Valore attuale**, **P&L (€ e %)** e **peso %** sul totale.
+
+### Aggiungere o Modificare una Posizione
+1. Clicca sul pulsante **`+`** presente su qualsiasi asset nella Watchlist (oppure dalla scheda del titolo).
+2. Inserisci il **Numero di quote** possedute e il **Prezzo Medio di Carico (PMC)** (puoi usare il collegamento rapido per impostare il prezzo attuale).
+3. Salva per aggiornare istantaneamente il controvalore e il rendimento del portafoglio.
+
+### Valutazione Composizione & Simulatore "What-If"
+- **Sovrapposizioni**: individua automaticamente se stai accumulando esposizione sugli stessi titoli o indici tra azioni singole, ETF e certificati.
+- **Bilanciamento per Comparto**: mostra la distribuzione percentuale tra settori e segnala eventuali concentrazioni eccessive.
+- **Simulatore "What-If"**: scegli un importo di nuova liquidità e un titolo da aggiungere per vedere in anteprima come cambierebbero i pesi del portafoglio prima di investire.
+
+### Impostazioni, Backup e Installazione PWA
+- **Impostazioni (ingranaggio)**: cambia la valuta di riferimento (`EUR` / `USD`), regola la frequenza di aggiornamento prezzi ed esegui **Esporta / Importa Dati** per salvare una copia locale.
+- **Account (profilo)**: accedi per sincronizzare portafogli e watchlist tra Desktop e Mobile.
+- **Installa App**: installa MarketPulse Pro come applicazione autonoma sul tuo dispositivo dal pulsante dedicato o dal menu del browser.
