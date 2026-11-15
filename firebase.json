@@ -8,7 +8,10 @@
       "firebase.json",
       "firestore.rules",
       "**/.*",
+      "**/.firebase/**",
+      "**/.git/**",
       "**/node_modules/**",
+      "*.md",
       "server.py",
       "history_cache.json",
       "__pycache__/**"
