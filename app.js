@@ -6091,11 +6091,21 @@ function setupEventListeners() {
 
   if (chipsBar) {
     let momentumRaf = null;
+    let dragRaf = null;
+    let scrollButtonsRaf = null;
     const stopMomentum = () => {
       if (momentumRaf) {
         cancelAnimationFrame(momentumRaf);
         momentumRaf = null;
       }
+    };
+
+    const scheduleScrollButtonsUpdate = () => {
+      if (scrollButtonsRaf) return;
+      scrollButtonsRaf = requestAnimationFrame(() => {
+        scrollButtonsRaf = null;
+        updateChipsScrollButtons();
+      });
     };
 
     // Smooth wheel horizontal scrolling anywhere over the chips bar
@@ -6112,13 +6122,14 @@ function setupEventListeners() {
     // Prevent native drag ghost on buttons inside the bar
     chipsBar.addEventListener('dragstart', (e) => e.preventDefault());
 
-    // Fluid click-and-drag scrolling even when starting directly on a .chip-btn
+    // 60/120fps rAF-synced click-and-drag scrolling even when starting directly on a .chip-btn
     let isDragging = false;
     let didDrag = false;
     let startX = 0;
     let startScrollLeft = 0;
-    let lastX = 0;
-    let lastTime = 0;
+    let latestClientX = 0;
+    let lastSampleX = 0;
+    let lastSampleTime = 0;
     let velocity = 0;
 
     chipsBar.addEventListener('mousedown', (e) => {
@@ -6127,47 +6138,59 @@ function setupEventListeners() {
       isDragging = true;
       didDrag = false;
       startX = e.clientX;
-      lastX = e.clientX;
-      lastTime = performance.now();
+      latestClientX = e.clientX;
+      lastSampleX = e.clientX;
+      lastSampleTime = performance.now();
       velocity = 0;
       startScrollLeft = chipsBar.scrollLeft;
     });
 
     window.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
-      const dx = e.clientX - startX;
+      latestClientX = e.clientX;
+      const dx = latestClientX - startX;
       if (!didDrag && Math.abs(dx) > 4) {
         didDrag = true;
         chipsBar.classList.add('dragging');
       }
-      if (didDrag) {
+      if (!didDrag || dragRaf) return;
+
+      dragRaf = requestAnimationFrame(() => {
+        dragRaf = null;
+        if (!isDragging) return;
         const now = performance.now();
-        const dt = Math.max(1, now - lastTime);
-        const stepX = e.clientX - lastX;
-        velocity = (stepX / dt) * 16; // px per ~60fps frame
-        lastX = e.clientX;
-        lastTime = now;
-        chipsBar.scrollLeft = startScrollLeft - dx;
-      }
-    });
+        const dt = Math.max(1, now - lastSampleTime);
+        const stepX = latestClientX - lastSampleX;
+        const instVel = (stepX / dt) * 16;
+        velocity = velocity * 0.4 + instVel * 0.6;
+        lastSampleX = latestClientX;
+        lastSampleTime = now;
+        chipsBar.scrollLeft = startScrollLeft - (latestClientX - startX);
+      });
+    }, { passive: true });
 
     const finishDrag = () => {
       if (!isDragging) return;
       isDragging = false;
+      if (dragRaf) {
+        cancelAnimationFrame(dragRaf);
+        dragRaf = null;
+      }
       chipsBar.classList.remove('dragging');
       if (didDrag) {
-        // Gentle inertial glide after releasing mouse
+        chipsBar.scrollLeft = startScrollLeft - (latestClientX - startX);
         let v = -velocity;
         const glide = () => {
-          if (Math.abs(v) < 0.35) {
+          if (Math.abs(v) < 0.25) {
             momentumRaf = null;
+            scheduleScrollButtonsUpdate();
             return;
           }
           chipsBar.scrollLeft += v;
-          v *= 0.92;
+          v *= 0.93;
           momentumRaf = requestAnimationFrame(glide);
         };
-        if (Math.abs(v) > 0.8) {
+        if (Math.abs(v) > 0.6) {
           momentumRaf = requestAnimationFrame(glide);
         }
         setTimeout(() => { didDrag = false; }, 50);
@@ -6184,8 +6207,8 @@ function setupEventListeners() {
       }
     }, true);
 
-    chipsBar.addEventListener('scroll', updateChipsScrollButtons, { passive: true });
-    window.addEventListener('resize', updateChipsScrollButtons);
+    chipsBar.addEventListener('scroll', scheduleScrollButtonsUpdate, { passive: true });
+    window.addEventListener('resize', scheduleScrollButtonsUpdate);
     requestAnimationFrame(updateChipsScrollButtons);
   }
 

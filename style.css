@@ -339,7 +339,7 @@ body {
   overflow-x: auto;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 2px 2px 10px;
+  padding: 2px 2px 16px;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.45) rgba(15, 23, 42, 0.35);
   cursor: grab;
@@ -348,9 +348,15 @@ body {
   touch-action: pan-x;
 }
 
-.category-chips.dragging,
+.category-chips.dragging {
+  cursor: grabbing;
+  scroll-behavior: auto !important;
+}
+
 .category-chips.dragging .chip-btn {
   cursor: grabbing;
+  pointer-events: none;
+  transition: none;
 }
 
 .category-chips::-webkit-scrollbar {
