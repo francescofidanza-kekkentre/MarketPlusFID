@@ -7233,6 +7233,95 @@ async function verifyAndFetchAssetMetadata(rawSymbol, type, enteredName = '') {
   return { exists: false };
 }
 
+async function searchAssetsByName(query, type) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return [];
+
+  const results = [];
+  const seen = new Set();
+  const addResult = (symbol, name, exchange, inferredType = null) => {
+    const cleanSym = String(symbol || '').trim().toUpperCase();
+    const cleanName = String(name || '').trim();
+    if (!cleanSym || !cleanName || seen.has(cleanSym)) return;
+    seen.add(cleanSym);
+    results.push({
+      symbol: cleanSym,
+      name: cleanName,
+      exchange: String(exchange || 'Mercato').trim(),
+      inferredType
+    });
+  };
+
+  if (type === 'crypto') {
+    const knownCryptoNames = [
+      ['BTC', 'Bitcoin'], ['ETH', 'Ethereum'], ['SOL', 'Solana'], ['BNB', 'BNB'],
+      ['XRP', 'Ripple XRP'], ['ADA', 'Cardano'], ['DOGE', 'Dogecoin'], ['DOT', 'Polkadot'],
+      ['AVAX', 'Avalanche'], ['LINK', 'Chainlink'], ['LTC', 'Litecoin'], ['UNI', 'Uniswap'],
+      ['ATOM', 'Cosmos'], ['NEAR', 'NEAR Protocol'], ['APT', 'Aptos'], ['SUI', 'Sui'],
+      ['ARB', 'Arbitrum'], ['OP', 'Optimism'], ['TON', 'Toncoin'], ['SHIB', 'Shiba Inu'],
+      ['PEPE', 'Pepe'], ['TRX', 'TRON'], ['XLM', 'Stellar'], ['BCH', 'Bitcoin Cash']
+    ];
+    const ql = q.toLowerCase();
+    for (const [sym, cname] of knownCryptoNames) {
+      if (cname.toLowerCase().includes(ql) || sym.toLowerCase().includes(ql)) {
+        addResult(sym, `${cname} (USDT)`, 'Binance / Crypto', 'crypto');
+      }
+    }
+  }
+
+  const cnbcTask = (async () => {
+    if (type === 'crypto') return;
+    try {
+      const lookupUrl = `https://symlookup.cnbc.com/symlookup.do?output=json&prefix=${encodeURIComponent(q)}`;
+      const res = await fetchWithTimeout(lookupUrl, 4000);
+      if (res.ok) {
+        const arr = await res.json();
+        if (Array.isArray(arr) && arr.length > 1) {
+          for (const item of arr.slice(1, 10)) {
+            if (!item || !item.symbolName) continue;
+            const sym = String(item.symbolName).toUpperCase();
+            const nm = item.companyName || item.name || sym;
+            const ex = item.exchange || 'CNBC';
+            const inf = /\b(ETF|UCITS|ETC|ETN|ISHARES|VANGUARD|SPDR|INVESCO|AMUNDI|XTRACKERS)\b/i.test(nm) ? 'etf' : null;
+            addResult(sym, nm, ex, inf);
+          }
+        }
+      }
+    } catch (e) {}
+  })();
+
+  const yahooTask = (async () => {
+    try {
+      const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
+      const payload = await fetchUrlViaKeylessGateways(
+        searchUrl,
+        true,
+        (d) => d && Array.isArray(d.quotes)
+      );
+      if (payload && Array.isArray(payload.quotes)) {
+        for (const item of payload.quotes) {
+          if (!item || !item.symbol) continue;
+          const qt = String(item.quoteType || '').toUpperCase();
+          if (type === 'crypto' && qt !== 'CRYPTOCURRENCY') continue;
+          let inf = null;
+          if (qt === 'ETF' || qt === 'MUTUALFUND') inf = 'etf';
+          else if (qt === 'CRYPTOCURRENCY') inf = 'crypto';
+          else if (qt === 'EQUITY') inf = 'stock';
+          const nm = item.longname || item.shortname || item.symbol;
+          const ex = item.exchDisp || item.exchange || 'Yahoo';
+          const cleanSym = (qt === 'CRYPTOCURRENCY')
+            ? String(item.symbol).replace(/-(USD|EUR|USDT)$/i, '').toUpperCase()
+            : item.symbol;
+          addResult(cleanSym, nm, ex, inf);
+        }
+      }
+    } catch (e) {}
+  })();
+
+  await Promise.all([cnbcTask, yahooTask]);
+  return results.slice(0, 8);
+}
+
 // --- Modals Setup ---
 function setupModals() {
   // Add Ticker Modal
@@ -7240,6 +7329,7 @@ function setupModals() {
   const symInput = document.getElementById('newTickerSymbol');
   const isinInput = document.getElementById('newTickerIsin');
   const nameInput = document.getElementById('newTickerName');
+  const nameResultsEl = document.getElementById('addTickerNameResults');
   const typeSelect = document.getElementById('newTickerType');
   const feedbackEl = document.getElementById('addTickerFeedback');
   const submitBtn = document.getElementById('submitNewTickerBtn');
@@ -7274,6 +7364,46 @@ function setupModals() {
     }
   };
 
+  const hideNameResults = () => {
+    if (nameResultsEl) {
+      nameResultsEl.style.display = 'none';
+      nameResultsEl.innerHTML = '';
+    }
+  };
+
+  const renderNameResults = (items, applyAndPreview) => {
+    if (!nameResultsEl) return;
+    if (!items || items.length === 0) {
+      hideNameResults();
+      return;
+    }
+    nameResultsEl.innerHTML = items.map((item, idx) => `
+      <button type="button" class="add-ticker-result-item" data-res-idx="${idx}">
+        <span class="add-ticker-res-main">
+          <span class="add-ticker-res-sym">${escapePortfolioHtml(item.symbol)}</span>
+          <span class="add-ticker-res-name">${escapePortfolioHtml(item.name)}</span>
+        </span>
+        <span class="add-ticker-res-exch">${escapePortfolioHtml(item.exchange)}</span>
+      </button>
+    `).join('');
+    nameResultsEl.style.display = 'flex';
+    nameResultsEl.querySelectorAll('.add-ticker-result-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-res-idx'));
+        const chosen = items[idx];
+        if (!chosen) return;
+        symInput.value = chosen.symbol;
+        nameInput.value = chosen.name;
+        if (chosen.inferredType && ['stock', 'etf', 'bond', 'crypto', 'certificate'].includes(chosen.inferredType)) {
+          typeSelect.value = chosen.inferredType;
+          updateIsinInputState();
+        }
+        hideNameResults();
+        if (applyAndPreview) applyAndPreview();
+      });
+    });
+  };
+
   const updateIsinInputState = () => {
     if (!isinInput) return;
     const isCrypto = typeSelect.value === 'crypto';
@@ -7284,6 +7414,7 @@ function setupModals() {
 
   document.getElementById('addCustomTickerBtn').addEventListener('click', () => {
     hideAddFeedback();
+    hideNameResults();
     if (['stock', 'etf', 'bond', 'crypto', 'certificate'].includes(AppState.activeFilter)) {
       typeSelect.value = AppState.activeFilter;
     }
@@ -7295,6 +7426,7 @@ function setupModals() {
   document.getElementById('closeAddTickerModal').addEventListener('click', () => {
     modalAdd.classList.remove('open');
     hideAddFeedback();
+    hideNameResults();
   });
 
   // Live preview when user types symbol, ISIN, name, or changes asset type
@@ -7307,10 +7439,28 @@ function setupModals() {
     const queryKey = rawSymField || (isIsinCode(rawIsinField) ? rawIsinField : '');
     const enteredName = nameInput.value.trim();
     const type = typeSelect.value;
-    if (!queryKey || queryKey.length < 1) {
-      hideAddFeedback();
+
+    // Name-based search when Ticker & ISIN are empty
+    if (!queryKey) {
+      if (enteredName.length >= 2) {
+        showAddFeedback(`🔎 Ricerca per nome "<strong>${escapePortfolioHtml(enteredName)}</strong>" in corso...`, 'info');
+        const matches = await searchAssetsByName(enteredName, type);
+        if (symInput.value.trim() || nameInput.value.trim() !== enteredName) return;
+        if (matches.length > 0) {
+          renderNameResults(matches, triggerSymbolPreview);
+          showAddFeedback(`✓ Trovati <strong>${matches.length}</strong> risultati: clicca quello desiderato qui sopra per compilare Ticker e Nome.`, 'info');
+        } else {
+          hideNameResults();
+          showAddFeedback(`ℹ️ Nessun risultato automatico per "<strong>${escapePortfolioHtml(enteredName)}</strong>". Prova con un altro nome oppure inserisci Ticker / ISIN.`, 'warning');
+        }
+      } else {
+        hideNameResults();
+        hideAddFeedback();
+      }
       return;
     }
+
+    hideNameResults();
     const meta = await verifyAndFetchAssetMetadata(queryKey, type, enteredName);
     const currentKey = symInput.value.trim().toUpperCase() || (isinInput ? isinInput.value.trim().toUpperCase() : '');
     if (currentKey !== queryKey) return;
@@ -7346,6 +7496,15 @@ function setupModals() {
         });
       }
     } else {
+      // If user typed a company/asset name inside the Ticker box, propose name matches
+      if (queryKey.length >= 3 && !isIsinCode(queryKey)) {
+        const nameMatches = await searchAssetsByName(queryKey, type);
+        if (nameMatches.length > 0) {
+          renderNameResults(nameMatches, triggerSymbolPreview);
+          showAddFeedback(`🔎 Nessun ticker esatto "<strong>${queryKey}</strong>", ma ho trovato questi asset per nome: selezionane uno qui sopra.`, 'info');
+          return;
+        }
+      }
       const errorMsg = meta.errorReason
         ? meta.errorReason
         : `✗ Nessun asset reale trovato per <strong>${queryKey}</strong> nella categoria selezionata.${isIsinCode(queryKey) && !['certificate', 'bond'].includes(type) ? '<br><span style="opacity:0.85;">Se è un\'obbligazione (MOT/EuroTLX) o un certificato (SeDeX), seleziona la categoria corretta e inserisci il nome.</span>' : ''}`;
@@ -7364,9 +7523,9 @@ function setupModals() {
   submitBtn.addEventListener('click', async () => {
     const rawSymField = symInput.value.trim().toUpperCase();
     const rawIsinField = isinInput ? isinInput.value.trim().toUpperCase() : '';
-    const rawSym = rawSymField || (isIsinCode(rawIsinField) ? rawIsinField : '');
-    const enteredName = nameInput.value.trim();
-    const type = typeSelect.value;
+    let rawSym = rawSymField || (isIsinCode(rawIsinField) ? rawIsinField : '');
+    let enteredName = nameInput.value.trim();
+    let type = typeSelect.value;
     const rawIsIsin = isIsinCode(rawSym) || isIsinCode(rawIsinField);
 
     if (rawIsinField && !isIsinCode(rawIsinField)) {
@@ -7374,16 +7533,41 @@ function setupModals() {
       return;
     }
 
-    if (!rawSym || (!enteredName && !isIsinCode(rawSym))) {
-      showAddFeedback('⚠️ Inserisci il <strong>Simbolo Ticker o ISIN</strong> e il <strong>Nome dell\'asset</strong> (per ISIN quotati il nome viene compilato automaticamente).', 'warning');
+    if (!rawSym && enteredName.length < 2) {
+      showAddFeedback('⚠️ Inserisci il <strong>Simbolo Ticker / ISIN</strong> oppure il <strong>Nome dell\'asset</strong> per cercarlo.', 'warning');
       return;
     }
 
     const origBtnText = submitBtn.textContent;
     submitBtn.disabled = true;
-    submitBtn.textContent = rawIsIsin ? 'Risoluzione ISIN e verifica sui mercati...' : 'Verifica esistenza e coerenza sui mercati...';
+    submitBtn.textContent = !rawSym
+      ? 'Ricerca per nome sui mercati...'
+      : (rawIsIsin ? 'Risoluzione ISIN e verifica sui mercati...' : 'Verifica esistenza e coerenza sui mercati...');
 
     try {
+      if (!rawSym && enteredName.length >= 2) {
+        const matches = await searchAssetsByName(enteredName, type);
+        if (matches.length === 0) {
+          showAddFeedback(`❌ Nessun asset trovato per nome "<strong>${escapePortfolioHtml(enteredName)}</strong>". Prova con un altro nome oppure inserisci Ticker / ISIN.`, 'error');
+          return;
+        }
+        if (matches.length > 1) {
+          renderNameResults(matches, triggerSymbolPreview);
+          showAddFeedback(`ℹ️ Trovati più risultati per "<strong>${escapePortfolioHtml(enteredName)}</strong>": seleziona quello corretto dalla lista qui sopra e poi clicca Aggiungi.`, 'info');
+          return;
+        }
+        const best = matches[0];
+        rawSym = best.symbol;
+        enteredName = best.name;
+        symInput.value = best.symbol;
+        nameInput.value = best.name;
+        if (best.inferredType && ['stock', 'etf', 'bond', 'crypto', 'certificate'].includes(best.inferredType)) {
+          type = best.inferredType;
+          typeSelect.value = best.inferredType;
+          updateIsinInputState();
+        }
+      }
+
       const meta = await verifyAndFetchAssetMetadata(rawSym, type, enteredName);
 
       // 1. Check asset existence on real markets

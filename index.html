@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=56">
+  <link rel="stylesheet" href="style.css?v=57">
 </head>
 <body>
 
@@ -795,18 +795,19 @@
       </div>
 
       <div class="calc-field-group">
-        <label>Simbolo Ticker o ISIN (es. TSLA, BTC, VWCE, IE00BK5BQT80)</label>
-        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="AAPL o IE00BK5BQT80" style="padding-left: 10px; text-transform: uppercase;">
+        <label>Simbolo Ticker o ISIN <span style="opacity:0.65; font-weight:400;">(opzionale se cerchi per nome)</span></label>
+        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="es. AAPL, IE00BK5BQT80 o cerca sotto per nome" style="padding-left: 10px; text-transform: uppercase;">
       </div>
 
       <div class="calc-field-group">
-        <label>Codice ISIN <span style="opacity:0.65; font-weight:400;">(opzionale — Azioni, ETF e Certificati)</span></label>
+        <label>Codice ISIN <span style="opacity:0.65; font-weight:400;">(opzionale — Azioni, ETF, Obbligazioni e Certificati)</span></label>
         <input type="text" id="newTickerIsin" class="calc-input" placeholder="es. US0378331005 o IE00BK5BQT80" maxlength="12" style="padding-left: 10px; text-transform: uppercase;">
       </div>
 
       <div class="calc-field-group">
-        <label>Nome Completo Azienda / Fondo / Token</label>
-        <input type="text" id="newTickerName" class="calc-input" placeholder="Apple Inc." style="padding-left: 10px;">
+        <label>Nome Asset <span style="opacity:0.65; font-weight:400;">(cerca per nome: es. Ferrari, Enel, Vanguard, Bitcoin)</span></label>
+        <input type="text" id="newTickerName" class="calc-input" placeholder="es. Ferrari, Apple Inc., Vanguard All-World..." style="padding-left: 10px;">
+        <div id="addTickerNameResults" class="add-ticker-results"></div>
       </div>
 
       <div class="calc-field-group">
@@ -1049,6 +1050,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=62"></script>
+  <script src="app.js?v=63"></script>
 </body>
 </html>
