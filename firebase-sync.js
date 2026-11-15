@@ -200,6 +200,16 @@ function setupRemoteListener(uid, onDataUpdate, getLocalState) {
         const initialPayload = {
           settings: localData.settings || {},
           portfolio: {}, // Sempre vuoto al primo accesso di un nuovo utente
+          portfolios: [{
+            id: 'default',
+            name: 'Principale',
+            composition: 'misto',
+            horizon: '>12 MESI',
+            budgetEur: 2000,
+            riskProfile: 'bilanciato',
+            positions: {}
+          }],
+          activePortfolioId: 'default',
           portfolioSort: 'best',
           assets: Array.isArray(localData.assets) ? localData.assets : [],
           notes: {}
@@ -243,6 +253,8 @@ export async function saveUserDataToCloud(data, immediate = false) {
         displayName: currentUser.displayName || '',
         settings: (data.settings && typeof data.settings === 'object') ? data.settings : {},
         portfolio: portMap,
+        portfolios: Array.isArray(data.portfolios) ? data.portfolios : [],
+        activePortfolioId: typeof data.activePortfolioId === 'string' ? data.activePortfolioId : 'default',
         portfolioSort: typeof data.portfolioSort === 'string' ? data.portfolioSort : 'best',
         assets: Array.isArray(data.assets) ? data.assets : [],
         notes: notesMap,

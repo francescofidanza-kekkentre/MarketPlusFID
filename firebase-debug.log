@@ -1,0 +1,32 @@
+[debug] [2026-11-15T00:20:35.554Z] ----------------------------------------------------------------------
+[debug] [2026-11-15T00:20:35.738Z] Command:       /home/francescofidanza/.local/node/bin/node /home/francescofidanza/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase deploy --only hosting --project marketpulsepro-682ff
+[debug] [2026-11-15T00:20:35.743Z] CLI Version:   15.36.0
+[debug] [2026-11-15T00:20:35.746Z] Platform:      linux
+[debug] [2026-11-15T00:20:35.748Z] Node Version:  v22.23.5
+[debug] [2026-11-15T00:20:35.751Z] Detected Agent: antigravity
+[debug] [2026-11-15T00:20:35.752Z] Time:          Sun Nov 15 2026 01:20:35 GMT+0100 (Central European Standard Time)
+[debug] [2026-11-15T00:20:35.754Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-11-15T00:21:03.243Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-11-15T00:21:03.287Z] > authorizing via signed-in user (francesco.fidanza@gmail.com)
+[debug] [2026-11-15T00:21:03.288Z] [iam] checking project marketpulsepro-682ff for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-11-15T00:21:03.444Z] Checked if tokens are valid: true, expires at: 1794705372218
+[debug] [2026-11-15T00:21:03.445Z] Checked if tokens are valid: true, expires at: 1794705372218
+[debug] [2026-11-15T00:21:03.448Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/marketpulsepro-682ff:testIamPermissions [none]
+[debug] [2026-11-15T00:21:03.449Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/marketpulsepro-682ff:testIamPermissions  x-goog-user-project=marketpulsepro-682ff
+[debug] [2026-11-15T00:21:03.449Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/marketpulsepro-682ff:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-11-15T00:21:09.123Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/marketpulsepro-682ff:testIamPermissions 200
+[debug] [2026-11-15T00:21:10.050Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/marketpulsepro-682ff:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-11-15T00:21:19.487Z] Checked if tokens are valid: true, expires at: 1794705372218
+[debug] [2026-11-15T00:21:19.742Z] Checked if tokens are valid: true, expires at: 1794705372218
+[debug] [2026-11-15T00:21:19.784Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/marketpulsepro-682ff [none]
+[debug] [2026-11-15T00:21:33.006Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/marketpulsepro-682ff 200
+[debug] [2026-11-15T00:21:33.668Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/marketpulsepro-682ff {"projectId":"marketpulsepro-682ff","projectNumber":"802500095620","displayName":"MarketPulsePro","name":"projects/marketpulsepro-682ff","resources":{"hostingSite":"marketpulsepro-682ff"},"state":"ACTIVE","labels":{"firebase":"enabled"},"etag":"1_ca7018fb-e947-472b-bcb2-db2be2102ac5"}
+[info] 
+[info] === Deploying to 'marketpulsepro-682ff'...
+[info] 
+[info] i  deploying hosting 
+[debug] [2026-11-15T00:21:40.059Z] Checked if tokens are valid: true, expires at: 1794705372218
+[debug] [2026-11-15T00:21:40.708Z] Checked if tokens are valid: true, expires at: 1794705372218
+[debug] [2026-11-15T00:21:40.787Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/marketpulsepro-682ff/sites/marketpulsepro-682ff [none]
+[debug] [2026-11-15T00:21:47.129Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/marketpulsepro-682ff/sites/marketpulsepro-682ff 200

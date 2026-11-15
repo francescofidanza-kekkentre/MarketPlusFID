@@ -363,7 +363,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=50');
+    FirebaseModule = await import('./firebase-sync.js?v=59');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -729,9 +729,11 @@ function loadStoredData() {
     saveAssetsToStorage();
   }
 
-  // Ensure default certificates & bonds exist in AppState.assets
+  // Ensure default certificates & bonds exist in AppState.assets (local-only, never trigger premature cloud overwrite on boot)
   if (ensureDefaultCompartmentAssets()) {
-    saveAssetsToStorage();
+    try {
+      localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
+    } catch (e) {}
   }
 
   // Load persisted portfolios (multi-portfolio with backward compatibility)
@@ -8007,12 +8009,16 @@ function handleRemoteCloudData(remoteData) {
       localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
       changed = true;
     } else if (remoteData.portfolio && typeof remoteData.portfolio === 'object') {
+      const remoteHasPositions = Object.keys(remoteData.portfolio).length > 0;
       const active = getActivePortfolioObj();
-      active.positions = remoteData.portfolio;
-      AppState.portfolio = active.positions;
-      localStorage.setItem('marketpulse_portfolios', JSON.stringify(AppState.portfolios));
-      localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
-      changed = true;
+      const localHasPositions = active.positions && Object.keys(active.positions).length > 0;
+      if (remoteHasPositions || !localHasPositions) {
+        active.positions = remoteData.portfolio;
+        AppState.portfolio = active.positions;
+        localStorage.setItem('marketpulse_portfolios', JSON.stringify(AppState.portfolios));
+        localStorage.setItem('marketpulse_portfolio', JSON.stringify(AppState.portfolio));
+        changed = true;
+      }
     }
 
     if (remoteData.portfolioSort) {
