@@ -6077,12 +6077,135 @@ function saveNotesForAsset() {
 
 // --- Event Listeners & Interaction ---
 function setupEventListeners() {
-  // Category Chips Filter
+  // Category Chips Filter + Smooth Horizontal Scroll (Wheel, Drag & Arrow Buttons)
+  const chipsBar = document.getElementById('categoryChipsBar');
+  const chipsLeftBtn = document.getElementById('chipsScrollLeft');
+  const chipsRightBtn = document.getElementById('chipsScrollRight');
+
+  const updateChipsScrollButtons = () => {
+    if (!chipsBar) return;
+    const maxScroll = Math.max(0, chipsBar.scrollWidth - chipsBar.clientWidth);
+    if (chipsLeftBtn) chipsLeftBtn.classList.toggle('hidden', chipsBar.scrollLeft <= 2);
+    if (chipsRightBtn) chipsRightBtn.classList.toggle('hidden', maxScroll <= 2 || chipsBar.scrollLeft >= maxScroll - 2);
+  };
+
+  if (chipsBar) {
+    let momentumRaf = null;
+    const stopMomentum = () => {
+      if (momentumRaf) {
+        cancelAnimationFrame(momentumRaf);
+        momentumRaf = null;
+      }
+    };
+
+    // Smooth wheel horizontal scrolling anywhere over the chips bar
+    chipsBar.addEventListener('wheel', (e) => {
+      if (chipsBar.scrollWidth <= chipsBar.clientWidth) return;
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta !== 0) {
+        e.preventDefault();
+        stopMomentum();
+        chipsBar.scrollLeft += delta;
+      }
+    }, { passive: false });
+
+    // Prevent native drag ghost on buttons inside the bar
+    chipsBar.addEventListener('dragstart', (e) => e.preventDefault());
+
+    // Fluid click-and-drag scrolling even when starting directly on a .chip-btn
+    let isDragging = false;
+    let didDrag = false;
+    let startX = 0;
+    let startScrollLeft = 0;
+    let lastX = 0;
+    let lastTime = 0;
+    let velocity = 0;
+
+    chipsBar.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      stopMomentum();
+      isDragging = true;
+      didDrag = false;
+      startX = e.clientX;
+      lastX = e.clientX;
+      lastTime = performance.now();
+      velocity = 0;
+      startScrollLeft = chipsBar.scrollLeft;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      if (!didDrag && Math.abs(dx) > 4) {
+        didDrag = true;
+        chipsBar.classList.add('dragging');
+      }
+      if (didDrag) {
+        const now = performance.now();
+        const dt = Math.max(1, now - lastTime);
+        const stepX = e.clientX - lastX;
+        velocity = (stepX / dt) * 16; // px per ~60fps frame
+        lastX = e.clientX;
+        lastTime = now;
+        chipsBar.scrollLeft = startScrollLeft - dx;
+      }
+    });
+
+    const finishDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      chipsBar.classList.remove('dragging');
+      if (didDrag) {
+        // Gentle inertial glide after releasing mouse
+        let v = -velocity;
+        const glide = () => {
+          if (Math.abs(v) < 0.35) {
+            momentumRaf = null;
+            return;
+          }
+          chipsBar.scrollLeft += v;
+          v *= 0.92;
+          momentumRaf = requestAnimationFrame(glide);
+        };
+        if (Math.abs(v) > 0.8) {
+          momentumRaf = requestAnimationFrame(glide);
+        }
+        setTimeout(() => { didDrag = false; }, 50);
+      }
+    };
+
+    window.addEventListener('mouseup', finishDrag);
+    window.addEventListener('blur', finishDrag);
+
+    chipsBar.addEventListener('click', (e) => {
+      if (didDrag) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+
+    chipsBar.addEventListener('scroll', updateChipsScrollButtons, { passive: true });
+    window.addEventListener('resize', updateChipsScrollButtons);
+    requestAnimationFrame(updateChipsScrollButtons);
+  }
+
+  if (chipsLeftBtn && chipsBar) {
+    chipsLeftBtn.addEventListener('click', () => {
+      chipsBar.scrollBy({ left: -140, behavior: 'smooth' });
+    });
+  }
+  if (chipsRightBtn && chipsBar) {
+    chipsRightBtn.addEventListener('click', () => {
+      chipsBar.scrollBy({ left: 140, behavior: 'smooth' });
+    });
+  }
+
   document.querySelectorAll('.chip-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       AppState.activeFilter = btn.getAttribute('data-filter');
+      btn.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
       renderAssetList();
     });
   });

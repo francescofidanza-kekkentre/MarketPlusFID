@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=49">
+  <link rel="stylesheet" href="style.css?v=52">
 </head>
 <body>
 
@@ -89,14 +89,18 @@
         <span>📋 Watchlist & Monitoraggio Asset</span>
       </div>
       <div class="watchlist-controls">
-        <div class="category-chips">
-          <button class="chip-btn active" data-filter="portfolio">💼 Portafoglio</button>
-          <button class="chip-btn" data-filter="stock">Azioni</button>
-          <button class="chip-btn" data-filter="etf">ETF</button>
-          <button class="chip-btn" data-filter="bond">Obbligazioni</button>
-          <button class="chip-btn" data-filter="crypto">Crypto</button>
-          <button class="chip-btn" data-filter="certificate">Certificati</button>
-          <button class="chip-btn" data-filter="watchlist">⭐ Preferiti</button>
+        <div class="category-chips-wrapper">
+          <button type="button" class="chips-scroll-btn" id="chipsScrollLeft" title="Scorri a sinistra" aria-label="Scorri a sinistra">&#8249;</button>
+          <div class="category-chips" id="categoryChipsBar">
+            <button class="chip-btn active" data-filter="portfolio">💼 Portafoglio</button>
+            <button class="chip-btn" data-filter="stock">Azioni</button>
+            <button class="chip-btn" data-filter="etf">ETF</button>
+            <button class="chip-btn" data-filter="bond">Obbligazioni</button>
+            <button class="chip-btn" data-filter="crypto">Crypto</button>
+            <button class="chip-btn" data-filter="certificate">Certificati</button>
+            <button class="chip-btn" data-filter="watchlist">⭐ Preferiti</button>
+          </div>
+          <button type="button" class="chips-scroll-btn" id="chipsScrollRight" title="Scorri a destra" aria-label="Scorri a destra">&#8250;</button>
         </div>
 
         <div class="watchlist-summary-bar">
@@ -1045,6 +1049,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=55"></script>
+  <script src="app.js?v=57"></script>
 </body>
 </html>
