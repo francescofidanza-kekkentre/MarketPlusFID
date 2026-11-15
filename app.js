@@ -7663,6 +7663,21 @@ function setupModals() {
     }
   });
 
+  // Help Guide Modal (?)
+  const modalHelpGuide = document.getElementById('modalHelpGuide');
+  const helpGuideBtn = document.getElementById('helpGuideBtn');
+  const closeHelpGuideModal = document.getElementById('closeHelpGuideModal');
+  if (helpGuideBtn && modalHelpGuide) {
+    helpGuideBtn.addEventListener('click', () => {
+      openHelpGuideModal();
+    });
+  }
+  if (closeHelpGuideModal && modalHelpGuide) {
+    closeHelpGuideModal.addEventListener('click', () => {
+      modalHelpGuide.classList.remove('open');
+    });
+  }
+
   // Shortcuts Modal
   const modalShortcuts = document.getElementById('modalShortcuts');
   document.getElementById('shortcutsBtn').addEventListener('click', () => {
@@ -8354,6 +8369,95 @@ function setupKeyboardShortcuts() {
       document.getElementById('shortcutsBtn')?.click();
     }
   });
+}
+
+let helpGuideCacheHtml = null;
+
+function formatHelpInlineMarkdown(text) {
+  return escapePortfolioHtml(text)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+function renderSimpleHelpMarkdown(mdText) {
+  const lines = String(mdText || '').replace(/\r/g, '').split('\n');
+  const html = [];
+  let inUl = false;
+  let inOl = false;
+
+  const closeLists = () => {
+    if (inUl) { html.push('</ul>'); inUl = false; }
+    if (inOl) { html.push('</ol>'); inOl = false; }
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      closeLists();
+      continue;
+    }
+    if (trimmed === '---') {
+      closeLists();
+      html.push('<hr>');
+      continue;
+    }
+    if (trimmed.startsWith('# ')) {
+      closeLists();
+      html.push(`<h1>${formatHelpInlineMarkdown(trimmed.slice(2))}</h1>`);
+      continue;
+    }
+    if (trimmed.startsWith('## ')) {
+      closeLists();
+      html.push(`<h2>${formatHelpInlineMarkdown(trimmed.slice(3))}</h2>`);
+      continue;
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (inUl) { html.push('</ul>'); inUl = false; }
+      if (!inOl) { html.push('<ol>'); inOl = true; }
+      html.push(`<li>${formatHelpInlineMarkdown(trimmed.replace(/^\d+\.\s+/, ''))}</li>`);
+      continue;
+    }
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (inOl) { html.push('</ol>'); inOl = false; }
+      if (!inUl) { html.push('<ul>'); inUl = true; }
+      html.push(`<li>${formatHelpInlineMarkdown(trimmed.replace(/^[-*]\s+/, ''))}</li>`);
+      continue;
+    }
+    closeLists();
+    html.push(`<p>${formatHelpInlineMarkdown(trimmed)}</p>`);
+  }
+  closeLists();
+  return html.join('');
+}
+
+async function openHelpGuideModal() {
+  const modal = document.getElementById('modalHelpGuide');
+  const body = document.getElementById('helpGuideContent');
+  if (!modal || !body) return;
+  modal.classList.add('open');
+
+  if (helpGuideCacheHtml) {
+    body.innerHTML = helpGuideCacheHtml;
+    return;
+  }
+
+  body.innerHTML = '<p>Caricamento istruzioni...</p>';
+  try {
+    const res = await fetch('./ISTRUZIONI.md', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const md = await res.text();
+    helpGuideCacheHtml = renderSimpleHelpMarkdown(md);
+    body.innerHTML = helpGuideCacheHtml;
+  } catch (err) {
+    body.innerHTML = renderSimpleHelpMarkdown(
+      '# Guida Rapida MarketPulse Pro\n' +
+      '- **Watchlist**: cerca per nome, ticker o ISIN e clicca su un asset per selezionarlo.\n' +
+      '- **Analisi Asset**: visualizza grafico, indicatori tecnici e Valutazione IA.\n' +
+      '- **Rischio**: calcola position sizing, stop loss, take profit e R:R sull\'asset selezionato.\n' +
+      '- **Portafoglio**: gestisci i portafogli, controlla P&L, composizione e simulatore What-If.'
+    );
+  }
 }
 
 // --- PWA Installation & Service Worker (Zero-Cache Mode) ---

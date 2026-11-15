@@ -3343,3 +3343,76 @@ body {
   color: #38bdf8;
   font-weight: 700;
 }
+
+/* Always-available Help Guide Button (?) and Modal */
+.btn-help-guide {
+  font-weight: 800;
+  font-size: 0.98rem;
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.btn-help-guide:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.65);
+  color: #fff;
+}
+
+.modal-help-window {
+  max-width: 680px;
+  width: 94vw;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.help-guide-body {
+  overflow-y: auto;
+  padding-right: 4px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.help-guide-body h1 {
+  font-size: 1.08rem;
+  color: #fff;
+  margin: 0 0 8px 0;
+}
+
+.help-guide-body h2 {
+  font-size: 0.94rem;
+  color: #38bdf8;
+  margin: 14px 0 6px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.help-guide-body p {
+  margin: 6px 0;
+}
+
+.help-guide-body ul,
+.help-guide-body ol {
+  margin: 6px 0 8px 18px;
+  padding: 0;
+}
+
+.help-guide-body li {
+  margin-bottom: 4px;
+}
+
+.help-guide-body code {
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+
+.help-guide-body hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 10px 0;
+}

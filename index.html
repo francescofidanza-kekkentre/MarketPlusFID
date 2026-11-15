@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=57">
+  <link rel="stylesheet" href="style.css?v=58">
 </head>
 <body>
 
@@ -64,6 +64,8 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Installa App</span>
       </button>
+
+      <button id="helpGuideBtn" class="btn-icon btn-help-guide" title="Guida e Istruzioni d'uso" aria-label="Istruzioni d'uso">?</button>
 
       <button id="shortcutsBtn" class="btn-icon" title="Scorciatoie da tastiera Desktop (?)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
@@ -854,6 +856,19 @@
     </div>
   </div>
 
+  <!-- MODAL: App User Guide / Instructions -->
+  <div class="modal-backdrop" id="modalHelpGuide">
+    <div class="modal-window modal-help-window">
+      <div class="modal-header">
+        <h3 style="font-size: 1.08rem; font-weight: 700;">❓ Istruzioni d'Uso</h3>
+        <button class="modal-close" id="closeHelpGuideModal">&times;</button>
+      </div>
+      <div id="helpGuideContent" class="help-guide-body">
+        Caricamento istruzioni...
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Settings -->
   <div class="modal-backdrop" id="modalSettings">
     <div class="modal-window">
@@ -1050,6 +1065,6 @@
   </nav>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=63"></script>
+  <script src="app.js?v=64"></script>
 </body>
 </html>

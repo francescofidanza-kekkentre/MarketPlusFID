@@ -22,9 +22,9 @@
 ### 2. Monitoraggio Multi-Asset (Azioni, ETF, Crypto)
 - **Azioni**: NVIDIA (NVDA), Apple (AAPL), Microsoft (MSFT), Tesla (TSLA), Google (GOOGL), Amazon (AMZN), Meta (META), ASML.
 - **ETF Globali**: S&P 500 (SPY), Nasdaq 100 (QQQ), Vanguard FTSE All-World (VWCE), Semiconductor (SOXX), Oro (GLD), MSCI World (URTH).
-- **Criptovalute con Prezzi Live**: Bitcoin (BTC), Ethereum (ETH), Solana (SOL), BNB, XRP, Cardano (ADA) collegati all'API live pubblica di Binance.
-- **Aggiunta Ticker Personalizzati**: Aggiungi qualsiasi titolo o fondo preferito tramite il pulsante `+ Aggiungi` con persistenza in LocalStorage.
-- **Sentiment di Mercato**: Indicatore Fear & Greed globale in tempo reale da *alternative.me* e stato orari di borsa Wall Street (NYSE).
+- **Criptovalute con Prezzi Live**: Bitcoin (BTC), Ethereum (ETH), Solana (SOL), BNB, XRP, Cardano (ADA) con aggiornamento prezzi in tempo reale.
+- **Aggiunta Ticker Personalizzati**: Aggiungi qualsiasi titolo o fondo preferito tramite il pulsante `+ Aggiungi` con persistenza locale.
+- **Sentiment di Mercato**: Indicatore Fear & Greed globale in tempo reale e stato degli orari di borsa.
 
 ### 3. Grafici Avanzati & Indicatori Tecnici
 - **Engine Canvas ad Alte Prestazioni**: Rendering fluido a 60 FPS con supporto schermi ad alta densità (HiDPI / Retina).
@@ -59,37 +59,8 @@ Pulsanti one-click dedicati per aprire direttamente il titolo selezionato su:
 
 ---
 
-## 🚀 Come Avviare l'Applicazione su Chromebook
+## 📲 Installazione come App Autonoma (PWA)
 
-### Opzione A: Tramite il server locale Python (Consigliato)
-Apri il terminale del tuo Chromebook (Linux / Crostini) ed esegui:
-
-```bash
-cd /home/francescofidanza/.gemini/antigravity/scratch/chromebook-trader-pwa
-python3 server.py
-```
-
-Poi apri **Google Chrome** e vai su:
-👉 `http://localhost:8080`
-
-### Opzione B: Apertura diretta
-Puoi anche aprire direttamente il file `index.html` con il browser Chrome. Tutte le funzionalità, i grafici e le API Binance/Fear & Greed funzioneranno direttamente nel client!
-
----
-
-## 📲 Come Installarla su ChromeOS come App Autonoma
-
-1. Quando sei su `http://localhost:8080` in Chrome, noterai:
-   - Il pulsante **"Installa App"** nella barra superiore dell'applicazione, oppure
-   - L'icona del monitor/freccia nella **barra degli indirizzi di Chrome** (a destra).
-2. Clicca su **Installa**.
-3. L'app si aprirà in una propria finestra senza barre del browser e l'icona apparirà nel **Launcher** e nella **Shelf (Dock)** del Chromebook.
-
----
-
-## 🛠️ Personalizzazione e Workspace
-
-Per continuare a personalizzare l'applicazione, impostare questa cartella come spazio di lavoro attivo:
-```
-/home/francescofidanza/.gemini/antigravity/scratch/chromebook-trader-pwa
-```
+1. Apri l'applicazione nel browser **Google Chrome**.
+2. Utilizza il pulsante **"Installa App"** nella barra superiore dell'applicazione oppure l'icona di installazione nella **barra degli indirizzi di Chrome**.
+3. L'app si aprirà in una propria finestra dedicata e l'icona apparirà tra le applicazioni del dispositivo.
