@@ -11,7 +11,7 @@
       "**/.firebase/**",
       "**/.git/**",
       "**/node_modules/**",
-      "*.md",
+      "README.md",
       "server.py",
       "history_cache.json",
       "__pycache__/**"
