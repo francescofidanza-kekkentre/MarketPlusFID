@@ -545,7 +545,6 @@ function savePortfolioProfileModal() {
   closePortfolioProfileModal();
   renderAssetList();
   selectPortfolioOverview();
-  runGeminiPortfolioEvaluation();
 }
 
 function renameActivePortfolio(newName) {
@@ -2108,265 +2107,6 @@ function evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur) {
   };
 }
 
-const GeminiHybridState = {
-  portfolio: { key: null, data: null, model: null, loading: false, error: null },
-  assets: {}, // keyed by `${symbol}_${timeframe}`
-  assetErrors: {} // keyed by `${symbol}_${timeframe}`
-};
-
-function getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur) {
-  const activePf = getActivePortfolioObj();
-  const profileKey = `${activePf.id}_${activePf.composition || 'misto'}_${activePf.horizon || '>12 MESI'}_${activePf.budgetEur || 2000}_${activePf.riskProfile || 'medio'}`;
-  if (!portfolioAssets || portfolioAssets.length === 0 || totalCurrentValueEur <= 0) {
-    return `empty_${profileKey}`;
-  }
-  return `${profileKey}|` + portfolioAssets
-    .map(a => {
-      const pos = AppState.portfolio[a.symbol];
-      const curPrice = a.price != null ? a.price : (pos ? pos.buyPrice : 0);
-      const valEur = pos ? convertToEur(pos.shares * curPrice, a) : 0;
-      const pct = Math.round((valEur / totalCurrentValueEur) * 100);
-      return `${a.symbol}:${pct}`;
-    })
-    .sort()
-    .join('|');
-}
-
-async function runGeminiPortfolioEvaluation() {
-  if (GeminiHybridState.portfolio.loading) return;
-  const entries = getPortfolioAssetsWithPos();
-
-  let totalEur = 0;
-  entries.forEach(({ asset, pos }) => {
-    const p = asset.price != null ? asset.price : pos.buyPrice;
-    totalEur += convertToEur(pos.shares * p, asset);
-  });
-
-  const portfolioAssets = entries.map(e => e.asset);
-  const cacheKey = getPortfolioCacheKey(portfolioAssets, totalEur);
-  const localEval = entries.length > 0 ? evaluatePortfolioCompositionAi(portfolioAssets, totalEur) : null;
-
-  GeminiHybridState.portfolio = { key: cacheKey, data: null, model: null, loading: true, error: null };
-  renderAssetList();
-  renderPortfolioAiAnalysisSection();
-
-  try {
-    const mod = await getFirebaseModule();
-    if (!mod || typeof mod.analyzePortfolioWithGemini !== 'function') {
-      throw new Error('Modulo Firebase AI Logic non caricato');
-    }
-
-    const holdingsPayload = entries.map(({ asset, pos }) => {
-      const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-      const valEur = convertToEur(pos.shares * curPrice, asset);
-      const weightPct = totalEur > 0 ? Number(((valEur / totalEur) * 100).toFixed(1)) : 0;
-      const comp = getAssetCompartmentInfo(asset);
-      const certData = asset.certificateData || {};
-      return {
-        symbol: asset.symbol,
-        name: asset.name,
-        type: asset.type,
-        weightPct,
-        localCompartment: comp.sector,
-        underlying: certData.underlying || certData.underlyingTicker || null
-      };
-    });
-
-    const activePf = getActivePortfolioObj();
-    const targetTypeMap = { azionario: 'stock', etf: 'etf', obbligazioni: 'bond', certificati: 'certificate', crypto: 'crypto' };
-    const preferredType = targetTypeMap[String(activePf.composition || '').toLowerCase()] || null;
-    const availableCandidates = (AppState.assets || [])
-      .filter(a => !AppState.portfolio?.[a.symbol])
-      .sort((a, b) => {
-        if (!preferredType) return 0;
-        const aMatch = a.type === preferredType ? 0 : 1;
-        const bMatch = b.type === preferredType ? 0 : 1;
-        return aMatch - bMatch;
-      })
-      .slice(0, 60)
-      .map(a => ({ symbol: a.symbol, name: a.name, type: a.type }));
-    const res = await mod.analyzePortfolioWithGemini({
-      positionsCount: holdingsPayload.length,
-      portfolioProfile: {
-        name: activePf.name,
-        composition: formatPortfolioCompositionLabel(activePf.composition),
-        horizon: activePf.horizon || '>12 MESI',
-        budgetEur: activePf.budgetEur || 2000,
-        riskProfile: formatPortfolioRiskLabel(activePf.riskProfile, true)
-      },
-      holdings: holdingsPayload,
-      localCompartmentBreakdown: (localEval?.sortedSectors || []).map(s => ({
-        sector: s.name,
-        weightPct: Number(s.weightPct.toFixed(1))
-      })),
-      availableCandidates
-    });
-
-    if (res && res.ok && res.data) {
-      GeminiHybridState.portfolio = {
-        key: cacheKey,
-        data: res.data,
-        model: res.model || 'gemini-3.8-flash',
-        loading: false,
-        error: null
-      };
-    } else {
-      throw new Error(res?.error || 'Servizio Gemini non disponibile');
-    }
-  } catch (err) {
-    GeminiHybridState.portfolio = {
-      key: cacheKey,
-      data: null,
-      model: null,
-      loading: false,
-      error: err?.message || 'Fallback locale attivo'
-    };
-  }
-  renderAssetList();
-  renderPortfolioAiAnalysisSection();
-}
-
-async function runGeminiAssetEvaluation() {
-  const asset = AppState.selectedAsset;
-  if (!asset) return;
-  const btn = document.getElementById('btnGeminiAssetEval');
-  const verdictEl = document.getElementById('aiVerdictBadge');
-  const riskEl = document.getElementById('aiRiskProfileBadge');
-  const narrativeEl = document.getElementById('aiNarrativeText');
-  const cacheKey = `${asset.symbol}_${AppState.activeTimeframe}`;
-
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = '⏳ Gemini...';
-  }
-
-  try {
-    const mod = await getFirebaseModule();
-    if (!mod || typeof mod.analyzeAssetWithGemini !== 'function') {
-      throw new Error('Modulo Firebase AI Logic non caricato');
-    }
-
-    const bars = AppState.renderedBars || [];
-    const last = bars.length > 0 ? bars[bars.length - 1] : null;
-    const fund = asset.fundamentals || null;
-    const cert = asset.certificateData || null;
-    const payload = {
-      symbol: asset.symbol,
-      name: asset.name,
-      type: asset.type,
-      timeframe: AppState.activeTimeframe,
-      currency: asset.currency || 'EUR',
-      price: asset.price,
-      changePct: asset.change,
-      rsi: last?.rsi ?? null,
-      ema20: last?.ema20 ?? null,
-      ema50: last?.ema50 ?? null,
-      peRatio: fund?.peRatio ?? null,
-      analystRating: fund?.analystRating ?? null,
-      underlying: cert?.underlying ?? null,
-      barrierPct: cert?.barrierPct ?? null
-    };
-
-    const res = await mod.analyzeAssetWithGemini(payload);
-    if (res && res.ok && res.data) {
-      delete GeminiHybridState.assetErrors[cacheKey];
-      GeminiHybridState.assets[cacheKey] = res.data;
-      if (verdictEl && res.data.verdict) verdictEl.textContent = `✦ ${res.data.verdict}`;
-      if (riskEl && res.data.riskProfile) riskEl.textContent = res.data.riskProfile;
-      if (narrativeEl && res.data.narrative) {
-        narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(res.data.narrative)}`;
-      }
-      if (btn) btn.textContent = '✦ Gemini ✓';
-    } else {
-      throw new Error(res?.error || 'Gemini non disponibile');
-    }
-  } catch (err) {
-    console.warn('[Hybrid AI] Fallback locale mantenuto:', err);
-    GeminiHybridState.assetErrors[cacheKey] = err?.message || 'Errore sconosciuto';
-    if (narrativeEl) {
-      const prevErr = narrativeEl.querySelector('.port-ai-fallback-note');
-      if (prevErr) prevErr.remove();
-      const note = document.createElement('div');
-      note.className = 'port-ai-fallback-note';
-      note.textContent = `Fallback locale: ${GeminiHybridState.assetErrors[cacheKey]}`;
-      narrativeEl.appendChild(note);
-    }
-    if (btn) {
-      btn.textContent = '✦ Fallback Locale';
-      btn.title = GeminiHybridState.assetErrors[cacheKey];
-      setTimeout(() => { if (btn) btn.textContent = '✦ Gemini'; }, 3000);
-    }
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-function renderGeminiSuggestedAssetsGrid(recommendedAdditions) {
-  if (!Array.isArray(recommendedAdditions) || recommendedAdditions.length === 0) return '';
-  const activePf = getActivePortfolioObj();
-  const totalBudget = activePf.budgetEur > 0 ? activePf.budgetEur : 2000;
-  return `
-    <div class="port-ai-suggestions-grid">
-      ${recommendedAdditions.slice(0, 3).map(item => {
-        const rawSym = String(item.symbol || '').trim();
-        const inAppAsset = (AppState.assets || []).find(a => a.symbol.toUpperCase() === rawSym.toUpperCase());
-        const symEsc = escapePortfolioHtml(rawSym);
-        const nameEsc = escapePortfolioHtml(item.name || '');
-        const typeEsc = escapePortfolioHtml(item.assetType || (inAppAsset ? inAppAsset.type.toUpperCase() : 'ASSET'));
-        const reasonEsc = escapePortfolioHtml(item.reason || '');
-        const allocPct = Number(item.suggestedAllocationPct);
-        const allocEurRaw = Number(item.suggestedBudgetEur);
-        const allocEur = (!isNaN(allocEurRaw) && allocEurRaw > 0)
-          ? allocEurRaw
-          : ((!isNaN(allocPct) && allocPct > 0) ? Math.round((allocPct / 100) * totalBudget) : null);
-        const budgetPill = (!isNaN(allocPct) && allocPct > 0)
-          ? `<div class="port-ai-budget-pill">💰 ${Math.round(allocPct)}%${allocEur != null ? ` • € ${Math.round(allocEur).toLocaleString('it-IT')}` : ''}</div>`
-          : '';
-        return `
-          <div class="port-ai-suggestion-card ${inAppAsset ? 'is-clickable' : ''}" ${inAppAsset ? `data-suggest-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Clicca per aprire il grafico di ${escapePortfolioHtml(inAppAsset.symbol)}"` : ''}>
-            <div class="port-ai-suggestion-top">
-              <span class="port-ai-suggestion-sym">${symEsc}</span>
-              <div style="display:flex;align-items:center;gap:4px;">
-                <span class="port-ai-suggestion-type">${typeEsc}</span>
-                ${inAppAsset ? `<button type="button" class="port-ai-suggestion-add" data-add-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Aggiungi ${escapePortfolioHtml(inAppAsset.symbol)} al portafoglio">+</button>` : ''}
-              </div>
-            </div>
-            <div class="port-ai-suggestion-name">${nameEsc}</div>
-            ${budgetPill}
-            <div class="port-ai-suggestion-reason">${reasonEsc}</div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-}
-
-function bindGeminiPortfolioBoxEvents(portBox) {
-  const gemPortBtn = document.getElementById('btnGeminiPortfolioEval');
-  if (gemPortBtn) {
-    gemPortBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      runGeminiPortfolioEvaluation();
-    });
-  }
-
-  portBox.querySelectorAll('.port-ai-suggestion-card[data-suggest-symbol]').forEach(card => {
-    card.addEventListener('click', () => {
-      const sym = card.getAttribute('data-suggest-symbol');
-      const found = (AppState.assets || []).find(a => a.symbol === sym);
-      if (found) selectAsset(found);
-    });
-  });
-
-  portBox.querySelectorAll('.port-ai-suggestion-add[data-add-symbol]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const sym = btn.getAttribute('data-add-symbol');
-      if (sym) openPortfolioModal(sym);
-    });
-  });
-}
-
 function renderPortfolioAiAnalysisSection() {
   updateRightPanelForSelection();
   const sectionAi = document.getElementById('section-ai');
@@ -2401,65 +2141,25 @@ function renderPortfolioAiAnalysisSection() {
   const entries = getPortfolioAssetsWithPos();
   if (entries.length === 0) {
     const activePf = getActivePortfolioObj();
-    const emptyKey = getPortfolioCacheKey([], 0);
-    const gemState = GeminiHybridState.portfolio;
-    const hasGemini = Boolean(gemState.key === emptyKey && gemState.data);
-    const isGemLoading = Boolean(gemState.loading);
-    const gemError = (gemState.key === emptyKey && gemState.error) ? gemState.error : null;
-
     portBox.innerHTML = `
       <div class="port-ai-comp-box port-ai-comp-wide">
         <div class="port-ai-comp-header">
           <span class="port-ai-comp-title">
             <span class="ai-spark-icon">✦</span>
-            ${hasGemini ? `Piano Gemini: ${escapePortfolioHtml(activePf.name)}` : `Progetta Portafoglio con Gemini`}
+            Profilo Portafoglio: ${escapePortfolioHtml(activePf.name)}
           </span>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="port-profile-chip">📊 ${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))}</span>
             <span class="port-profile-chip">⏱ ${escapePortfolioHtml(activePf.horizon || '>12 MESI')}</span>
             <span class="port-profile-chip">💰 € ${(activePf.budgetEur || 2000).toLocaleString('it-IT')}</span>
             <span class="port-profile-chip">🛡️ ${escapePortfolioHtml(formatPortfolioRiskLabel(activePf.riskProfile))}</span>
-            <button type="button" class="ai-gemini-btn" id="btnGeminiPortfolioEval" ${isGemLoading ? 'disabled' : ''}>
-              ${isGemLoading ? '⏳ Gemini...' : (hasGemini ? '✦ Aggiorna' : '✦ Progetta con Gemini')}
-            </button>
           </div>
         </div>
-        ${isGemLoading ? `
-          <div class="port-ai-comp-text" style="margin-top:8px;">
-            ⏳ Gemini sta progettando la composizione ideale per <strong>${escapePortfolioHtml(activePf.name)}</strong> (${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))} • ${escapePortfolioHtml(activePf.horizon || '>12 MESI')})...
-          </div>
-        ` : (hasGemini ? `
-          <div class="port-ai-wide-grid">
-            <div class="port-ai-comp-item" style="grid-column: 1 / -1;">
-              <div class="port-ai-comp-label">1. Strategia di Composizione Suggerita</div>
-              <div class="port-ai-comp-text">${escapePortfolioHtml(gemState.data.sectorSummary || '')}</div>
-            </div>
-            ${gemState.data.actionableTip ? `
-              <div class="port-ai-comp-item port-ai-item-gemini">
-                <div class="port-ai-comp-label">2. ✦ Consiglio Gemini</div>
-                <div class="port-ai-comp-text port-ai-gemini-text">${escapePortfolioHtml(gemState.data.actionableTip)}</div>
-              </div>
-            ` : ''}
-            ${Array.isArray(gemState.data.recommendedAdditions) && gemState.data.recommendedAdditions.length > 0 ? `
-              <div class="port-ai-comp-item port-ai-item-suggestions">
-                <div class="port-ai-comp-label">3. ✦ Migliori 3 Asset per Iniziare (clicca + per aggiungere)</div>
-                ${renderGeminiSuggestedAssetsGrid(gemState.data.recommendedAdditions)}
-              </div>
-            ` : ''}
-          </div>
-        ` : `
-          <div class="port-ai-comp-text" style="margin-top:6px;">
-            Portafoglio ancora vuoto. Premi <strong>✦ Progetta con Gemini</strong> per ottenere una proposta di allocazione su misura per <strong>${escapePortfolioHtml(formatPortfolioCompositionLabel(activePf.composition))}</strong> (${escapePortfolioHtml(activePf.horizon || '>12 MESI')}) con i 3 migliori asset da inserire.
-          </div>
-        `)}
-        ${gemError ? `
-          <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
-            Fallback locale: ${escapePortfolioHtml(gemError)}
-          </div>
-        ` : ''}
+        <div class="port-ai-comp-text" style="margin-top:6px;">
+          Portafoglio ancora vuoto. Aggiungi uno o più asset dalla watchlist o usa il pulsante <strong>+</strong> su un titolo per attivare la valutazione automatica di sovrapposizioni e bilanciamento settoriale.
+        </div>
       </div>
     `;
-    bindGeminiPortfolioBoxEvents(portBox);
     return;
   }
 
@@ -2473,38 +2173,18 @@ function renderPortfolioAiAnalysisSection() {
   const compAi = evaluatePortfolioCompositionAi(portfolioAssets, totalCurrentValueEur);
   if (!compAi) return;
 
-  const cacheKey = getPortfolioCacheKey(portfolioAssets, totalCurrentValueEur);
-  const gemState = GeminiHybridState.portfolio;
-  const hasGemini = Boolean(gemState.key === cacheKey && gemState.data);
-  const isGemLoading = Boolean(gemState.loading);
-  const gemError = (gemState.key === cacheKey && gemState.error) ? gemState.error : null;
-
-  const effectiveOverlaps = hasGemini && Array.isArray(gemState.data.overlaps)
-    ? gemState.data.overlaps.map(o => ({ severity: o.severity || 'medium', message: escapePortfolioHtml(o.message) }))
-    : compAi.overlaps;
-  const effectiveSectorSummary = hasGemini && gemState.data.sectorSummary
-    ? escapePortfolioHtml(gemState.data.sectorSummary)
-    : compAi.sectorSummary;
-  const effectiveBadge = hasGemini && gemState.data.overallStatus
-    ? {
-        label: gemState.data.overallStatus,
-        cls: gemState.data.overallStatus === 'EQUILIBRATO'
-          ? 'port-ai-status-ok'
-          : (gemState.data.overallStatus === 'ATTENZIONE' ? 'port-ai-status-warn' : 'port-ai-status-danger')
-      }
-    : compAi.overallBadge;
+  const effectiveOverlaps = compAi.overlaps;
+  const effectiveSectorSummary = compAi.sectorSummary;
+  const effectiveBadge = compAi.overallBadge;
 
   portBox.innerHTML = `
     <div class="port-ai-comp-box port-ai-comp-wide">
       <div class="port-ai-comp-header">
         <span class="port-ai-comp-title">
           <span class="ai-spark-icon">✦</span>
-          ${hasGemini ? 'Valutazione Gemini Composizione Portafoglio' : 'Valutazione IA Composizione Portafoglio'}
+          Valutazione IA Composizione Portafoglio
         </span>
         <div style="display:flex;align-items:center;gap:6px;">
-          <button type="button" class="ai-gemini-btn" id="btnGeminiPortfolioEval" ${isGemLoading ? 'disabled' : ''} title="Analisi approfondita tramite Firebase AI Logic (Gemini)">
-            ${isGemLoading ? '⏳ Gemini...' : (hasGemini ? '✦ Aggiorna' : '✦ Gemini')}
-          </button>
           <span class="port-ai-comp-badge ${effectiveBadge.cls}">${effectiveBadge.label}</span>
         </div>
       </div>
@@ -2525,72 +2205,9 @@ function renderPortfolioAiAnalysisSection() {
             `).join('')}
           </div>
         </div>
-        ${hasGemini && gemState.data.actionableTip ? `
-          <div class="port-ai-comp-item port-ai-item-gemini">
-            <div class="port-ai-comp-label">3. ✦ Consiglio Gemini</div>
-            <div class="port-ai-comp-text port-ai-gemini-text">${escapePortfolioHtml(gemState.data.actionableTip)}</div>
-          </div>
-        ` : ''}
-        ${hasGemini && Array.isArray(gemState.data.recommendedAdditions) && gemState.data.recommendedAdditions.length > 0 ? `
-          <div class="port-ai-comp-item port-ai-item-suggestions">
-            <div class="port-ai-comp-label">4. ✦ Migliori 3 Asset da Aggiungere (su base Consiglio Gemini)</div>
-            <div class="port-ai-suggestions-grid">
-              ${gemState.data.recommendedAdditions.slice(0, 3).map(item => {
-                const rawSym = String(item.symbol || '').trim();
-                const inAppAsset = (AppState.assets || []).find(a => a.symbol.toUpperCase() === rawSym.toUpperCase());
-                const symEsc = escapePortfolioHtml(rawSym);
-                const nameEsc = escapePortfolioHtml(item.name || '');
-                const typeEsc = escapePortfolioHtml(item.assetType || (inAppAsset ? inAppAsset.type.toUpperCase() : 'ASSET'));
-                const reasonEsc = escapePortfolioHtml(item.reason || '');
-                return `
-                  <div class="port-ai-suggestion-card ${inAppAsset ? 'is-clickable' : ''}" ${inAppAsset ? `data-suggest-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Clicca per aprire il grafico di ${escapePortfolioHtml(inAppAsset.symbol)}"` : ''}>
-                    <div class="port-ai-suggestion-top">
-                      <span class="port-ai-suggestion-sym">${symEsc}</span>
-                      <div style="display:flex;align-items:center;gap:4px;">
-                        <span class="port-ai-suggestion-type">${typeEsc}</span>
-                        ${inAppAsset ? `<button type="button" class="port-ai-suggestion-add" data-add-symbol="${escapePortfolioHtml(inAppAsset.symbol)}" title="Aggiungi ${escapePortfolioHtml(inAppAsset.symbol)} al portafoglio">+</button>` : ''}
-                      </div>
-                    </div>
-                    <div class="port-ai-suggestion-name">${nameEsc}</div>
-                    <div class="port-ai-suggestion-reason">${reasonEsc}</div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        ` : ''}
       </div>
-      ${gemError ? `
-        <div class="port-ai-fallback-note" title="${escapePortfolioHtml(gemError)}">
-          Fallback locale attivo: ${escapePortfolioHtml(gemError)}
-        </div>
-      ` : ''}
     </div>
   `;
-
-  const gemPortBtn = document.getElementById('btnGeminiPortfolioEval');
-  if (gemPortBtn) {
-    gemPortBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      runGeminiPortfolioEvaluation();
-    });
-  }
-
-  portBox.querySelectorAll('.port-ai-suggestion-card[data-suggest-symbol]').forEach(card => {
-    card.addEventListener('click', () => {
-      const sym = card.getAttribute('data-suggest-symbol');
-      const found = (AppState.assets || []).find(a => a.symbol === sym);
-      if (found) selectAsset(found);
-    });
-  });
-
-  portBox.querySelectorAll('.port-ai-suggestion-add[data-add-symbol]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const sym = btn.getAttribute('data-add-symbol');
-      if (sym) openPortfolioModal(sym);
-    });
-  });
 }
 
 function getPortfolioMetricsSnapshot() {
@@ -2851,27 +2468,9 @@ function renderPortfolioSimulatorPane() {
   const snap = getPortfolioMetricsSnapshot();
   const portfolioAssets = snap.items.map(i => i.asset);
   const compAi = evaluatePortfolioCompositionAi(portfolioAssets, snap.totalEur);
-  const cacheKey = getPortfolioCacheKey(portfolioAssets, snap.totalEur);
-  const gemState = GeminiHybridState.portfolio;
-  const hasGemini = Boolean(gemState.key === cacheKey && gemState.data);
-  const gemSuggestions = (hasGemini && Array.isArray(gemState.data.recommendedAdditions))
-    ? gemState.data.recommendedAdditions.slice(0, 3)
-    : [];
 
   const optionItems = [];
   const seen = new Set();
-  gemSuggestions.forEach(s => {
-    const sym = String(s.symbol || '').trim();
-    if (!sym || seen.has(sym.toUpperCase())) return;
-    seen.add(sym.toUpperCase());
-    const inApp = (AppState.assets || []).find(a => a.symbol.toUpperCase() === sym.toUpperCase());
-    optionItems.push({
-      symbol: sym,
-      label: `✦ ${sym} — ${s.name || (inApp ? inApp.name : '')} (${s.assetType || (inApp ? inApp.type.toUpperCase() : 'AI')})`,
-      sector: inApp ? getAssetCompartmentInfo(inApp).sector : (s.assetType || 'Diversificazione Gemini'),
-      isGemini: true
-    });
-  });
 
   (AppState.assets || [])
     .filter(a => !AppState.portfolio?.[a.symbol])
@@ -2882,8 +2481,7 @@ function renderPortfolioSimulatorPane() {
       optionItems.push({
         symbol: a.symbol,
         label: `${a.symbol} — ${a.name} (${a.type.toUpperCase()})`,
-        sector: getAssetCompartmentInfo(a).sector,
-        isGemini: false
+        sector: getAssetCompartmentInfo(a).sector
       });
     });
 
@@ -2929,7 +2527,6 @@ function renderPortfolioSimulatorPane() {
     <div class="port-right-card">
       <div class="port-right-title">
         <span>Simulatore "What-If"</span>
-        ${chosen?.isGemini ? '<span class="port-sim-badge">✦ Da Gemini</span>' : ''}
       </div>
 
       <div class="calc-field-group" style="margin-bottom:10px;">
@@ -2946,7 +2543,7 @@ function renderPortfolioSimulatorPane() {
       </div>
 
       <div class="calc-field-group" style="margin-bottom:4px;">
-        <label>Asset da Aggiungere<span class="helper">${gemSuggestions.length > 0 ? 'Consigli Gemini in cima' : 'Titoli disponibili'}</span></label>
+        <label>Asset da Aggiungere<span class="helper">Titoli disponibili</span></label>
         <select id="portSimAssetSelect" class="port-sim-select">
           ${optionItems.map(o => `
             <option value="${escapePortfolioHtml(o.symbol)}" ${o.symbol === PortfolioSimState.selectedSymbol ? 'selected' : ''}>
@@ -5653,29 +5250,6 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     `<div>⚠️ <strong>A cosa fare attenzione:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
     `<div>💡 <strong>In conclusione (cosa fare):</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(resistanceLevel, asset)}</strong>.</div>`;
 
-  const assetGemKey = `${asset.symbol}_${AppState.activeTimeframe}`;
-  const cachedGemAsset = GeminiHybridState.assets?.[assetGemKey];
-  const cachedGemErr = GeminiHybridState.assetErrors?.[assetGemKey];
-  const gemAssetBtn = document.getElementById('btnGeminiAssetEval');
-  if (cachedGemAsset) {
-    if (cachedGemAsset.verdict) verdictBadgeEl.textContent = `✦ ${cachedGemAsset.verdict}`;
-    if (riskBadgeEl && cachedGemAsset.riskProfile) riskBadgeEl.textContent = cachedGemAsset.riskProfile;
-    if (cachedGemAsset.narrative) {
-      narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(cachedGemAsset.narrative)}`;
-    }
-    if (gemAssetBtn) gemAssetBtn.textContent = '✦ Gemini ✓';
-  } else {
-    if (cachedGemErr) {
-      const note = document.createElement('div');
-      note.className = 'port-ai-fallback-note';
-      note.textContent = `Fallback locale: ${cachedGemErr}`;
-      narrativeEl.appendChild(note);
-    }
-    if (gemAssetBtn && !gemAssetBtn.disabled) {
-      gemAssetBtn.textContent = '✦ Gemini';
-    }
-  }
-
   // --- Dynamic Structured AI Evaluation & Trade Setup Plan (Requested Format) ---
   const isAlo = (asset.symbol === 'ALO.PA');
 
@@ -6275,13 +5849,6 @@ function setupEventListeners() {
       saveAssetsToStorage();
       updateSelectedAssetHeader();
       renderAssetList();
-    });
-  }
-
-  const gemAssetBtn = document.getElementById('btnGeminiAssetEval');
-  if (gemAssetBtn) {
-    gemAssetBtn.addEventListener('click', () => {
-      runGeminiAssetEvaluation();
     });
   }
 

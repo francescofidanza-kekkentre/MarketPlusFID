@@ -6,7 +6,6 @@ import { getFirebaseConfig } from './firebase-config.js';
 let app = null;
 let auth = null;
 let db = null;
-let aiInstance = null;
 let appCheckInitialized = false;
 let currentUser = null;
 let unsubscribeSnapshot = null;
@@ -18,7 +17,6 @@ let initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPa
     signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut,
     onAuthStateChanged, sendPasswordResetEmail, getFirestore, doc, getDoc, setDoc,
     onSnapshot, serverTimestamp, setPersistence, indexedDBLocalPersistence, browserLocalPersistence,
-    getAI, getGenerativeModel, GoogleAIBackend, Schema,
     initializeAppCheck, ReCaptchaEnterpriseProvider;
 
 /**
@@ -30,7 +28,6 @@ async function loadFirebaseModules() {
     const appMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js');
     const authMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js');
     const firestoreMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js');
-    const aiMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-ai.js');
     const appCheckMod = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-app-check.js');
 
     initializeApp = appMod.initializeApp;
@@ -54,11 +51,6 @@ async function loadFirebaseModules() {
     setDoc = firestoreMod.setDoc;
     onSnapshot = firestoreMod.onSnapshot;
     serverTimestamp = firestoreMod.serverTimestamp;
-
-    getAI = aiMod.getAI;
-    getGenerativeModel = aiMod.getGenerativeModel;
-    GoogleAIBackend = aiMod.GoogleAIBackend;
-    Schema = aiMod.Schema;
 
     initializeAppCheck = appCheckMod.initializeAppCheck;
     ReCaptchaEnterpriseProvider = appCheckMod.ReCaptchaEnterpriseProvider;
@@ -359,151 +351,5 @@ export async function resetPasswordEmail(email) {
  */
 export function getCurrentUser() {
   return currentUser;
-}
-
-const GEMINI_MODEL_NAME = 'gemini-3.8-flash';
-
-async function ensureFirebaseAiReady() {
-  if (aiInstance) return aiInstance;
-  const config = getFirebaseConfig();
-  if (!config || !config.apiKey || !config.projectId) {
-    throw new Error('Configurazione Firebase mancante');
-  }
-  const loaded = await loadFirebaseModules();
-  if (!loaded || !getAI || !GoogleAIBackend) {
-    throw new Error('SDK Firebase AI Logic non disponibile');
-  }
-  if (!app) {
-    app = initializeApp(config);
-  }
-  initAppCheckIfConfigured(config);
-  aiInstance = getAI(app, { backend: new GoogleAIBackend() });
-  return aiInstance;
-}
-
-function parseGeminiJsonText(rawText) {
-  const cleaned = String(rawText || '')
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-  return JSON.parse(cleaned);
-}
-
-/**
- * Valuta la composizione del portafoglio tramite Firebase AI Logic (Gemini Developer API)
- * con risposta JSON strutturata. In caso di errore restituisce { ok: false, error }.
- */
-export async function analyzePortfolioWithGemini(portfolioContext) {
-  try {
-    const ai = await ensureFirebaseAiReady();
-    const responseSchema = Schema.object({
-      properties: {
-        overallStatus: Schema.enumString({
-          enum: ['EQUILIBRATO', 'ATTENZIONE', 'SOVRAPPOSIZIONI', 'SBILANCIATO']
-        }),
-        overlaps: Schema.array({
-          items: Schema.object({
-            properties: {
-              severity: Schema.enumString({ enum: ['high', 'medium'] }),
-              message: Schema.string()
-            }
-          })
-        }),
-        sectorSummary: Schema.string(),
-        actionableTip: Schema.string(),
-        recommendedAdditions: Schema.array({
-          items: Schema.object({
-            properties: {
-              symbol: Schema.string(),
-              name: Schema.string(),
-              assetType: Schema.string(),
-              suggestedAllocationPct: Schema.number(),
-              suggestedBudgetEur: Schema.number(),
-              reason: Schema.string()
-            }
-          })
-        })
-      }
-    });
-
-    const model = getGenerativeModel(ai, {
-      model: GEMINI_MODEL_NAME,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 1400,
-        responseMimeType: 'application/json',
-        responseSchema
-      }
-    });
-
-    const prompt = [
-      'Sei un analista finanziario quantitativo. Rispondi in italiano chiaro, conciso e professionale.',
-      'Analizza questo portafoglio (pesi percentuali già calcolati, non inventare numeri diversi):',
-      JSON.stringify(portfolioContext),
-      'Valuta rigorosamente:',
-      '1) Sovrapposizioni tra azioni singole, ETF (anche look-through su indici/settori come S&P 500, Nasdaq 100, MSCI World, Semiconduttori, FTSE MIB) e certificati (sottostante diretto o worst-of). Se non ci sono sovrapposizioni, restituisci overlaps: [].',
-      '2) Sbilanciamento verso un comparto/settore o area geografica.',
-      '3) Un breve consiglio operativo concreto (actionableTip, max 22 parole).',
-      '4) Basandoti direttamente sul consiglio espresso in actionableTip, suggerisci i migliori 3 asset da aggiungere al portafoglio (recommendedAdditions: esattamente 3 elementi con symbol, name, assetType es. ETF/Azione/Crypto/Certificato, suggestedAllocationPct con somma 100, suggestedBudgetEur calcolato sul budgetEur del portfolioProfile, e reason di max 14 parole coerente con actionableTip). Se nel contesto è presente availableCandidates, scegli prioritariamente ticker reali da quella lista (non già presenti in holdings).',
-      '5) Se nel contesto è presente portfolioProfile (composition, horizon, budgetEur, riskProfile), adatta rigorosamente asset, pesi percentuali e suddivisione del budget in Euro alla composizione target, all\'orizzonte temporale e al profilo di rischio quantitativo (Conservativo: bassa volatilità e difesa; Bilanciato: nucleo core 60-70% + tattico 30-40%; Aggressivo: focus crescita/alpha fino al 30% di drawdown).',
-      '6) Se positionsCount === 0 (portafoglio appena creato, ancora vuoto): imposta overlaps: [], overallStatus: "EQUILIBRATO", descrivi in sectorSummary come strutturare il budgetEur in base a composizione, orizzonte e rischio, dai in actionableTip un consiglio operativo su come entrare gradualmente o dividere il capitale, e proponi in recommendedAdditions i 3 migliori asset iniziali con relativa quota % e importo €.'
-    ].join('\n');
-
-    const result = await model.generateContent(prompt);
-    const text = result?.response?.text();
-    if (!text) throw new Error('Risposta Gemini vuota');
-    const parsed = parseGeminiJsonText(text);
-    return { ok: true, model: GEMINI_MODEL_NAME, data: parsed };
-  } catch (err) {
-    console.warn('[Firebase AI Logic] Fallback locale portafoglio:', err);
-    return { ok: false, error: err?.message || String(err) };
-  }
-}
-
-/**
- * Analisi approfondita di un singolo titolo (o portafoglio) tramite Firebase AI Logic.
- */
-export async function analyzeAssetWithGemini(assetContext) {
-  try {
-    const ai = await ensureFirebaseAiReady();
-    const responseSchema = Schema.object({
-      properties: {
-        verdict: Schema.string(),
-        riskProfile: Schema.string(),
-        narrative: Schema.string()
-      }
-    });
-
-    const model = getGenerativeModel(ai, {
-      model: GEMINI_MODEL_NAME,
-      generationConfig: {
-        temperature: 0.35,
-        maxOutputTokens: 1400,
-        responseMimeType: 'application/json',
-        responseSchema
-      }
-    });
-
-    const prompt = [
-      'Sei un analista finanziario. Rispondi in italiano sintetico e oggettivo (max 90 parole per narrative).',
-      'Basati esclusivamente sui dati tecnici/fondamentali forniti (senza inventare prezzi):',
-      JSON.stringify(assetContext),
-      'Restituisci verdict (es. "ACQUISTO GRADUALE", "MANTENIMENTO", "CAUTELA"), riskProfile (es. "Rischio: Moderato") e narrative.'
-    ].join('\n');
-
-    const result = await model.generateContent(prompt);
-    const text = result?.response?.text();
-    if (!text) {
-      const reason = result?.response?.candidates?.[0]?.finishReason || 'empty';
-      throw new Error(`Risposta Gemini vuota (${reason})`);
-    }
-    const parsed = parseGeminiJsonText(text);
-    return { ok: true, model: GEMINI_MODEL_NAME, data: parsed };
-  } catch (err) {
-    console.warn('[Firebase AI Logic] Fallback locale asset:', err);
-    return { ok: false, error: err?.message || String(err) };
-  }
 }
 
