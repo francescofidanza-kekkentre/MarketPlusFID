@@ -2698,7 +2698,15 @@ function updateRightPanelForSelection() {
 
   const mobileHdr = document.querySelector('#section-tools .mobile-section-header span');
   if (mobileHdr) {
-    mobileHdr.textContent = isPort ? '💼 Strumenti Portafoglio' : '📊 Calcolatore Rischio & Strumenti';
+    if (isPort) {
+      mobileHdr.textContent = '💼 Strumenti Portafoglio';
+    } else if (AppState.selectedAsset) {
+      const asset = AppState.selectedAsset;
+      const priceLabel = asset.price != null ? ` • ${formatCurrency(asset.price, asset)}` : '';
+      mobileHdr.textContent = `📊 ${asset.symbol} — ${asset.name}${priceLabel}`;
+    } else {
+      mobileHdr.textContent = '📊 Calcolatore Rischio & Strumenti';
+    }
   }
 
   const activeTab = document.querySelector('.tools-tab.active');
