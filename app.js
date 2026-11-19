@@ -2281,7 +2281,131 @@ function getAssetPortfolioContext(asset, currentPriceOverride = null) {
   };
 }
 
-function getAssetGeminiCacheKey(asset, pfCtx = null) {
+const MIN_HISTORY_DAYS_FOR_AI_RATING = 30;
+
+function getAssetHistoryMaturity(asset, activeBars = []) {
+  if (!asset || asset.isPortfolio || asset.type === 'certificate') {
+    return { isTooYoung: false, hasFullHistoryChecked: false };
+  }
+
+  const candidateSeries = [
+    AppState.cachedBars[`${asset.symbol}_DAILY`],
+    AppState.cachedBars[`${asset.symbol}_ALL`],
+    AppState.cachedBars[`${asset.symbol}_1Y`],
+    AppState.cachedBars[`${asset.symbol}_3M`],
+    AppState.cachedBars[`${asset.symbol}_1M`]
+  ].filter(s => Array.isArray(s) && s.length > 0);
+
+  const isIntradayTf = AppState.activeTimeframe === '1D' || AppState.activeTimeframe === '1W';
+  // If we are on 1D/1W and no multi-day/daily series is loaded yet, wait for daily history before flagging as < 1 month
+  if (candidateSeries.length === 0 && isIntradayTf) {
+    return { isTooYoung: false, hasFullHistoryChecked: false };
+  }
+
+  // Pick the series with the earliest timestamp (or fallback to activeBars)
+  let bestSeries = [];
+  let earliestMs = Infinity;
+  const allToInspect = candidateSeries.length > 0
+    ? candidateSeries
+    : (Array.isArray(activeBars) && activeBars.length > 0 ? [activeBars] : []);
+
+  for (const s of allToInspect) {
+    let seriesMin = Infinity;
+    for (const b of s) {
+      if (!b || !b.time) continue;
+      const t = b.time instanceof Date ? b.time.getTime() : new Date(b.time).getTime();
+      if (!isNaN(t) && t > 0 && t < seriesMin) seriesMin = t;
+    }
+    if (seriesMin < earliestMs) {
+      earliestMs = seriesMin;
+      bestSeries = s;
+    }
+  }
+
+  if (!isFinite(earliestMs) || bestSeries.length === 0) {
+    return {
+      isTooYoung: true,
+      hasFullHistoryChecked: true,
+      daysOnMarket: 0,
+      barsCount: 0,
+      listingDate: 'N/D',
+      firstPrice: asset.price || null,
+      currentPrice: asset.price || null,
+      sinceListingPct: 0,
+      periodLow: asset.price || null,
+      periodHigh: asset.price || null,
+      rangeAmplitudePct: 0,
+      maxDrawdownPct: 0,
+      trendLabel: 'dati insufficienti'
+    };
+  }
+
+  const nowMs = Date.now();
+  const ageDays = Math.max(0, (nowMs - earliestMs) / 86400000);
+  const isTooYoung = ageDays < MIN_HISTORY_DAYS_FOR_AI_RATING;
+
+  if (!isTooYoung) {
+    return { isTooYoung: false, hasFullHistoryChecked: true, daysOnMarket: Math.round(ageDays) };
+  }
+
+  const sorted = [...bestSeries]
+    .filter(b => b && b.time && b.close > 0)
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+  const firstBar = sorted[0];
+  const lastBar = sorted[sorted.length - 1];
+  const firstPrice = (firstBar?.open && firstBar.open > 0) ? firstBar.open : (firstBar?.close || asset.price || 0);
+  const currentPrice = asset.price != null ? asset.price : (lastBar?.close || firstPrice);
+  const sinceListingPct = firstPrice > 0 ? ((currentPrice - firstPrice) / firstPrice) * 100 : 0;
+
+  let periodHigh = -Infinity;
+  let periodLow = Infinity;
+  let runningPeak = -Infinity;
+  let maxDrawdownPct = 0;
+
+  for (const b of sorted) {
+    const hi = b.high > 0 ? b.high : b.close;
+    const lo = b.low > 0 ? b.low : b.close;
+    if (hi > periodHigh) periodHigh = hi;
+    if (lo < periodLow) periodLow = lo;
+    if (hi > runningPeak) runningPeak = hi;
+    if (runningPeak > 0) {
+      const dd = ((runningPeak - lo) / runningPeak) * 100;
+      if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+    }
+  }
+  if (!isFinite(periodHigh)) periodHigh = currentPrice;
+  if (!isFinite(periodLow)) periodLow = currentPrice;
+  if (currentPrice > periodHigh) periodHigh = currentPrice;
+  if (currentPrice < periodLow) periodLow = currentPrice;
+
+  const rangeAmplitudePct = periodLow > 0 ? ((periodHigh - periodLow) / periodLow) * 100 : 0;
+  const listingDate = new Date(earliestMs).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const trendLabel = sinceListingPct > 3
+    ? 'rialzista dal debutto'
+    : (sinceListingPct < -3 ? 'ribassista dal debutto' : 'laterale / di assestamento iniziale');
+
+  return {
+    isTooYoung: true,
+    hasFullHistoryChecked: true,
+    daysOnMarket: Math.max(1, Math.round(ageDays)),
+    barsCount: sorted.length,
+    listingDate,
+    firstPrice,
+    currentPrice,
+    sinceListingPct,
+    periodLow,
+    periodHigh,
+    rangeAmplitudePct,
+    maxDrawdownPct,
+    trendLabel
+  };
+}
+
+function getAssetGeminiCacheKey(asset, pfCtx = null, isRecentListing = false) {
+  if (isRecentListing) {
+    return `${asset.symbol}_${AppState.activeTimeframe}_RECENT_LISTING`;
+  }
   const ctx = pfCtx || getAssetPortfolioContext(asset);
   const pfSig = ctx.inPortfolio
     ? `PF_${ctx.shares}_${Number(ctx.buyPrice).toFixed(2)}`
@@ -2309,8 +2433,9 @@ async function runGeminiAssetEvaluation() {
   const bars = AppState.renderedBars || [];
   const last = bars.length > 0 ? bars[bars.length - 1] : null;
   const currentPrice = asset.price != null ? asset.price : (last?.close ?? null);
+  const maturity = getAssetHistoryMaturity(asset, bars);
   const pfCtx = getAssetPortfolioContext(asset, currentPrice);
-  const cacheKey = getAssetGeminiCacheKey(asset, pfCtx);
+  const cacheKey = getAssetGeminiCacheKey(asset, pfCtx, maturity.isTooYoung);
 
   if (btn) {
     btn.disabled = true;
@@ -2340,8 +2465,21 @@ async function runGeminiAssetEvaluation() {
       analystRating: fund?.analystRating ?? null,
       underlying: cert?.underlying ?? null,
       barrierPct: cert?.barrierPct ?? null,
-      inPortfolio: pfCtx.inPortfolio,
-      portfolioPosition: pfCtx.inPortfolio ? {
+      isRecentListing: maturity.isTooYoung,
+      listingSummary: maturity.isTooYoung ? {
+        listingDate: maturity.listingDate,
+        daysOnMarket: maturity.daysOnMarket,
+        barsCount: maturity.barsCount,
+        firstPrice: maturity.firstPrice != null ? Number(maturity.firstPrice.toFixed(4)) : null,
+        currentPrice: maturity.currentPrice != null ? Number(maturity.currentPrice.toFixed(4)) : null,
+        sinceListingPct: Number((maturity.sinceListingPct || 0).toFixed(2)),
+        periodLow: maturity.periodLow != null ? Number(maturity.periodLow.toFixed(4)) : null,
+        periodHigh: maturity.periodHigh != null ? Number(maturity.periodHigh.toFixed(4)) : null,
+        rangeAmplitudePct: Number((maturity.rangeAmplitudePct || 0).toFixed(2)),
+        maxDrawdownPct: Number((maturity.maxDrawdownPct || 0).toFixed(2))
+      } : null,
+      inPortfolio: !maturity.isTooYoung && pfCtx.inPortfolio,
+      portfolioPosition: (!maturity.isTooYoung && pfCtx.inPortfolio) ? {
         portfolioName: pfCtx.portfolioName,
         shares: pfCtx.shares,
         buyPrice: pfCtx.buyPrice,
@@ -2360,7 +2498,9 @@ async function runGeminiAssetEvaluation() {
       if (verdictEl && res.data.verdict) verdictEl.textContent = `✦ ${res.data.verdict}`;
       if (riskEl && res.data.riskProfile) riskEl.textContent = res.data.riskProfile;
       if (narrativeEl && res.data.narrative) {
-        const modeTag = pfCtx.inPortfolio ? 'Gestione Posizione' : 'Valutazione Acquisto';
+        const modeTag = maturity.isTooYoung
+          ? 'Andamento da Quotazione'
+          : (pfCtx.inPortfolio ? 'Gestione Posizione' : 'Valutazione Acquisto');
         narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash • ${modeTag}</span> ${escapePortfolioHtml(res.data.narrative)}`;
       }
       if (btn) btn.textContent = '✦ Gemini ✓';
@@ -5266,12 +5406,16 @@ function updateTechnicalDecisionBanner(bars) {
 
   score = Math.max(10, Math.min(95, score));
 
-  // Rating Badge (context-aware: in-portfolio vs buy-only evaluation)
+  // Rating Badge (context-aware: recent listing < 1M vs in-portfolio vs buy-only evaluation)
   const ratingBadge = document.getElementById('decisionRatingBadge');
   ratingBadge.className = 'decision-rating-badge';
+  const maturityBanner = getAssetHistoryMaturity(AppState.selectedAsset, bars);
   const pfCtxBanner = getAssetPortfolioContext(AppState.selectedAsset, last.close);
 
-  if (pfCtxBanner.inPortfolio) {
+  if (maturityBanner.isTooYoung) {
+    ratingBadge.classList.add('rating-neutral');
+    ratingBadge.textContent = '⏳ STORICO < 1 MESE • SOLO ANALISI ANDAMENTO';
+  } else if (pfCtxBanner.inPortfolio) {
     if (score >= 72) {
       ratingBadge.classList.add('rating-strong-buy');
       ratingBadge.textContent = `INCREMENTA QUOTE (${score}%)`;
@@ -5494,6 +5638,104 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
           setMobileActivePage('page-risk');
         }
       };
+    }
+    return;
+  }
+
+  // Check if asset has less than 1 month of market history: no buy/sell/hold rating, only post-listing performance analysis
+  const maturity = getAssetHistoryMaturity(asset, activeBars);
+  if (maturity.isTooYoung) {
+    const fmtSignedPctYoung = (v) => (v == null || isNaN(v)) ? '0.0%' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+    const scoreTextElYoung = document.getElementById('aiScoreTextLabel');
+    const scoreFillElYoung = document.getElementById('aiScoreBarFill');
+
+    if (tagEl) {
+      tagEl.textContent = `${asset.symbol} • Quotato da ${maturity.daysOnMarket} giorni (< 1 mese) • Solo Analisi Andamento`;
+    }
+    if (riskBadgeEl) {
+      riskBadgeEl.textContent = `Storico limitato (${maturity.daysOnMarket} gg)`;
+      riskBadgeEl.style.color = '#fbbf24';
+    }
+    if (verdictBadgeEl) {
+      verdictBadgeEl.className = 'ai-verdict-pill rating-neutral';
+      verdictBadgeEl.textContent = '⏳ STORICO < 1 MESE • SOLO ANALISI ANDAMENTO';
+    }
+    if (scoreFillElYoung) {
+      scoreFillElYoung.style.width = '0%';
+      scoreFillElYoung.style.background = 'rgba(148, 163, 184, 0.35)';
+    }
+    if (scoreTextElYoung) {
+      scoreTextElYoung.innerHTML = `Nessuna valutazione IA (acquisto/vendita): <strong>titolo sul mercato da meno di 1 mese</strong> (dati dal ${maturity.listingDate}).`;
+    }
+
+    if (factorCurveEl) {
+      factorCurveEl.textContent = maturity.barsCount > 0
+        ? `Dal ${maturity.listingDate} (${maturity.daysOnMarket} gg): ${fmtSignedPctYoung(maturity.sinceListingPct)} • Andamento ${maturity.trendLabel}`
+        : 'Dati storici non ancora disponibili per questo titolo recente';
+      factorCurveEl.style.color = maturity.sinceListingPct >= 0 ? 'var(--color-up)' : 'var(--color-down)';
+    }
+    if (factorTechEl) {
+      factorTechEl.textContent = maturity.barsCount > 0
+        ? `Minimo: ${formatCurrency(maturity.periodLow, asset)} • Massimo: ${formatCurrency(maturity.periodHigh, asset)} (escursione ${maturity.rangeAmplitudePct.toFixed(1)}%)`
+        : 'Escursione prezzi non ancora rilevabile';
+      factorTechEl.style.color = 'var(--text-primary)';
+    }
+    if (factorAnalystsEl) {
+      factorAnalystsEl.textContent = maturity.barsCount > 0
+        ? `Drawdown max dal picco: -${maturity.maxDrawdownPct.toFixed(1)}% • Sedute rilevate: ${maturity.barsCount}`
+        : 'Storico sedute insufficiente';
+      factorAnalystsEl.style.color = 'var(--text-secondary)';
+    }
+    if (factorStrategyEl) {
+      factorStrategyEl.textContent = 'Valutazioni di acquisto/vendita sospese finché lo storico non raggiunge almeno 30 giorni.';
+    }
+
+    if (maturity.barsCount > 0) {
+      narrativeEl.innerHTML =
+        `<div>⏳ <strong>Titolo recente (< 1 mese di storico):</strong> i dati di borsa disponibili partono dal <strong>${maturity.listingDate}</strong> (<strong>${maturity.daysOnMarket} giorni</strong>, ${maturity.barsCount} sedute). Per assenza di dati superiori a un mese non vengono proposte valutazioni di acquisto o vendita.</div>` +
+        `<div>📈 <strong>Andamento dalla quotazione:</strong> il titolo è passato da <strong>${formatCurrency(maturity.firstPrice, asset)}</strong> all'attuale <strong>${formatCurrency(maturity.currentPrice, asset)}</strong> (<strong>${fmtSignedPctYoung(maturity.sinceListingPct)}</strong>), muovendosi tra un minimo di <strong>${formatCurrency(maturity.periodLow, asset)}</strong> e un massimo di <strong>${formatCurrency(maturity.periodHigh, asset)}</strong> (ampiezza <strong>${maturity.rangeAmplitudePct.toFixed(1)}%</strong>, ribasso massimo dal picco <strong>-${maturity.maxDrawdownPct.toFixed(1)}%</strong>).</div>` +
+        `<div>ℹ️ <strong>Sintesi statica:</strong> comportamento iniziale <strong>${maturity.trendLabel}</strong>. Puoi cliccare su <strong>✦ Gemini</strong> per leggere un commento descrittivo dedicato all'andamento dal debutto in borsa.</div>`;
+    } else {
+      narrativeEl.innerHTML =
+        `<div>⏳ <strong>Titolo recente (< 1 mese di storico):</strong> non sono ancora presenti dati storici sufficienti per questo asset. Non vengono formulate valutazioni operative di acquisto o vendita.</div>`;
+    }
+
+    // Apply cached Gemini descriptive analysis if available
+    const recentGemKey = getAssetGeminiCacheKey(asset, pfCtx, true);
+    const cachedRecentGem = GeminiHybridState.assets?.[recentGemKey];
+    const cachedRecentErr = GeminiHybridState.assetErrors?.[recentGemKey];
+    const gemBtnRecent = document.getElementById('btnGeminiAssetEval');
+    if (cachedRecentGem) {
+      if (cachedRecentGem.verdict) verdictBadgeEl.textContent = `✦ ${cachedRecentGem.verdict}`;
+      if (riskBadgeEl && cachedRecentGem.riskProfile) riskBadgeEl.textContent = cachedRecentGem.riskProfile;
+      if (cachedRecentGem.narrative) {
+        narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash • Andamento da Quotazione</span> ${escapePortfolioHtml(cachedRecentGem.narrative)}`;
+      }
+      if (gemBtnRecent) gemBtnRecent.textContent = '✦ Gemini ✓';
+    } else {
+      if (cachedRecentErr) {
+        const note = document.createElement('div');
+        note.className = 'port-ai-fallback-note';
+        note.textContent = `Fallback locale: ${cachedRecentErr}`;
+        narrativeEl.appendChild(note);
+      }
+      if (gemBtnRecent && !gemBtnRecent.disabled) gemBtnRecent.textContent = '✦ Gemini';
+    }
+
+    if (structuredNarrativeEl) {
+      structuredNarrativeEl.textContent = maturity.barsCount > 0
+        ? `Analisi descrittiva da quotazione (${maturity.listingDate} — ${maturity.daysOnMarket} giorni di storico): nessuna valutazione operativa viene emessa per titoli con storico inferiore a 30 giorni. Dal debutto a ${formatCurrency(maturity.firstPrice, asset)} il prezzo ha registrato ${fmtSignedPctYoung(maturity.sinceListingPct)} fino a ${formatCurrency(maturity.currentPrice, asset)}, con minimo a ${formatCurrency(maturity.periodLow, asset)}, massimo a ${formatCurrency(maturity.periodHigh, asset)} e drawdown massimo di -${maturity.maxDrawdownPct.toFixed(1)}%.`
+        : 'Titolo troppo recente: dati storici inferiori a 30 giorni. Nessuna valutazione operativa disponibile.';
+    }
+
+    if (tradePlanLinesEl) {
+      tradePlanLinesEl.innerHTML = `
+        <div class="ai-plan-line"><strong>Inizio Dati</strong> <span class="ai-val-entry">${maturity.listingDate} (${maturity.daysOnMarket} gg)</span></div>
+        <div class="ai-plan-line"><strong>Primo Prezzo</strong> <span class="ai-val-entry">${formatPriceWithIso(maturity.firstPrice, asset)}</span></div>
+        <div class="ai-plan-line"><strong>Prezzo Attuale</strong> <span class="ai-val-tp">${formatPriceWithIso(maturity.currentPrice, asset)}</span></div>
+        <div class="ai-plan-line"><strong>Min / Max</strong> <span class="ai-val-risk">${formatCurrency(maturity.periodLow, asset)} / ${formatCurrency(maturity.periodHigh, asset)}</span></div>
+        <div class="ai-plan-line"><strong>Da Quotazione</strong> <span class="ai-val-rr">${fmtSignedPctYoung(maturity.sinceListingPct)}</span></div>
+      `;
     }
     return;
   }
