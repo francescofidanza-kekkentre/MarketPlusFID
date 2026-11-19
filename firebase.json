@@ -12,6 +12,7 @@
       "**/.git/**",
       "**/node_modules/**",
       "README.md",
+      "GEMINI.md",
       "server.py",
       "history_cache.json",
       "__pycache__/**"
