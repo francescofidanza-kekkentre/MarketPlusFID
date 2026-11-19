@@ -4056,7 +4056,7 @@ function selectAsset(asset) {
   renderAssetList();
   updateSelectedAssetHeader();
   updateBrokerLinks(asset);
-  updateRiskCalculatorPreloads(asset);
+  updateRiskCalculatorPreloads(asset, true);
   if (asset.type === 'certificate') {
     populateCertificateDetails(asset);
   }
@@ -6291,6 +6291,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       if (entryInp) entryInp.value = entryPrice.toFixed(2);
       if (slInp) slInp.value = stopLossPrice.toFixed(2);
       if (tpInp) tpInp.value = takeProfitPrice.toFixed(2);
+      AppState.riskCalcLockedSymbol = asset.symbol;
 
       const calcTab = document.querySelector('.tools-tab[data-tool="calculator"]');
       if (calcTab) calcTab.click();
@@ -6315,7 +6316,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
 }
 
 // --- Position Sizing & Risk Management Calculator ---
-function updateRiskCalculatorPreloads(asset) {
+function updateRiskCalculatorPreloads(asset, forceReset = false) {
   const entryInput = document.getElementById('calcEntryPrice');
   const slInput = document.getElementById('calcStopLoss');
   const tpInput = document.getElementById('calcTakeProfit');
@@ -6325,6 +6326,13 @@ function updateRiskCalculatorPreloads(asset) {
     const affix = inp?.parentElement?.querySelector('.input-affix');
     if (affix) affix.textContent = curSym;
   });
+
+  if (forceReset) {
+    AppState.riskCalcLockedSymbol = null;
+  } else if (asset && AppState.riskCalcLockedSymbol === asset.symbol) {
+    // Keep AI-applied or user-edited risk parameters intact during background live price polling
+    return;
+  }
 
   if (asset) {
     if (asset.symbol === 'ALO.PA') {
@@ -6906,7 +6914,14 @@ function setupEventListeners() {
 
   // Calculator Inputs
   ['calcCapital', 'calcRiskPct', 'calcEntryPrice', 'calcStopLoss', 'calcTakeProfit'].forEach(id => {
-    document.getElementById(id).addEventListener('input', calculateRiskOutput);
+    document.getElementById(id).addEventListener('input', () => {
+      if (id === 'calcEntryPrice' || id === 'calcStopLoss' || id === 'calcTakeProfit') {
+        if (AppState.selectedAsset && !AppState.selectedAsset.isPortfolio) {
+          AppState.riskCalcLockedSymbol = AppState.selectedAsset.symbol;
+        }
+      }
+      calculateRiskOutput();
+    });
   });
 
   // Calculator Quick Chips
