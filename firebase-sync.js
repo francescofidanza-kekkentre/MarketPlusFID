@@ -486,11 +486,24 @@ export async function analyzeAssetWithGemini(assetContext) {
       }
     });
 
+    const isOwned = Boolean(assetContext && assetContext.inPortfolio && assetContext.portfolioPosition);
+    const modeInstructions = isOwned
+      ? [
+          'CONTESTO POSIZIONE: L\'utente POSSIEDE GIÀ questo titolo in portafoglio (vedi `portfolioPosition`: `shares` = numero quote possedute, `buyPrice` = PMC, `currentValueEur` = valore attuale in EUR, `investedEur` = capitale investito, `pnlPct` / `pnlEur` = profitto/perdita attuale, `portfolioWeightPct` = peso % nel portafoglio).',
+          'OBIETTIVO ESCLUSIVO: Concentra l\'analisi SOLO sulla decisione di **COMPRARE ALTRE QUOTE** (incrementare/mediare il PMC), **MANTENERE LE QUOTE ATTUALI** oppure **VENDERE / ALLEGGERIRE** le quote possedute, basandoti esplicitamente sul numero di quote, sul valore attuale, sul P&L e sul peso in portafoglio.',
+          'Restituisci `verdict` coerente (es. "COMPRA ALTRE QUOTE", "MANTIENI LE QUOTE", "ALLEGGERISCI / VENDI PARZIALE", "VENDI / PROTEGGI CAPITALE"), `riskProfile` (es. "Rischio: Moderato") e `narrative` (max 95 parole, citando numero di quote e valore/P&L).'
+        ]
+      : [
+          'CONTESTO POSIZIONE: L\'utente NON possiede questo titolo in portafoglio.',
+          'OBIETTIVO ESCLUSIVO: Concentra l\'analisi SOLO sulla **convenienza di ACQUISTARE o MENO** questo asset adesso (NON suggerire mai di vendere o alleggerire quote che l\'utente non possiede).',
+          'Restituisci `verdict` coerente (es. "CONVIENE ACQUISTARE", "ACQUISTO GRADUALE (PAC)", "ATTENDI PRIMA DI ACQUISTARE", "NON ACQUISTARE ORA"), `riskProfile` (es. "Rischio: Moderato") e `narrative` (max 95 parole focalizzate sul perché comprare o evitare l\'acquisto).'
+        ];
+
     const prompt = [
-      'Sei un analista finanziario. Rispondi in italiano sintetico e oggettivo (max 90 parole per narrative).',
-      'Basati esclusivamente sui dati tecnici/fondamentali forniti (senza inventare prezzi):',
+      'Sei un analista finanziario. Rispondi in italiano chiaro, sintetico e oggettivo.',
+      'Basati esclusivamente sui dati tecnici, fondamentali e di portafoglio forniti (senza inventare prezzi o quote):',
       JSON.stringify(assetContext),
-      'Restituisci verdict (es. "ACQUISTO GRADUALE", "MANTENIMENTO", "CAUTELA"), riskProfile (es. "Rischio: Moderato") e narrative.'
+      ...modeInstructions
     ].join('\n');
 
     const result = await model.generateContent(prompt);

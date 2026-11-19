@@ -439,6 +439,9 @@ function switchActivePortfolio(portfolioId) {
   if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
     updateSelectedAssetHeader();
     loadAndRenderPortfolioChart(AppState.activeTimeframe);
+  } else if (AppState.selectedAsset) {
+    updateSelectedAssetHeader();
+    refreshSelectedAssetAiEvaluation();
   }
 }
 
@@ -577,6 +580,9 @@ function deleteActivePortfolio() {
   if (AppState.selectedAsset && AppState.selectedAsset.isPortfolio) {
     updateSelectedAssetHeader();
     loadAndRenderPortfolioChart(AppState.activeTimeframe);
+  } else if (AppState.selectedAsset) {
+    updateSelectedAssetHeader();
+    refreshSelectedAssetAiEvaluation();
   }
 }
 
@@ -2226,6 +2232,73 @@ async function runGeminiPortfolioEvaluation() {
   renderPortfolioAiAnalysisSection();
 }
 
+function getAssetPortfolioContext(asset, currentPriceOverride = null) {
+  if (!asset || asset.isPortfolio || !AppState.portfolio) {
+    return { inPortfolio: false };
+  }
+  const pos = AppState.portfolio[asset.symbol];
+  if (!pos || !(pos.shares > 0)) {
+    return { inPortfolio: false };
+  }
+  const currentPrice = (currentPriceOverride != null && currentPriceOverride > 0)
+    ? currentPriceOverride
+    : (asset.price != null ? asset.price : pos.buyPrice);
+  const shares = Number(pos.shares);
+  const buyPrice = Number(pos.buyPrice);
+  const investedNative = shares * buyPrice;
+  const currentValNative = shares * currentPrice;
+  const pnlNative = currentValNative - investedNative;
+  const pnlPct = investedNative > 0 ? (pnlNative / investedNative) * 100 : 0;
+  const investedEur = convertToEur(investedNative, asset);
+  const currentValEur = convertToEur(currentValNative, asset);
+  const pnlEur = currentValEur - investedEur;
+
+  let totalPortfolioEur = 0;
+  for (const [sym, p] of Object.entries(AppState.portfolio)) {
+    if (!p || !(p.shares > 0)) continue;
+    const a = AppState.assets.find(x => x.symbol === sym);
+    const px = a && a.price != null ? a.price : p.buyPrice;
+    totalPortfolioEur += convertToEur(p.shares * px, a || { currency: 'EUR' });
+  }
+  const weightPct = totalPortfolioEur > 0 ? (currentValEur / totalPortfolioEur) * 100 : 100;
+  const activePf = typeof getActivePortfolioObj === 'function' ? getActivePortfolioObj() : null;
+
+  return {
+    inPortfolio: true,
+    portfolioName: activePf ? activePf.name : 'Portafoglio',
+    shares,
+    buyPrice,
+    currentPrice,
+    investedNative,
+    currentValNative,
+    pnlNative,
+    pnlPct,
+    investedEur,
+    currentValEur,
+    pnlEur,
+    totalPortfolioEur,
+    weightPct
+  };
+}
+
+function getAssetGeminiCacheKey(asset, pfCtx = null) {
+  const ctx = pfCtx || getAssetPortfolioContext(asset);
+  const pfSig = ctx.inPortfolio
+    ? `PF_${ctx.shares}_${Number(ctx.buyPrice).toFixed(2)}`
+    : 'NO_PF';
+  return `${asset.symbol}_${AppState.activeTimeframe}_${pfSig}`;
+}
+
+function refreshSelectedAssetAiEvaluation() {
+  if (AppState.selectedAsset && !AppState.selectedAsset.isPortfolio) {
+    if (AppState.renderedBars && AppState.renderedBars.length >= 2) {
+      updateTechnicalDecisionBanner(AppState.renderedBars);
+    } else {
+      updateAiInvestmentEvaluation(AppState.selectedAsset, AppState.renderedBars || [], 50);
+    }
+  }
+}
+
 async function runGeminiAssetEvaluation() {
   const asset = AppState.selectedAsset;
   if (!asset) return;
@@ -2233,7 +2306,11 @@ async function runGeminiAssetEvaluation() {
   const verdictEl = document.getElementById('aiVerdictBadge');
   const riskEl = document.getElementById('aiRiskProfileBadge');
   const narrativeEl = document.getElementById('aiNarrativeText');
-  const cacheKey = `${asset.symbol}_${AppState.activeTimeframe}`;
+  const bars = AppState.renderedBars || [];
+  const last = bars.length > 0 ? bars[bars.length - 1] : null;
+  const currentPrice = asset.price != null ? asset.price : (last?.close ?? null);
+  const pfCtx = getAssetPortfolioContext(asset, currentPrice);
+  const cacheKey = getAssetGeminiCacheKey(asset, pfCtx);
 
   if (btn) {
     btn.disabled = true;
@@ -2246,8 +2323,6 @@ async function runGeminiAssetEvaluation() {
       throw new Error('Modulo Firebase AI Logic non caricato');
     }
 
-    const bars = AppState.renderedBars || [];
-    const last = bars.length > 0 ? bars[bars.length - 1] : null;
     const fund = asset.fundamentals || null;
     const cert = asset.certificateData || null;
     const payload = {
@@ -2256,15 +2331,26 @@ async function runGeminiAssetEvaluation() {
       type: asset.type,
       timeframe: AppState.activeTimeframe,
       currency: asset.currency || 'EUR',
-      price: asset.price,
+      price: currentPrice,
       changePct: asset.change,
       rsi: last?.rsi ?? null,
       ema20: last?.ema20 ?? null,
       ema50: last?.ema50 ?? null,
-      peRatio: fund?.peRatio ?? null,
+      peRatio: fund?.peRatio ?? fund?.pe ?? null,
       analystRating: fund?.analystRating ?? null,
       underlying: cert?.underlying ?? null,
-      barrierPct: cert?.barrierPct ?? null
+      barrierPct: cert?.barrierPct ?? null,
+      inPortfolio: pfCtx.inPortfolio,
+      portfolioPosition: pfCtx.inPortfolio ? {
+        portfolioName: pfCtx.portfolioName,
+        shares: pfCtx.shares,
+        buyPrice: pfCtx.buyPrice,
+        currentValueEur: Number(pfCtx.currentValEur.toFixed(2)),
+        investedEur: Number(pfCtx.investedEur.toFixed(2)),
+        pnlEur: Number(pfCtx.pnlEur.toFixed(2)),
+        pnlPct: Number(pfCtx.pnlPct.toFixed(2)),
+        portfolioWeightPct: Number(pfCtx.weightPct.toFixed(1))
+      } : null
     };
 
     const res = await mod.analyzeAssetWithGemini(payload);
@@ -2274,7 +2360,8 @@ async function runGeminiAssetEvaluation() {
       if (verdictEl && res.data.verdict) verdictEl.textContent = `✦ ${res.data.verdict}`;
       if (riskEl && res.data.riskProfile) riskEl.textContent = res.data.riskProfile;
       if (narrativeEl && res.data.narrative) {
-        narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(res.data.narrative)}`;
+        const modeTag = pfCtx.inPortfolio ? 'Gestione Posizione' : 'Valutazione Acquisto';
+        narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash • ${modeTag}</span> ${escapePortfolioHtml(res.data.narrative)}`;
       }
       if (btn) btn.textContent = '✦ Gemini ✓';
     } else {
@@ -3273,6 +3360,7 @@ function savePortfolioPosition() {
   } else {
     renderAssetList();
     updateSelectedAssetHeader();
+    refreshSelectedAssetAiEvaluation();
   }
 }
 
@@ -3290,6 +3378,7 @@ function deletePortfolioPosition(symbol) {
   } else {
     renderAssetList();
     updateSelectedAssetHeader();
+    refreshSelectedAssetAiEvaluation();
   }
 }
 
@@ -5177,22 +5266,39 @@ function updateTechnicalDecisionBanner(bars) {
 
   score = Math.max(10, Math.min(95, score));
 
-  // Rating Badge
+  // Rating Badge (context-aware: in-portfolio vs buy-only evaluation)
   const ratingBadge = document.getElementById('decisionRatingBadge');
   ratingBadge.className = 'decision-rating-badge';
+  const pfCtxBanner = getAssetPortfolioContext(AppState.selectedAsset, last.close);
 
-  if (score >= 75) {
-    ratingBadge.classList.add('rating-strong-buy');
-    ratingBadge.textContent = `FORTE ACQUISTO (${score}%)`;
-  } else if (score >= 60) {
-    ratingBadge.classList.add('rating-buy');
-    ratingBadge.textContent = `BUY MODERATO (${score}%)`;
-  } else if (score >= 40) {
-    ratingBadge.classList.add('rating-neutral');
-    ratingBadge.textContent = `NEUTRO / ATTENDI (${score}%)`;
+  if (pfCtxBanner.inPortfolio) {
+    if (score >= 72) {
+      ratingBadge.classList.add('rating-strong-buy');
+      ratingBadge.textContent = `INCREMENTA QUOTE (${score}%)`;
+    } else if (score >= 58) {
+      ratingBadge.classList.add('rating-buy');
+      ratingBadge.textContent = `MANTIENI / INCREMENTA (${score}%)`;
+    } else if (score >= 42) {
+      ratingBadge.classList.add('rating-neutral');
+      ratingBadge.textContent = `MANTIENI QUOTE (${score}%)`;
+    } else {
+      ratingBadge.classList.add('rating-sell');
+      ratingBadge.textContent = `VALUTA VENDITA (${score}%)`;
+    }
   } else {
-    ratingBadge.classList.add('rating-sell');
-    ratingBadge.textContent = `VENDITA / CAUTELA (${score}%)`;
+    if (score >= 75) {
+      ratingBadge.classList.add('rating-strong-buy');
+      ratingBadge.textContent = `CONVIENE ACQUISTARE (${score}%)`;
+    } else if (score >= 60) {
+      ratingBadge.classList.add('rating-buy');
+      ratingBadge.textContent = `ACQUISTO MODERATO (${score}%)`;
+    } else if (score >= 42) {
+      ratingBadge.classList.add('rating-neutral');
+      ratingBadge.textContent = `ATTENDI PRIMA DI COMPRARE (${score}%)`;
+    } else {
+      ratingBadge.classList.add('rating-sell');
+      ratingBadge.textContent = `NON CONVIENE ACQUISTARE (${score}%)`;
+    }
   }
 
   // Trigger AI Multi-Factor Investment Evaluation
@@ -5265,12 +5371,20 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
 
   const tfLabels = { '1D': '1G', '1W': '1S', '1M': '1M', '3M': '3M', '1Y': '1A', 'ALL': 'TUTTO' };
   const tfLabel = tfLabels[AppState.activeTimeframe] || AppState.activeTimeframe;
-  if (tagEl) tagEl.textContent = `${asset.symbol} • Orizzonte ${tfLabel}`;
 
   const last = activeBars[activeBars.length - 1];
   const prev = activeBars[activeBars.length - 2];
   const currentPrice = asset.price != null ? asset.price : last.close;
   const fund = asset.fundamentals || {};
+  const pfCtx = getAssetPortfolioContext(asset, currentPrice);
+  const fmtEurVal = (v) => `€ ${Number(v || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtSharesVal = (s) => Number.isInteger(s) ? String(s) : Number(s).toLocaleString('it-IT', { maximumFractionDigits: 4 });
+
+  if (tagEl) {
+    tagEl.textContent = pfCtx.inPortfolio
+      ? `${asset.symbol} • In Portafoglio (${fmtSharesVal(pfCtx.shares)} quote • ${fmtEurVal(pfCtx.currentValEur)}) • ${tfLabel}`
+      : `${asset.symbol} • Valutazione Acquisto • Orizzonte ${tfLabel}`;
+  }
 
   if (asset.type === 'certificate') {
     const certData = asset.certificateData || {};
@@ -5287,26 +5401,83 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       riskBadgeEl.textContent = 'Rischio: Condizionato / Difensivo';
       riskBadgeEl.className = 'ai-badge ai-badge-moderate';
     }
-    if (verdictBadgeEl) {
-      verdictBadgeEl.textContent = 'Setup Certificato: FAVOREVOLE A SCADENZA';
-      verdictBadgeEl.className = 'ai-badge ai-badge-buy';
-    }
     if (factorCurveEl) factorCurveEl.textContent = `Sottostante: ${certData.underlying || 'Indice'}`;
     if (factorTechEl) factorTechEl.textContent = `Barriera: ${barrier}% (Cuscino +${bufferPct}%)`;
     if (factorAnalystsEl) factorAnalystsEl.textContent = `Cedola: ${certData.couponFreq || 'Periodica'}`;
-    if (factorStrategyEl) factorStrategyEl.textContent = certData.protectionType || 'Capitale Condizionatamente Protetto';
 
-    if (narrativeEl) {
-      narrativeEl.textContent = `Il certificato ${asset.name} (${certData.isin || asset.symbol}) quota a ${certPrice.toFixed(2)} € sul mercato ${asset.exchange || 'SeDeX'}. Il sottostante ${certData.underlying || 'di riferimento'} mantiene un cuscino di protezione di +${bufferPct}% sopra la barriera di protezione (${barrier}%). La struttura offre un rendimento potenziale del ${yieldPct.toFixed(2)}% con incasso cedolare periodico e rimborso a ${nominal.toFixed(2)} € a scadenza.`;
+    if (pfCtx.inPortfolio) {
+      const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
+      const shouldSellCert = (pfCtx.pnlPct >= 5 && certPrice >= nominal) || (pfCtx.weightPct >= 35 && pfCtx.pnlPct >= 3);
+      const shouldAddCert = !shouldSellCert && certPrice <= nominal * 0.96 && pfCtx.weightPct < 25;
+
+      if (verdictBadgeEl) {
+        if (shouldSellCert) {
+          verdictBadgeEl.textContent = '🔴 VENDI / PRENDI PROFITTO SULLE QUOTE';
+          verdictBadgeEl.className = 'ai-verdict-pill rating-sell';
+        } else if (shouldAddCert) {
+          verdictBadgeEl.textContent = '🟢 COMPRA ALTRE QUOTE (A SCONTO)';
+          verdictBadgeEl.className = 'ai-verdict-pill rating-strong-buy';
+        } else {
+          verdictBadgeEl.textContent = '🟡 MANTIENI LE QUOTE ATTUALI';
+          verdictBadgeEl.className = 'ai-verdict-pill rating-neutral';
+        }
+      }
+      if (factorStrategyEl) {
+        factorStrategyEl.textContent = `Possiedi ${fmtSharesVal(pfCtx.shares)} quote (${fmtEurVal(pfCtx.currentValEur)}, peso ${pfCtx.weightPct.toFixed(0)}%) • PMC ${formatCurrency(pfCtx.buyPrice, asset)} • P&L ${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(1)}%`;
+      }
+      const certActionAdvice = shouldSellCert
+        ? `Valuta di vendere tutte o parte delle ${fmtSharesVal(pfCtx.shares)} quote possedute (${fmtEurVal(pfCtx.currentValEur)}): il prezzo (${certPrice.toFixed(2)} €) è sopra il nominale (${nominal.toFixed(2)} €) con rendimento residuo limitato.`
+        : (shouldAddCert
+            ? `Puoi valutare di comprare altre quote oltre alle ${fmtSharesVal(pfCtx.shares)} già in portafoglio (${fmtEurVal(pfCtx.currentValEur)}): quota a sconto sul nominale (${certPrice.toFixed(2)} € vs ${nominal.toFixed(2)} €) con buffer +${bufferPct}%.`
+            : `Mantieni le ${fmtSharesVal(pfCtx.shares)} quote attuali (${fmtEurVal(pfCtx.currentValEur)}) per incassare le cedole; valuta nuovi acquisti solo sotto ${(nominal * 0.96).toFixed(2)} € o vendita sopra ${(nominal * 1.03).toFixed(2)} €.`);
+
+      if (narrativeEl) {
+        narrativeEl.innerHTML =
+          `<div>💼 <strong>Posizione attuale:</strong> possiedi <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> per un valore di <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong> nel portafoglio, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
+          `<div>💡 <strong>Valutazione (comprare altre quote o vendere):</strong> ${certActionAdvice}</div>`;
+      }
+      if (structuredNarrativeEl) {
+        structuredNarrativeEl.innerHTML = `Gestione posizione su <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> (${fmtEurVal(pfCtx.currentValEur)}, PMC ${formatCurrency(pfCtx.buyPrice, asset)}): ${certActionAdvice}<br><br>Barriera di protezione al <strong>${barrier}%</strong> sul sottostante <em>${certData.underlying || 'Indice'}</em> (buffer <strong>+${bufferPct}%</strong>) e rimborso a scadenza a ${nominal.toFixed(2)} €.`;
+      }
+    } else {
+      const worthBuyingCert = certPrice <= nominal * 1.01 && yieldPct >= 4;
+      if (verdictBadgeEl) {
+        verdictBadgeEl.textContent = worthBuyingCert
+          ? '🟢 CONVIENE ACQUISTARE A SCADENZA'
+          : '🟡 ATTENDI PREZZO PIÙ CONVENIENTE';
+        verdictBadgeEl.className = worthBuyingCert ? 'ai-verdict-pill rating-buy' : 'ai-verdict-pill rating-neutral';
+      }
+      if (factorStrategyEl) factorStrategyEl.textContent = certData.protectionType || 'Capitale Condizionatamente Protetto';
+
+      if (narrativeEl) {
+        narrativeEl.innerHTML =
+          `<div>✅ <strong>Convenienza all'acquisto:</strong> ${asset.name} (${certData.isin || asset.symbol}) quota a ${certPrice.toFixed(2)} € (nominale ${nominal.toFixed(2)} €) con cuscino di +${bufferPct}% sopra la barriera (${barrier}%) e rendimento potenziale del +${yieldPct.toFixed(2)}%.</div>` +
+          `<div>💡 <strong>Verdetto acquisto:</strong> ${worthBuyingCert ? 'Condizioni favorevoli per valutare un acquisto a scadenza con flusso cedolare periodico.' : 'Quota sopra la pari con margine ridotto: attendi un prezzo più vicino o sotto il nominale prima di acquistare.'}</div>`;
+      }
+      if (structuredNarrativeEl) {
+        structuredNarrativeEl.innerHTML = `Valutazione di acquisto: il certificato quota a ${certPrice.toFixed(2)} € rispetto al nominale di ${nominal.toFixed(2)} €. La barriera al <strong>${barrier}%</strong> sul sottostante <em>${certData.underlying || 'Indice'}</em> offre un buffer del <strong>+${bufferPct}%</strong> con rendimento totale atteso a scadenza del <strong>+${yieldPct.toFixed(2)}%</strong>.<br><br><strong>Prezzo Acquisto ${formatPriceWithIso(certPrice, asset)}</strong><br><strong>Barriera Protezione ${barrier}% (${formatPriceWithIso(certPrice * barrier / 100, asset)})</strong><br><strong>Target Rimborso ${formatPriceWithIso(targetPrice, asset)}</strong><br><strong>R/R Struttura 1 : ${rr}</strong>`;
+      }
     }
 
-    if (structuredNarrativeEl) {
-      structuredNarrativeEl.innerHTML = `Il certificato si trova in una configurazione asimmetrica favorevole con quotazione a sconto sul nominale (${certPrice.toFixed(2)} € rispetto a ${nominal.toFixed(2)} €). La barriera di protezione al <strong>${barrier}%</strong> sul sottostante <em>${certData.underlying || 'Indice'}</em> garantisce un ampio cuscino di sicurezza del <strong>+${bufferPct}%</strong> prima che il capitale possa essere intaccato.<br><br>La presenza dell'effetto memoria e il flusso cedolare (${certData.couponFreq || 'periodico'}) offrono un rendimento totale atteso a scadenza del <strong>+${yieldPct.toFixed(2)}%</strong>, rendendo il trade attraente rispetto all'investimento diretto nell'asset sottostante.<br><br><strong>Ingresso ${formatPriceWithIso(certPrice, asset)}</strong><br><strong>Livello Barriera Protezione ${barrier}% (${formatPriceWithIso(certPrice * barrier / 100, asset)})</strong><br><strong>Target Rimborso ${formatPriceWithIso(targetPrice, asset)}</strong><br><strong>Buffer di Sicurezza +${bufferPct}%</strong><br><strong>R/R Struttura 1 : ${rr}</strong>`;
+    // Apply cached Gemini analysis for certificate if available
+    const certGemKey = getAssetGeminiCacheKey(asset, pfCtx);
+    const cachedCertGem = GeminiHybridState.assets?.[certGemKey];
+    const gemAssetBtnCert = document.getElementById('btnGeminiAssetEval');
+    if (cachedCertGem) {
+      if (verdictBadgeEl && cachedCertGem.verdict) verdictBadgeEl.textContent = `✦ ${cachedCertGem.verdict}`;
+      if (riskBadgeEl && cachedCertGem.riskProfile) riskBadgeEl.textContent = cachedCertGem.riskProfile;
+      if (narrativeEl && cachedCertGem.narrative) {
+        const modeTag = pfCtx.inPortfolio ? 'Gestione Posizione' : 'Valutazione Acquisto';
+        narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash • ${modeTag}</span> ${escapePortfolioHtml(cachedCertGem.narrative)}`;
+      }
+      if (gemAssetBtnCert) gemAssetBtnCert.textContent = '✦ Gemini ✓';
+    } else if (gemAssetBtnCert && !gemAssetBtnCert.disabled) {
+      gemAssetBtnCert.textContent = '✦ Gemini';
     }
 
     if (tradePlanLinesEl) {
       tradePlanLinesEl.innerHTML = `
-        <div class="ai-plan-line"><strong>Ingresso</strong> <span class="ai-val-entry">${formatPriceWithIso(certPrice, asset)}</span></div>
+        <div class="ai-plan-line"><strong>${pfCtx.inPortfolio ? 'Prezzo Attuale' : 'Ingresso'}</strong> <span class="ai-val-entry">${formatPriceWithIso(certPrice, asset)}</span></div>
         <div class="ai-plan-line"><strong>Barriera</strong> <span class="ai-val-sl">${barrier}% (+${bufferPct}%)</span></div>
         <div class="ai-plan-line"><strong>Target</strong> <span class="ai-val-tp">${formatPriceWithIso(targetPrice, asset)}</span></div>
         <div class="ai-plan-line"><strong>Cedola</strong> <span class="ai-val-risk">${certData.couponFreq || 'Periodica'}</span></div>
@@ -5526,34 +5697,78 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   let verdictLabel = '';
   let scoreMeaning = '';
   let plainStrategy = '';
-  if (compositeScore >= 74) {
-    verdictBadgeEl.classList.add('rating-strong-buy');
-    verdictLabel = `🟢 OTTIMO PER INVESTIRE (${compositeScore}/100)`;
-    scoreMeaning = 'Molto favorevole';
-    plainStrategy = distEma20Pct > 4
-      ? `Entra a piccoli passi (oppure attendi un lieve calo verso ${formatCurrency(ema20, asset)})`
-      : 'Buon momento per acquistare o iniziare un accumulo';
-  } else if (compositeScore >= 58) {
-    verdictBadgeEl.classList.add('rating-buy');
-    verdictLabel = `🟢 CONVIENE ACCUMULARE (${compositeScore}/100)`;
-    scoreMeaning = 'Favorevole';
-    plainStrategy = rsi < 42
-      ? `Buona occasione per comprare a sconto vicino a ${formatCurrency(supportLevel, asset)}`
-      : 'Compra gradualmente a piccole quote nel tempo (PAC)';
-  } else if (compositeScore >= 42) {
-    verdictBadgeEl.classList.add('rating-neutral');
-    verdictLabel = `🟡 MEGLIO ATTENDERE (${compositeScore}/100)`;
-    scoreMeaning = 'Incerto / Neutro';
-    plainStrategy = `Non avere fretta: attendi un prezzo più conveniente vicino a ${formatCurrency(supportLevel, asset)}`;
+  if (pfCtx.inPortfolio) {
+    const sharesStr = fmtSharesVal(pfCtx.shares);
+    const valEurStr = fmtEurVal(pfCtx.currentValEur);
+    const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
+    const pnlPctStr = `${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(1)}%`;
+    const isOverweight = pfCtx.weightPct >= 30;
+    const isStrongProfit = pfCtx.pnlPct >= 18;
+    const isDeepLoss = pfCtx.pnlPct <= -10;
+    const belowPmc = currentPrice < pfCtx.buyPrice * 0.97;
+    const trimShares = Math.max(1, Math.round(pfCtx.shares * 0.25));
+
+    if ((isStrongProfit && (rsi >= 66 || compositeScore < 50)) || (isOverweight && pfCtx.pnlPct >= 10 && compositeScore < 62)) {
+      verdictBadgeEl.classList.add('rating-sell');
+      verdictLabel = `🔴 VENDI / ALLEGGERISCI QUOTE (${compositeScore}/100)`;
+      scoreMeaning = 'Realizzo profitto / Ribilanciamento';
+      plainStrategy = `Hai ${sharesStr} quote (${valEurStr}, P&L ${pnlPctStr}, peso ${pfCtx.weightPct.toFixed(0)}%): valuta di vendere una parte (es. ~${pfCtx.shares >= 4 ? trimShares + ' quote / 25%' : '25-30%'}) vicino a ${formatCurrency(resistanceLevel, asset)} per mettere al sicuro il guadagno`;
+    } else if (compositeScore < 42 && (isDeepLoss || (pfCtx.pnlPct < -4 && rsi < 42 && currentPrice < ema50))) {
+      verdictBadgeEl.classList.add('rating-sell');
+      verdictLabel = `🔴 VALUTA VENDITA / RIDUZIONE (${compositeScore}/100)`;
+      scoreMeaning = 'Rischio elevato sulla posizione';
+      plainStrategy = `Le tue ${sharesStr} quote (${valEurStr}, P&L ${pnlPctStr}) sono in trend debole: valuta di ridurre o vendere se rompe sotto ${formatCurrency(supportLevel, asset)} per proteggere il capitale`;
+    } else if (compositeScore >= 68 && !isOverweight) {
+      verdictBadgeEl.classList.add('rating-strong-buy');
+      verdictLabel = belowPmc
+        ? `🟢 COMPRA ALTRE QUOTE • MEDIA PMC (${compositeScore}/100)`
+        : `🟢 COMPRA ALTRE QUOTE (${compositeScore}/100)`;
+      scoreMeaning = 'Favorevole per incrementare';
+      plainStrategy = belowPmc
+        ? `Hai ${sharesStr} quote (${valEurStr}, PMC ${formatCurrency(pfCtx.buyPrice, asset)}): il trend è favorevole e il prezzo è sotto il tuo PMC — buona occasione per comprare altre quote e abbassare il costo medio`
+        : `Hai ${sharesStr} quote (${valEurStr}, peso ${pfCtx.weightPct.toFixed(0)}%): segnale solido per comprare altre quote${distEma20Pct > 4 ? ` su piccoli ritracciamenti verso ${formatCurrency(ema20, asset)}` : ' e rafforzare la posizione'}`;
+    } else if (compositeScore >= 56 && belowPmc && !isOverweight) {
+      verdictBadgeEl.classList.add('rating-buy');
+      verdictLabel = `🟢 COMPRA ALTRE QUOTE • MEDIA PMC (${compositeScore}/100)`;
+      scoreMeaning = 'Buon punto per mediare';
+      plainStrategy = `Possiedi ${sharesStr} quote (${valEurStr}) con PMC ${formatCurrency(pfCtx.buyPrice, asset)}: puoi comprare altre quote vicino a ${formatCurrency(supportLevel, asset)} per migliorare il prezzo medio`;
+    } else {
+      verdictBadgeEl.classList.add('rating-neutral');
+      verdictLabel = `🟡 MANTIENI LE QUOTE ATTUALI (${compositeScore}/100)`;
+      scoreMeaning = 'Mantieni / Nessuna urgenza';
+      plainStrategy = `Mantieni le ${sharesStr} quote in portafoglio (${valEurStr}, P&L ${pnlPctStr}): valuta nuovi acquisti solo su debolezza verso ${formatCurrency(supportLevel, asset)} oppure prendi profitto verso ${formatCurrency(resistanceLevel, asset)}`;
+    }
   } else {
-    verdictBadgeEl.classList.add('rating-sell');
-    verdictLabel = `🔴 SCONSIGLIATO ORA (${compositeScore}/100)`;
-    scoreMeaning = 'Sfavorevole / Rischioso';
-    plainStrategy = `Meglio restare alla finestra finché non smette di scendere (sotto ${formatCurrency(supportLevel, asset)} aumenta il rischio)`;
+    if (compositeScore >= 74) {
+      verdictBadgeEl.classList.add('rating-strong-buy');
+      verdictLabel = `🟢 CONVIENE ACQUISTARE (${compositeScore}/100)`;
+      scoreMeaning = 'Molto favorevole all\'acquisto';
+      plainStrategy = distEma20Pct > 4
+        ? `Conviene acquistare entrando a piccoli passi (oppure attendi un lieve calo verso ${formatCurrency(ema20, asset)})`
+        : 'Condizioni molto favorevoli per acquistare o avviare un accumulo';
+    } else if (compositeScore >= 58) {
+      verdictBadgeEl.classList.add('rating-buy');
+      verdictLabel = `🟢 ACQUISTO GRADUALE / PAC (${compositeScore}/100)`;
+      scoreMeaning = 'Favorevole all\'acquisto';
+      plainStrategy = rsi < 42
+        ? `Buona occasione per acquistare a sconto vicino a ${formatCurrency(supportLevel, asset)}`
+        : 'Conviene acquistare gradualmente a piccole quote nel tempo (PAC)';
+    } else if (compositeScore >= 42) {
+      verdictBadgeEl.classList.add('rating-neutral');
+      verdictLabel = `🟡 ATTENDI PRIMA DI ACQUISTARE (${compositeScore}/100)`;
+      scoreMeaning = 'Incerto / Rimanda l\'acquisto';
+      plainStrategy = `Non conviene acquistare subito: attendi un prezzo più vantaggioso vicino a ${formatCurrency(supportLevel, asset)}`;
+    } else {
+      verdictBadgeEl.classList.add('rating-sell');
+      verdictLabel = `🔴 NON CONVIENE ACQUISTARE ORA (${compositeScore}/100)`;
+      scoreMeaning = 'Sfavorevole all\'acquisto';
+      plainStrategy = `Evita l'acquisto in questa fase finché il trend non si stabilizza (sotto ${formatCurrency(supportLevel, asset)} aumenta il rischio)`;
+    }
   }
   verdictBadgeEl.textContent = verdictLabel;
   if (scoreTextEl) {
-    scoreTextEl.innerHTML = `Punteggio complessivo IA: <strong>${compositeScore}/100</strong> (${scoreMeaning})`;
+    const scoreModeLabel = pfCtx.inPortfolio ? 'Punteggio gestione posizione IA' : 'Punteggio convenienza acquisto IA';
+    scoreTextEl.innerHTML = `${scoreModeLabel}: <strong>${compositeScore}/100</strong> (${scoreMeaning})`;
   }
 
   const fmtSignedPct = (v) => (v == null || isNaN(v)) ? '0%' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
@@ -5634,9 +5849,14 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     }
   }
 
-  // Box 4: Prezzi Chiave Consigliati (Plain language)
+  // Box 4: Prezzi Chiave Consigliati (context-aware: in-portfolio vs buy-only)
   if (factorStrategyEl) {
-    factorStrategyEl.textContent = `Buon prezzo d'ingresso: ${formatCurrency(supportLevel, asset)} • Obiettivo di crescita: ${formatCurrency(resistanceLevel, asset)}`;
+    if (pfCtx.inPortfolio) {
+      const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
+      factorStrategyEl.textContent = `Possiedi ${fmtSharesVal(pfCtx.shares)} quote (${fmtEurVal(pfCtx.currentValEur)}, P&L ${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(1)}%) • Compra altre quote: ${formatCurrency(supportLevel, asset)} • Vendi / Profit: ${formatCurrency(resistanceLevel, asset)}`;
+    } else {
+      factorStrategyEl.textContent = `Zona ideale di acquisto: ${formatCurrency(supportLevel, asset)} • Obiettivo di crescita: ${formatCurrency(resistanceLevel, asset)}`;
+    }
   }
 
   // Build Simple 3-Point Summary in Everyday Italian (PRO, CONTRO, CONSIGLIO PRATICO)
@@ -5676,12 +5896,21 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   if (pros.length === 0) pros.push(`il prezzo sta cercando una base stabile intorno a ${formatCurrency(supportLevel, asset)}`);
   if (cons.length === 0) cons.push(`nessuna criticità evidente, ma resta sempre valido il normale rischio di mercato`);
 
-  narrativeEl.innerHTML =
-    `<div>✅ <strong>Perché può convenire:</strong> ${pros.slice(0, 3).join('; ')}.</div>` +
-    `<div>⚠️ <strong>A cosa fare attenzione:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
-    `<div>💡 <strong>In conclusione (cosa fare):</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(resistanceLevel, asset)}</strong>.</div>`;
+  if (pfCtx.inPortfolio) {
+    const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
+    narrativeEl.innerHTML =
+      `<div>💼 <strong>Posizione in portafoglio (${escapePortfolioHtml(pfCtx.portfolioName)}):</strong> <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> • Valore attuale <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong>, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
+      `<div>✅ <strong>Fattori a favore di tenere / comprare altre quote:</strong> ${pros.slice(0, 2).join('; ')}.</div>` +
+      `<div>⚠️ <strong>Fattori per valutare vendita / alleggerimento:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
+      `<div>💡 <strong>Decisione operativa sulle tue quote:</strong> ${plainStrategy}.</div>`;
+  } else {
+    narrativeEl.innerHTML =
+      `<div>✅ <strong>Perché conviene acquistarlo:</strong> ${pros.slice(0, 3).join('; ')}.</div>` +
+      `<div>⚠️ <strong>Rischi prima dell'acquisto:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
+      `<div>💡 <strong>Verdetto acquisto:</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(resistanceLevel, asset)}</strong>.</div>`;
+  }
 
-  const assetGemKey = `${asset.symbol}_${AppState.activeTimeframe}`;
+  const assetGemKey = getAssetGeminiCacheKey(asset, pfCtx);
   const cachedGemAsset = GeminiHybridState.assets?.[assetGemKey];
   const cachedGemErr = GeminiHybridState.assetErrors?.[assetGemKey];
   const gemAssetBtn = document.getElementById('btnGeminiAssetEval');
@@ -5689,7 +5918,8 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     if (cachedGemAsset.verdict) verdictBadgeEl.textContent = `✦ ${cachedGemAsset.verdict}`;
     if (riskBadgeEl && cachedGemAsset.riskProfile) riskBadgeEl.textContent = cachedGemAsset.riskProfile;
     if (cachedGemAsset.narrative) {
-      narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash</span> ${escapePortfolioHtml(cachedGemAsset.narrative)}`;
+      const modeTag = pfCtx.inPortfolio ? 'Gestione Posizione' : 'Valutazione Acquisto';
+      narrativeEl.innerHTML = `<span class="ai-gemini-source-tag">✦ Gemini 3.8 Flash • ${modeTag}</span> ${escapePortfolioHtml(cachedGemAsset.narrative)}`;
     }
     if (gemAssetBtn) gemAssetBtn.textContent = '✦ Gemini ✓';
   } else {
@@ -5793,14 +6023,19 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   }
 
   if (structuredNarrativeEl) {
-    structuredNarrativeEl.textContent = structuredNarrativeText;
+    if (pfCtx.inPortfolio) {
+      const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
+      structuredNarrativeEl.textContent = `Gestione posizione (${fmtSharesVal(pfCtx.shares)} quote • ${fmtEurVal(pfCtx.currentValEur)} • P&L ${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(1)}%): ${structuredNarrativeText} ${plainStrategy}.`;
+    } else {
+      structuredNarrativeEl.textContent = `Valutazione acquisto: ${structuredNarrativeText} ${plainStrategy}.`;
+    }
   }
 
   if (tradePlanLinesEl) {
     tradePlanLinesEl.innerHTML = `
-      <div class="ai-plan-line"><strong>Ingresso</strong> <span class="ai-val-entry">${formatPriceWithIso(entryPrice, asset)}</span></div>
-      <div class="ai-plan-line"><strong>Stop loss</strong> <span class="ai-val-sl">${formatPriceWithIso(stopLossPrice, asset)}</span></div>
-      <div class="ai-plan-line"><strong>Take profit</strong> <span class="ai-val-tp">${formatPriceWithIso(takeProfitPrice, asset)}</span></div>
+      <div class="ai-plan-line"><strong>${pfCtx.inPortfolio ? 'Prezzo Attuale' : 'Ingresso'}</strong> <span class="ai-val-entry">${formatPriceWithIso(entryPrice, asset)}</span></div>
+      <div class="ai-plan-line"><strong>${pfCtx.inPortfolio ? 'Stop / Uscita' : 'Stop loss'}</strong> <span class="ai-val-sl">${formatPriceWithIso(stopLossPrice, asset)}</span></div>
+      <div class="ai-plan-line"><strong>${pfCtx.inPortfolio ? 'Target Vendita' : 'Take profit'}</strong> <span class="ai-val-tp">${formatPriceWithIso(takeProfitPrice, asset)}</span></div>
       <div class="ai-plan-line"><strong>Rischio</strong> <span class="ai-val-risk">${formatRiskCash(riskCashVal, asset)}</span></div>
       <div class="ai-plan-line"><strong>R/R</strong> <span class="ai-val-rr">1 : ${setupRr}</span></div>
     `;
