@@ -792,35 +792,40 @@
   <div class="modal-backdrop" id="modalAddTicker">
     <div class="modal-window">
       <div class="modal-header">
-        <h3 style="font-size: 1.1rem; font-weight: 700;">Aggiungi Ticker</h3>
+        <h3 style="font-size: 1.1rem; font-weight: 700;">Aggiungi Asset (Ticker, ISIN o Nome)</h3>
         <button class="modal-close" id="closeAddTickerModal">&times;</button>
-      </div>
-
-      <div class="calc-field-group">
-        <label>Simbolo Ticker o ISIN <span style="opacity:0.65; font-weight:400;">(opzionale se cerchi per nome)</span></label>
-        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="es. AAPL, IE00BK5BQT80 o cerca sotto per nome" style="padding-left: 10px; text-transform: uppercase;">
-      </div>
-
-      <div class="calc-field-group">
-        <label>Codice ISIN <span style="opacity:0.65; font-weight:400;">(opzionale — Azioni, ETF, Obbligazioni e Certificati)</span></label>
-        <input type="text" id="newTickerIsin" class="calc-input" placeholder="es. US0378331005 o IE00BK5BQT80" maxlength="12" style="padding-left: 10px; text-transform: uppercase;">
-      </div>
-
-      <div class="calc-field-group">
-        <label>Nome Asset <span style="opacity:0.65; font-weight:400;">(cerca per nome: es. Ferrari, Enel, Vanguard, Bitcoin)</span></label>
-        <input type="text" id="newTickerName" class="calc-input" placeholder="es. Ferrari, Apple Inc., Vanguard All-World..." style="padding-left: 10px;">
-        <div id="addTickerNameResults" class="add-ticker-results"></div>
       </div>
 
       <div class="calc-field-group">
         <label>Tipologia Asset</label>
         <select id="newTickerType" class="calc-input" style="padding-left: 10px;">
           <option value="stock">Azione (Stock — Ticker o ISIN)</option>
-          <option value="etf">ETF / Fondo Indicizzato (Ticker o ISIN)</option>
+          <option value="etf">ETF / ETC / Fondo Indicizzato (Ticker, ISIN o Nome)</option>
           <option value="bond">Obbligazione / Titolo di Stato (Ticker o ISIN)</option>
           <option value="crypto">Criptovaluta (solo Ticker)</option>
-          <option value="certificate">Certificato d'Investimento (ISIN / SeDeX)</option>
+          <option value="certificate">Certificato d'Investimento (ISIN / SeDeX / EuroTLX)</option>
         </select>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Cerca per Ticker, ISIN o Nome <span style="opacity:0.65; font-weight:400;">(es. SWDA, VWCE, IE00B4L5Y983, NLBNPIT...)</span></label>
+        <input type="text" id="newTickerSymbol" class="calc-input" placeholder="es. SWDA, XEON, AAPL, IE00BK5BQT80 o NLBNPIT..." style="padding-left: 10px; text-transform: uppercase;">
+      </div>
+
+      <div class="calc-field-group">
+        <label>Nome Asset <span style="opacity:0.65; font-weight:400;">(cerca per nome o personalizza: es. MSCI World, Vanguard, Cash Collect)</span></label>
+        <input type="text" id="newTickerName" class="calc-input" placeholder="es. iShares Core MSCI World, Vanguard All-World, BNP Cash Collect..." style="padding-left: 10px;">
+        <div id="addTickerNameResults" class="add-ticker-results"></div>
+      </div>
+
+      <div class="calc-field-group">
+        <label>Codice ISIN <span style="opacity:0.65; font-weight:400;">(opzionale — auto-compilato quando disponibile)</span></label>
+        <input type="text" id="newTickerIsin" class="calc-input" placeholder="es. IE00B4L5Y983, LU0290358497 o NLBNPIT..." maxlength="12" style="padding-left: 10px; text-transform: uppercase;">
+      </div>
+
+      <div class="calc-field-group" id="newTickerManualPriceGroup" style="display: none;">
+        <label>Prezzo di riferimento (€) <span style="opacity:0.65; font-weight:400;">(opzionale — utile per Certificati / Bond / ISIN senza feed live)</span></label>
+        <input type="number" step="0.01" min="0" id="newTickerManualPrice" class="calc-input" placeholder="es. 100.00 (oppure lascia vuoto)" style="padding-left: 10px;">
       </div>
 
       <div id="addTickerFeedback" style="display: none; font-size: 0.78rem; padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; line-height: 1.45;"></div>

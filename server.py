@@ -12,6 +12,7 @@ import time
 import datetime
 import urllib.request
 import urllib.error
+import urllib.parse
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 PORT = 8080
@@ -333,6 +334,12 @@ class MarketPulseHandler(SimpleHTTPRequestHandler):
         elif self.path.startswith('/api/history'):
             self.handle_history_proxy()
             return
+        elif self.path.startswith('/api/search'):
+            self.handle_search_proxy()
+            return
+        elif self.path.startswith('/api/openfigi'):
+            self.handle_openfigi_proxy()
+            return
         elif self.path == '/api/status':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -395,6 +402,77 @@ class MarketPulseHandler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(data)
+        except Exception as e:
+            self.send_response(502)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+
+    def handle_search_proxy(self):
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        q = (params.get('q') or [''])[0].strip()
+        quotes_count = (params.get('quotesCount') or ['15'])[0].strip()
+        if not q:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'missing query'}).encode('utf-8'))
+            return
+
+        last_err = None
+        for host in ('query1.finance.yahoo.com', 'query2.finance.yahoo.com'):
+            url = (
+                f"https://{host}/v1/finance/search"
+                f"?q={urllib.parse.quote(q)}&quotesCount={urllib.parse.quote(quotes_count)}"
+                f"&newsCount=0&enableFuzzyQuery=true"
+            )
+            req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+            try:
+                with urllib.request.urlopen(req, timeout=6, context=SSL_CTX) as response:
+                    data = response.read()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            except Exception as e:
+                last_err = e
+
+        self.send_response(502)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({'error': str(last_err or 'search failed')}).encode('utf-8'))
+
+    def handle_openfigi_proxy(self):
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        isin = (params.get('isin') or [''])[0].strip().upper()
+        if not isin:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'missing isin'}).encode('utf-8'))
+            return
+
+        url = "https://api.openfigi.com/v3/mapping"
+        body = json.dumps([{'idType': 'ID_ISIN', 'idValue': isin}]).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': USER_AGENT
+            },
+            method='POST'
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=6, context=SSL_CTX) as response:
+                data = response.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(data)
         except Exception as e:
             self.send_response(502)
             self.send_header('Content-Type', 'application/json')
