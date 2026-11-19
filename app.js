@@ -363,7 +363,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=67');
+    FirebaseModule = await import('./firebase-sync.js?v=68');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -623,8 +623,14 @@ document.addEventListener('DOMContentLoaded', () => {
       calculateCertificatesOutput();
 
       pollLivePrices();
-      setInterval(pollLivePrices, AppState.settings.refreshRate || 5000);
+      scheduleLivePollInterval();
       setInterval(updateMarketHours, 60000);
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          pollLivePrices();
+        }
+      });
 
       // Non-blocking background initialization of Firebase Cloud Sync
       initFirebaseBackground();
@@ -807,6 +813,13 @@ function syncAssetQuoteFromBars(asset, bars) {
   }
 }
 
+let livePollIntervalId = null;
+function scheduleLivePollInterval() {
+  if (livePollIntervalId) clearInterval(livePollIntervalId);
+  const intervalMs = Math.max(3000, parseInt(AppState.settings.refreshRate, 10) || 5000);
+  livePollIntervalId = setInterval(pollLivePrices, intervalMs);
+}
+
 function saveAssetsToStorage(immediate = false) {
   try {
     localStorage.setItem('marketpulse_assets', JSON.stringify(AppState.assets));
@@ -814,7 +827,16 @@ function saveAssetsToStorage(immediate = false) {
   triggerCloudSync(immediate);
 }
 
-function saveHistoryToStorage() {
+let historySaveTimerId = null;
+let historyDirty = false;
+
+function flushHistoryToStorageNow() {
+  if (historySaveTimerId) {
+    clearTimeout(historySaveTimerId);
+    historySaveTimerId = null;
+  }
+  if (!historyDirty) return;
+  historyDirty = false;
   try {
     const serialized = {};
     for (const [key, bars] of Object.entries(AppState.cachedBars)) {
@@ -837,6 +859,22 @@ function saveHistoryToStorage() {
     console.warn('[MarketPulse] Unable to persist historical bars to localStorage:', e);
   }
 }
+
+function saveHistoryToStorage(immediate = false) {
+  historyDirty = true;
+  if (immediate) {
+    flushHistoryToStorageNow();
+    return;
+  }
+  if (historySaveTimerId) return;
+  historySaveTimerId = setTimeout(() => {
+    historySaveTimerId = null;
+    const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 0));
+    idle(flushHistoryToStorageNow);
+  }, 2500);
+}
+
+window.addEventListener('pagehide', flushHistoryToStorageNow);
 
 function mergeHistoricalBars(existingBars, newBars) {
   if (!existingBars || existingBars.length === 0) return newBars || [];
@@ -863,14 +901,16 @@ function updateCachedBarsWithLivePrice(symbol, livePrice) {
   for (const [key, bars] of Object.entries(AppState.cachedBars)) {
     if (key.startsWith(`${symbol}_`) && Array.isArray(bars) && bars.length > 0) {
       const last = bars[bars.length - 1];
-      last.close = livePrice;
-      if (livePrice > last.high) last.high = livePrice;
-      if (livePrice < last.low) last.low = livePrice;
-      updatedAny = true;
+      if (last.close !== livePrice) {
+        last.close = livePrice;
+        if (livePrice > last.high) last.high = livePrice;
+        if (livePrice < last.low) last.low = livePrice;
+        updatedAny = true;
+      }
     }
   }
   if (updatedAny) {
-    saveHistoryToStorage();
+    saveHistoryToStorage(false);
   }
 }
 
@@ -1515,6 +1555,8 @@ async function fetchStockQuoteKeyless(asset) {
 
 // --- Polling Live Prices (Keyless & Native CORS: Binance for Crypto + CNBC/Wall St. for Stocks/ETFs) ---
 async function pollLivePrices() {
+  if (document.hidden) return;
+
   // 0. Fetch live EUR/USD FX rate for real-time portfolio valuation in €
   try {
     fetch('https://api.binance.com/api/v3/ticker/price?symbol=EURUSDT')
@@ -1529,14 +1571,15 @@ async function pollLivePrices() {
       }).catch(() => {});
   } catch (e) {}
 
-  // 1. Fetch real crypto tickers from Binance API (CORS friendly, keyless)
+  // 1. Fetch real crypto tickers from Binance API and coalesce UI/storage updates into a single batch pass
   try {
     const cryptoSymbols = AppState.assets.filter(a => a.type === 'crypto');
-    for (const asset of cryptoSymbols) {
-      const pair = asset.marketSymbol || `${asset.symbol}USDT`;
-      fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`)
-        .then(res => res.json())
-        .then(data => {
+    if (cryptoSymbols.length > 0) {
+      Promise.allSettled(
+        cryptoSymbols.map(async (asset) => {
+          const pair = asset.marketSymbol || `${asset.symbol}USDT`;
+          const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`);
+          const data = await res.json();
           if (data && data.lastPrice) {
             asset.price = parseFloat(data.lastPrice);
             asset.change = parseFloat(data.priceChangePercent);
@@ -1549,15 +1592,24 @@ async function pollLivePrices() {
               const volFormatted = formatVolumeCompact(parseFloat(data.quoteVolume));
               if (volFormatted) asset.volume = volFormatted;
             }
-            saveAssetsToStorage();
             updateCachedBarsWithLivePrice(asset.symbol, asset.price);
-            renderAssetList();
-            if (AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol) {
-              updateSelectedAssetHeader();
-              redrawCurrentChart();
-            }
+            return asset.symbol;
           }
-        }).catch(() => {});
+          return null;
+        })
+      ).then((results) => {
+        const updatedSyms = results
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => r.value);
+        if (updatedSyms.length > 0) {
+          saveAssetsToStorage();
+          renderAssetList();
+          if (AppState.selectedAsset && updatedSyms.includes(AppState.selectedAsset.symbol)) {
+            updateSelectedAssetHeader();
+            redrawCurrentChart();
+          }
+        }
+      }).catch(() => {});
     }
   } catch (e) {}
 
@@ -4741,21 +4793,29 @@ async function loadAndRenderChart(asset, timeframe, options = {}) {
   }
 }
 
+function prepareHiDpiCanvas(canvas, width, height) {
+  const dpr = window.devicePixelRatio || 1;
+  const targetW = Math.round(width * dpr);
+  const targetH = Math.round(height * dpr);
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  return ctx;
+}
+
 function showChartNoData(asset, customMsg1 = null, customMsg2 = null) {
   const canvas = document.getElementById('mainChartCanvas');
   const wrapper = document.getElementById('chartWrapper');
   if (!canvas || !wrapper) return;
-  const dpr = window.devicePixelRatio || 1;
   const width = wrapper.clientWidth || 600;
   const height = wrapper.clientHeight || 320;
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, width, height);
+  const ctx = prepareHiDpiCanvas(canvas, width, height);
   ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
   ctx.font = '14px sans-serif';
   ctx.textAlign = 'center';
@@ -4835,17 +4895,24 @@ function calculateEMA(values, period) {
 }
 
 function calculateBollingerBands(values, period = 20, stdDevMult = 2) {
-  const upper = new Array(values.length).fill(null);
-  const lower = new Array(values.length).fill(null);
+  const n = values.length;
+  const upper = new Array(n).fill(null);
+  const lower = new Array(n).fill(null);
 
-  for (let i = 0; i < values.length; i++) {
+  for (let i = 1; i < n; i++) {
     const startIdx = Math.max(0, i - period + 1);
-    const slice = values.slice(startIdx, i + 1);
-    const len = slice.length;
-    if (len < 2) continue;
-    const mean = slice.reduce((a, b) => a + b, 0) / len;
-    const variance = slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / len;
-    const stdDev = Math.sqrt(variance);
+    const len = i - startIdx + 1;
+    let sum = 0;
+    for (let j = startIdx; j <= i; j++) {
+      sum += values[j];
+    }
+    const mean = sum / len;
+    let varSum = 0;
+    for (let j = startIdx; j <= i; j++) {
+      const d = values[j] - mean;
+      varSum += d * d;
+    }
+    const stdDev = Math.sqrt(varSum / len);
     upper[i] = mean + (stdDevMult * stdDev);
     lower[i] = mean - (stdDevMult * stdDev);
   }
@@ -4912,20 +4979,9 @@ function renderMainChart(bars) {
   const wrapper = document.getElementById('chartWrapper');
   if (!canvas || !wrapper) return;
 
-  const dpr = window.devicePixelRatio || 1;
   const width = wrapper.clientWidth || 360;
   const height = wrapper.clientHeight || 290;
-
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr, dpr);
-
-  ctx.clearRect(0, 0, width, height);
+  const ctx = prepareHiDpiCanvas(canvas, width, height);
 
   if (!bars || bars.length === 0) return;
 
@@ -5183,18 +5239,9 @@ function renderRsiChart(bars) {
   }
   wrapper.style.display = 'block';
 
-  const dpr = window.devicePixelRatio || 1;
   const width = wrapper.clientWidth || 360;
   const height = wrapper.clientHeight || 100;
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, width, height);
+  const ctx = prepareHiDpiCanvas(canvas, width, height);
 
   const paddingRight = 65;
   const chartWidth = width - paddingRight;
@@ -5260,18 +5307,9 @@ function renderMacdChart(bars) {
   }
   wrapper.style.display = 'block';
 
-  const dpr = window.devicePixelRatio || 1;
   const width = wrapper.clientWidth || 360;
   const height = wrapper.clientHeight || 100;
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, width, height);
+  const ctx = prepareHiDpiCanvas(canvas, width, height);
 
   const paddingRight = 65;
   const chartWidth = width - paddingRight;
@@ -6977,6 +7015,30 @@ function renderMobileTickerCarousel() {
   const container = document.getElementById('mobileTickerCarousel');
   if (!container) return;
 
+  const carouselSig = AppState.assets.map(a => a.symbol).join('|');
+  if (container.dataset.carouselSig === carouselSig && container.querySelector('.mob-ticker-chip')) {
+    AppState.assets.forEach(asset => {
+      const chip = container.querySelector(`.mob-ticker-chip[data-symbol="${CSS.escape(asset.symbol)}"]`);
+      if (!chip) return;
+      const isSelected = Boolean(AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol);
+      chip.classList.toggle('active', isSelected);
+      const isUp = (asset.change ?? 0) >= 0;
+      const curSym = getCurrencySymbol(asset).trim();
+      const priceStr = asset.price != null ? `${curSym}${asset.price.toFixed(2)}` : '—';
+      const changeStr = asset.change != null ? `${isUp ? '+' : ''}${asset.change.toFixed(1)}%` : '—';
+      const changeClass = `mob-ticker-chg ${isUp ? 'mob-up' : 'mob-down'}`;
+      const priceEl = chip.querySelector('.mob-ticker-price');
+      const chgEl = chip.querySelector('.mob-ticker-chg');
+      if (priceEl && priceEl.textContent !== priceStr) priceEl.textContent = priceStr;
+      if (chgEl) {
+        if (chgEl.textContent !== changeStr) chgEl.textContent = changeStr;
+        if (chgEl.className !== changeClass) chgEl.className = changeClass;
+      }
+    });
+    return;
+  }
+
+  container.dataset.carouselSig = carouselSig;
   const html = AppState.assets.map(asset => {
     const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
     const isUp = (asset.change ?? 0) >= 0;
@@ -7101,6 +7163,13 @@ function setupMobileBottomNav() {
 function setupChartCrosshair() {
   const canvas = document.getElementById('mainChartCanvas');
   const tooltip = document.getElementById('chartTooltip');
+  const ttO = document.getElementById('ttO');
+  const ttH = document.getElementById('ttH');
+  const ttL = document.getElementById('ttL');
+  const ttC = document.getElementById('ttC');
+  const ttV = document.getElementById('ttV');
+  let rafId = null;
+  let pendingClientX = null;
 
   const handlePointer = (clientX) => {
     const rect = canvas.getBoundingClientRect();
@@ -7117,6 +7186,9 @@ function setupChartCrosshair() {
     const index = Math.floor(x / stepX);
 
     if (index >= 0 && index < bars.length) {
+      if (AppState.crosshair && AppState.crosshair.index === index && tooltip.style.display === 'flex') {
+        return;
+      }
       AppState.crosshair = { index };
       renderMainChart(bars);
 
@@ -7124,20 +7196,37 @@ function setupChartCrosshair() {
       const b = bars[index];
       const curSym = getCurrencySymbol(AppState.selectedAsset);
       tooltip.style.display = 'flex';
-      document.getElementById('ttO').textContent = `${curSym}${b.open.toFixed(2)}`;
-      document.getElementById('ttH').textContent = `${curSym}${b.high.toFixed(2)}`;
-      document.getElementById('ttL').textContent = `${curSym}${b.low.toFixed(2)}`;
-      document.getElementById('ttC').textContent = `${curSym}${b.close.toFixed(2)}`;
-      document.getElementById('ttV').textContent = b.volume != null ? b.volume.toLocaleString() : '—';
+      if (ttO) ttO.textContent = `${curSym}${b.open.toFixed(2)}`;
+      if (ttH) ttH.textContent = `${curSym}${b.high.toFixed(2)}`;
+      if (ttL) ttL.textContent = `${curSym}${b.low.toFixed(2)}`;
+      if (ttC) ttC.textContent = `${curSym}${b.close.toFixed(2)}`;
+      if (ttV) ttV.textContent = b.volume != null ? b.volume.toLocaleString() : '—';
     }
   };
 
-  canvas.addEventListener('mousemove', (e) => handlePointer(e.clientX));
+  const schedulePointer = (clientX) => {
+    pendingClientX = clientX;
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      if (pendingClientX != null) {
+        handlePointer(pendingClientX);
+      }
+    });
+  };
+
+  canvas.addEventListener('mousemove', (e) => schedulePointer(e.clientX));
   canvas.addEventListener('touchmove', (e) => {
-    if (e.touches && e.touches[0]) handlePointer(e.touches[0].clientX);
+    if (e.touches && e.touches[0]) schedulePointer(e.touches[0].clientX);
   }, { passive: true });
 
   const hideCrosshair = () => {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    pendingClientX = null;
+    if (!AppState.crosshair) return;
     AppState.crosshair = null;
     tooltip.style.display = 'none';
     const bars = AppState.renderedBars && AppState.renderedBars.length > 0
@@ -8898,6 +8987,7 @@ function setupModals() {
       if (refresh) AppState.settings.refreshRate = parseInt(refresh.value, 10);
 
       localStorage.setItem('marketpulse_settings', JSON.stringify(AppState.settings));
+      scheduleLivePollInterval();
       triggerCloudSync();
       modalSettings.classList.remove('open');
 
