@@ -25,7 +25,7 @@
   <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
 
   <title>MarketPulse Pro • Trading & Portfolio</title>
-  <link rel="stylesheet" href="style.css?v=70">
+  <link rel="stylesheet" href="style.css?v=72">
 </head>
 <body>
 
@@ -309,10 +309,19 @@
             </div>
           </div>
 
+          <!-- Metriche avanzate offline: trend di lungo periodo, forza del trend, rischio di perdita -->
+          <details class="ai-advanced-metrics" id="aiAdvancedMetrics" open hidden>
+            <summary class="ai-advanced-summary">
+              <span>🔬 Metriche Avanzate</span>
+              <span class="ai-advanced-count" id="aiAdvancedMetricsCount"></span>
+            </summary>
+            <div class="ai-advanced-grid" id="aiAdvancedMetricsGrid"></div>
+          </details>
+
           <!-- Structured AI Evaluation & Trade Setup Block (Format requested by User) -->
           <div class="ai-structured-box" id="aiStructuredBox">
             <div class="ai-structured-narrative" id="aiStructuredNarrative">
-              Il titolo si trova in un trend ribassista con prezzi inferiori alle medie mobili EMA20 e EMA50. L'RSI a 38.4 indica un momentum debole ma non ancora in ipervenduto estremo. La vicinanza alla banda di Bollinger inferiore suggerisce una possibile stabilizzazione, ma il MACD negativo conferma la mancanza di una spinta rialzista convincente per un trade a 7 giorni.
+              Seleziona un asset per vedere l'analisi tecnica.
             </div>
 
             <div class="ai-trade-plan-block" id="aiTradePlanBlock">
@@ -323,11 +332,11 @@
                 </button>
               </div>
               <div class="ai-trade-plan-lines" id="aiTradePlanLines">
-                <div class="ai-plan-line"><strong>Ingresso</strong> <span class="ai-val-entry">10,96 € (10,96 EUR)</span></div>
-                <div class="ai-plan-line"><strong>Stop loss</strong> <span class="ai-val-sl">10,70 € (10,70 EUR)</span></div>
-                <div class="ai-plan-line"><strong>Take profit</strong> <span class="ai-val-tp">11,42 € (11,42 EUR)</span></div>
-                <div class="ai-plan-line"><strong>Rischio</strong> <span class="ai-val-risk">20 €</span></div>
-                <div class="ai-plan-line"><strong>R/R</strong> <span class="ai-val-rr">1 : 1.77</span></div>
+                <div class="ai-plan-line"><strong>Ingresso</strong> <span class="ai-val-entry">—</span></div>
+                <div class="ai-plan-line"><strong>Stop loss</strong> <span class="ai-val-sl">—</span></div>
+                <div class="ai-plan-line"><strong>Take profit</strong> <span class="ai-val-tp">—</span></div>
+                <div class="ai-plan-line"><strong>Rischio</strong> <span class="ai-val-risk">—</span></div>
+                <div class="ai-plan-line"><strong>R/R</strong> <span class="ai-val-rr">—</span></div>
               </div>
             </div>
           </div>
@@ -386,6 +395,11 @@
               <span class="calc-chip" data-risk="2.0">2.0%</span>
               <span class="calc-chip" data-risk="3.0">3.0%</span>
             </div>
+          </div>
+
+          <div class="calc-override-note" id="calcOverrideNote" hidden>
+            <span>✦ Valori applicati dalla Valutazione IA • validi per questa sessione</span>
+            <button type="button" class="calc-override-reset" id="calcOverrideReset" title="Torna a ingresso, stop e target calcolati in automatico">Ripristina automatici</button>
           </div>
 
           <div class="calc-field-group">
@@ -1101,6 +1115,6 @@
   </div>
 
   <!-- Main JavaScript Logic -->
-  <script src="app.js?v=70"></script>
+  <script src="app.js?v=73"></script>
 </body>
 </html>

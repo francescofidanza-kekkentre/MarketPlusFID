@@ -511,6 +511,7 @@ export async function analyzeAssetWithGemini(assetContext) {
       'Sei un analista finanziario. Rispondi in italiano chiaro, sintetico e oggettivo.',
       'Basati esclusivamente sui dati tecnici, fondamentali e di portafoglio forniti (senza inventare prezzi o quote):',
       JSON.stringify(assetContext),
+      'Se presente `advancedMetrics` (calcolato su barre giornaliere): `priceVsSma200Pct` = distanza % dalla media a 200 sedute, `goldenCross` = media 50 sopra la 200, `adx14` con `plusDI`/`minusDI` = forza e direzione del trend, `momentum12_1Pct` = rendimento da 12 a 1 mese fa, `annVolPct` e `volRegime` = volatilità annua e rapporto volatilità recente/annua, `atrPct` = escursione media giornaliera, `maxDrawdownPct`/`currentDrawdownPct` = ribasso massimo e attuale sull\'anno, `var95Pct`/`cvar95Pct` = perdita giornaliera al 95% e perdita media oltre tale soglia, `sortino`/`calmar` = rendimento corretto per il rischio, `upVolumeSharePct` = quota di volumi nelle sedute in rialzo. Usa queste metriche per motivare il giudizio su trend di lungo periodo e rischio.',
       ...modeInstructions
     ].join('\n');
 

@@ -999,6 +999,106 @@ body {
   color: var(--text-primary);
 }
 
+/* Metriche avanzate offline */
+.ai-advanced-metrics[hidden] {
+  display: none;
+}
+
+.ai-advanced-metrics {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: rgba(9, 13, 22, 0.45);
+}
+
+.ai-advanced-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.ai-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-advanced-summary::after {
+  content: '▾';
+  color: var(--text-muted);
+  margin-left: 6px;
+  transition: transform 0.15s ease;
+}
+
+.ai-advanced-metrics:not([open]) .ai-advanced-summary::after {
+  transform: rotate(-90deg);
+}
+
+.ai-advanced-count {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ai-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.ai-adv-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid #475569;
+}
+
+.ai-adv-metric.tone-up {
+  border-left-color: var(--color-up);
+}
+
+.ai-adv-metric.tone-down {
+  border-left-color: var(--color-down);
+}
+
+.ai-adv-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.ai-adv-value {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-adv-metric.tone-up .ai-adv-value {
+  color: var(--color-up);
+}
+
+.ai-adv-metric.tone-down .ai-adv-value {
+  color: var(--color-down);
+}
+
+.ai-adv-note {
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
 /* Structured AI Evaluation & Trade Setup Block */
 .ai-structured-box {
   background: rgba(15, 23, 42, 0.72);
@@ -3934,4 +4034,41 @@ body {
   border: none;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin: 10px 0;
+}
+
+/* Nota "valori applicati dalla Valutazione IA" nel calcolatore Rischio & Size */
+.calc-override-note[hidden] {
+  display: none;
+}
+
+.calc-override-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 12px;
+  padding: 7px 10px;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue-dim);
+  color: var(--accent-blue);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.calc-override-reset {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.calc-override-reset:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
 }

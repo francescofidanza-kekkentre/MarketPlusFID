@@ -52,7 +52,17 @@ La scheda **Valutazione IA: Conviene Investire?** elabora in tempo reale i dati 
 - **Grado di Fiducia (`0–100`) e Barra Visiva**: sintetizza la coerenza complessiva del quadro tecnico.
 - **Badge Verdetto e Livello di Rischio**: riassume l'orientamento (*es. Acquisto, Accumulo Graduale, Neutro, Cautela*) e la fascia di volatilità (*Basso, Moderato, Alto*).
 - **Riepilogo Operativo**: spiega in linguaggio chiaro **perché può convenire**, **a cosa fare attenzione** e **cosa fare** in conclusione.
-- **Livelli Operativi Suggeriti**: mostra i prezzi indicativi di **Ingresso**, **Stop Loss** e **Target** con il relativo rapporto Rischio/Rendimento.
+- **Livelli Operativi Suggeriti**: mostra i prezzi indicativi di **Ingresso**, **Stop Loss** e **Target** con il relativo rapporto Rischio/Rendimento. Lo **Stop Loss** tiene conto dell'escursione media giornaliera (ATR): se il supporto è troppo vicino al prezzo, lo stop viene allargato a 2 ATR (entro il 12%) per non uscire sul normale rumore di mercato. Il **Target** è limitato a 3 volte il rischio (R/R massimo `1 : 3`), così un massimo lontano non diventa un obiettivo irrealistico.
+- **🔬 Metriche Avanzate** (calcolate sul dispositivo dai prezzi giornalieri, anche senza Gemini; la sezione si apre e chiude cliccando sul titolo):
+  - **Trend lungo (media 200 sedute)**: distanza % del prezzo dalla media a 200 sedute e stato *golden cross* / *death cross* (media 50 sopra o sotto la 200).
+  - **Forza del trend (ADX 14)**: sopra **`25`** il trend è forte; **+DI / −DI** indicano se la spinta è rialzista o ribassista.
+  - **Momentum 12-1 mesi**: rendimento da 12 mesi fa a 1 mese fa, escludendo l'ultimo mese più rumoroso.
+  - **Volatilità annua** e **Escursione media (ATR 14)**: quanto oscilla il prezzo in un anno e in una singola seduta; il regime indica se la volatilità recente è in aumento.
+  - **Ribasso massimo 1 anno** (*drawdown*) e distanza attuale dal massimo del periodo.
+  - **Perdita giornaliera 1 su 20 (VaR 95%)** e **CVaR**: la perdita superata in una seduta negativa su 20 e la perdita media in quei giorni; se possiedi il titolo è stimata anche in euro sulla tua posizione.
+  - **Sortino e Calmar**: rendimento dell'ultimo anno rapportato ai ribassi subiti (valori sopra **`1`** sono buoni).
+  - **Sedute positive** e **Pressione volumi**: quota di chiusure in rialzo e di volumi scambiati nelle sedute in rialzo (accumulo) o in ribasso (distribuzione).
+  - Il **Grado di Fiducia** combina analisi tecnica (25%), andamento della curva (25%), fondamentali (20%), trend di lungo periodo (15%) e rischio (15%); se lo storico non basta per una metrica, il suo peso viene ridistribuito.
 - **Collegamenti Rapidi**: sotto il grafico trovi i pulsanti rapidi per aprire lo stesso titolo su piattaforme esterne di analisi o broker.
 
 ---
@@ -76,6 +86,8 @@ Serve a stabilire **quante quote comprare** senza mai rischiare più di una perc
    - **Rischio Monetario Massimo**: perdita massima in euro/dollari se scatta lo Stop Loss.
    - **Guadagno Potenziale**: profitto atteso al raggiungimento del Take Profit.
    - **Rapporto Rischio/Rendimento (`R:R`)**: confronta guadagno potenziale e rischio (es. `1 : 2.50`). Un rapporto pari o superiore a `1 : 2` indica un'operazione statisticamente equilibrata.
+
+Se nella **Valutazione IA** premi **⚡ Applica al Calcolatore Rischio**, Ingresso, Stop Loss e Take Profit vengono sostituiti dai livelli suggeriti per quel titolo e restano validi **per tutta la sessione corrente**, anche se cambi titolo o ricarichi la pagina; una nota in cima al calcolatore lo segnala. Premi **Ripristina automatici** per tornare subito ai valori calcolati dall'app; alla successiva apertura dell'app tornano comunque i valori automatici.
 
 ### Checklist Disciplinare Pre-Trade & Note Operative
 - **Checklist Pre-Trade**: spunta le verifiche essenziali prima di eseguire l'ordine (allineamento al trend, conferma volumi, presenza dello Stop Loss, rispetto del rischio massimo). L'app calcola un **Discipline Score** percentuale per evitare ingressi impulsivi.

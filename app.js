@@ -14,7 +14,7 @@ const DEFAULT_ASSETS = [
   { symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
   { symbol: 'META', name: 'Meta Platforms Inc.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
   { symbol: 'ASML', name: 'ASML Holding N.V.', type: 'stock', exchange: 'NASDAQ', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: false },
-  { symbol: 'ALO.PA', marketSymbol: 'ALO-FR', name: 'Alstom SA', type: 'stock', exchange: 'Euronext Paris', currency: 'EUR', price: 10.96, change: -0.82, high: 11.28, low: 10.89, volume: '4.2M', favorite: false },
+  { symbol: 'ALO.PA', marketSymbol: 'ALO-FR', name: 'Alstom SA', type: 'stock', exchange: 'Euronext Paris', currency: 'EUR', price: null, change: null, high: null, low: null, volume: null, favorite: false },
 
   // ETFs
   { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', type: 'etf', exchange: 'NYSE Arca', currency: 'USD', price: null, change: null, high: null, low: null, volume: null, favorite: true },
@@ -363,7 +363,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=69');
+    FirebaseModule = await import('./firebase-sync.js?v=70');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -662,25 +662,6 @@ function loadStoredData() {
     }
   } else {
     AppState.assets = [...DEFAULT_ASSETS];
-    saveAssetsToStorage();
-  }
-
-  // Ensure default showcase asset ALO.PA exists in AppState.assets
-  if (!AppState.assets.some(a => a.symbol === 'ALO.PA')) {
-    AppState.assets.push({
-      symbol: 'ALO.PA',
-      marketSymbol: 'ALO-FR',
-      name: 'Alstom SA',
-      type: 'stock',
-      exchange: 'Euronext Paris',
-      currency: 'EUR',
-      price: 10.96,
-      change: -0.82,
-      high: 11.28,
-      low: 10.89,
-      volume: '4.2M',
-      favorite: false
-    });
     saveAssetsToStorage();
   }
 
@@ -2758,6 +2739,17 @@ async function runGeminiAssetEvaluation() {
 
     const fund = asset.fundamentals || null;
     const cert = asset.certificateData || null;
+    // Metriche avanzate offline passate anche a Gemini (arrotondate, solo quelle disponibili)
+    let advancedMetrics = null;
+    if (!maturity.isTooYoung && asset.type !== 'certificate') {
+      const adv = computeAdvancedAssetMetrics(getDailySeriesForAsset(asset, bars), { isCrypto: asset.type === 'crypto' });
+      advancedMetrics = {};
+      for (const [k, v] of Object.entries(adv)) {
+        if (v == null || k === 'bars') continue;
+        advancedMetrics[k] = typeof v === 'number' ? Number(v.toFixed(2)) : v;
+      }
+      advancedMetrics.dailyBars = adv.bars;
+    }
     const payload = {
       symbol: asset.symbol,
       name: asset.name,
@@ -2773,6 +2765,7 @@ async function runGeminiAssetEvaluation() {
       analystRating: fund?.analystRating ?? null,
       underlying: cert?.underlying ?? null,
       barrierPct: cert?.barrierPct ?? null,
+      advancedMetrics,
       isRecentListing: maturity.isTooYoung,
       listingSummary: maturity.isTooYoung ? {
         listingDate: maturity.listingDate,
@@ -5900,13 +5893,320 @@ function formatRiskCash(val, asset) {
   return `${intVal} ${curSym}`;
 }
 
+// --- Metriche avanzate offline (calcolate solo da barre OHLCV giornalieri, nessuna chiamata di rete) ---
+// Ogni metrica vale null se lo storico non basta a calcolarla in modo affidabile.
+// @advanced-metrics-start
+function getDailySeriesForAsset(asset, fallbackBars = []) {
+  const daily = asset ? AppState.cachedBars[`${asset.symbol}_DAILY`] : null;
+  return (Array.isArray(daily) && daily.length >= 10) ? daily : (fallbackBars || []);
+}
+
+function computeAdvancedAssetMetrics(series, opts = {}) {
+  const bars = (series || []).filter(b => b && Number.isFinite(b.close) && b.close > 0);
+  const n = bars.length;
+  const tradingDays = opts.isCrypto ? 365 : 252;
+  const m = {
+    bars: n, sma50: null, sma200: null, priceVsSma50Pct: null, priceVsSma200Pct: null, goldenCross: null,
+    atr14: null, atrPct: null, adx14: null, plusDI: null, minusDI: null,
+    ret1YPct: null, momentum12_1Pct: null, annVolPct: null, volRegime: null,
+    maxDrawdownPct: null, currentDrawdownPct: null, sortino: null, calmar: null,
+    var95Pct: null, cvar95Pct: null, upDaysPct: null, upVolumeSharePct: null
+  };
+  if (n < 2) return m;
+
+  const closes = bars.map(b => b.close);
+  const highs = bars.map(b => (Number.isFinite(b.high) && b.high > 0) ? b.high : b.close);
+  const lows = bars.map(b => (Number.isFinite(b.low) && b.low > 0) ? b.low : b.close);
+  const last = closes[n - 1];
+  const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const std = (arr) => {
+    const mu = mean(arr);
+    return Math.sqrt(arr.reduce((a, b) => a + (b - mu) * (b - mu), 0) / arr.length);
+  };
+
+  // Trend di lungo periodo: medie semplici 50/200 sedute
+  if (n >= 50) {
+    m.sma50 = mean(closes.slice(-50));
+    m.priceVsSma50Pct = (last / m.sma50 - 1) * 100;
+  }
+  if (n >= 200) {
+    m.sma200 = mean(closes.slice(-200));
+    m.priceVsSma200Pct = (last / m.sma200 - 1) * 100;
+    m.goldenCross = m.sma50 > m.sma200;
+  }
+
+  // ATR(14) e ADX(14) con smoothing di Wilder
+  const period = 14;
+  if (n > period) {
+    const tr = [], plusDM = [], minusDM = [];
+    for (let i = 1; i < n; i++) {
+      tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
+      const up = highs[i] - highs[i - 1];
+      const down = lows[i - 1] - lows[i];
+      plusDM.push(up > down && up > 0 ? up : 0);
+      minusDM.push(down > up && down > 0 ? down : 0);
+    }
+    let atr = mean(tr.slice(0, period));
+    let sPlus = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
+    let sMinus = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
+    let sTr = tr.slice(0, period).reduce((a, b) => a + b, 0);
+    const dxList = [];
+    const pushDx = () => {
+      const pdi = sTr > 0 ? (sPlus / sTr) * 100 : 0;
+      const mdi = sTr > 0 ? (sMinus / sTr) * 100 : 0;
+      dxList.push({ pdi, mdi, dx: (pdi + mdi) > 0 ? (Math.abs(pdi - mdi) / (pdi + mdi)) * 100 : 0 });
+    };
+    pushDx();
+    for (let i = period; i < tr.length; i++) {
+      atr = (atr * (period - 1) + tr[i]) / period;
+      sTr = sTr - sTr / period + tr[i];
+      sPlus = sPlus - sPlus / period + plusDM[i];
+      sMinus = sMinus - sMinus / period + minusDM[i];
+      pushDx();
+    }
+    m.atr14 = atr;
+    m.atrPct = (atr / last) * 100;
+    if (dxList.length >= period) {
+      let adx = mean(dxList.slice(0, period).map(d => d.dx));
+      for (let i = period; i < dxList.length; i++) adx = (adx * (period - 1) + dxList[i].dx) / period;
+      const lastDx = dxList[dxList.length - 1];
+      m.adx14 = adx;
+      m.plusDI = lastDx.pdi;
+      m.minusDI = lastDx.mdi;
+    }
+  }
+
+  // Rendimenti giornalieri sull'ultimo anno (o sullo storico disponibile)
+  const rets = [];
+  for (let i = 1; i < n; i++) rets.push(closes[i] / closes[i - 1] - 1);
+  const yearRets = rets.slice(-tradingDays);
+  const yearCloses = closes.slice(-(tradingDays + 1));
+
+  if (yearCloses.length >= Math.round(tradingDays * 0.8)) {
+    m.ret1YPct = (last / yearCloses[0] - 1) * 100;
+  }
+  // Momentum 12-1: rendimento da 12 mesi fa a 1 mese fa (esclude l'ultimo mese, più rumoroso)
+  const monthBars = opts.isCrypto ? 30 : 21;
+  if (n > tradingDays) {
+    m.momentum12_1Pct = (closes[n - 1 - monthBars] / closes[n - 1 - tradingDays] - 1) * 100;
+  }
+
+  // Drawdown massimo e attuale nella finestra annuale
+  if (yearCloses.length >= 20) {
+    let peak = yearCloses[0], maxDd = 0;
+    for (const c of yearCloses) {
+      if (c > peak) peak = c;
+      maxDd = Math.max(maxDd, (peak - c) / peak);
+    }
+    m.maxDrawdownPct = maxDd * 100;
+    m.currentDrawdownPct = ((peak - last) / peak) * 100;
+  }
+
+  if (yearRets.length >= 60) {
+    const mu = mean(yearRets);
+    const sd = std(yearRets);
+    m.annVolPct = sd * Math.sqrt(tradingDays) * 100;
+    const vol20 = std(yearRets.slice(-20)) * Math.sqrt(tradingDays) * 100;
+    m.volRegime = m.annVolPct > 0 ? vol20 / m.annVolPct : null;
+
+    const downDev = Math.sqrt(mean(yearRets.map(r => Math.min(r, 0) ** 2))) * Math.sqrt(tradingDays);
+    const annRet = mu * tradingDays;
+    m.sortino = downDev > 0 ? annRet / downDev : null;
+    if (m.maxDrawdownPct != null && m.maxDrawdownPct > 0.5) m.calmar = (annRet * 100) / m.maxDrawdownPct;
+
+    // VaR / CVaR storici al 95% su 1 giorno (perdita espressa come numero positivo)
+    const sorted = [...yearRets].sort((a, b) => a - b);
+    const cut = Math.max(1, Math.floor(sorted.length * 0.05));
+    m.var95Pct = Math.max(0, -sorted[cut - 1] * 100);
+    m.cvar95Pct = Math.max(0, -mean(sorted.slice(0, cut)) * 100);
+  }
+
+  const recentRets = rets.slice(-60);
+  if (recentRets.length >= 20) {
+    m.upDaysPct = (recentRets.filter(r => r > 0).length / recentRets.length) * 100;
+  }
+
+  // Pressione dei volumi: quota dei volumi scambiata nelle sedute in rialzo (ultime 20)
+  let upVol = 0, totVol = 0, volBars = 0;
+  for (let i = Math.max(1, n - 20); i < n; i++) {
+    const v = bars[i].volume;
+    if (Number.isFinite(v) && v > 0) {
+      volBars++;
+      totVol += v;
+      if (closes[i] > closes[i - 1]) upVol += v;
+    }
+  }
+  if (volBars >= 10 && totVol > 0) m.upVolumeSharePct = (upVol / totVol) * 100;
+
+  return m;
+}
+
+// Due sotto-punteggi 0-100: trend di lungo periodo e qualità rischio/rendimento (null se dati insufficienti)
+function scoreAdvancedAssetMetrics(m) {
+  let longTrendScore = null;
+  if (m.priceVsSma200Pct != null || m.adx14 != null) {
+    let s = 50;
+    if (m.priceVsSma200Pct != null) {
+      if (m.priceVsSma200Pct > 30) s += 4; // molto esteso sopra la media: trend positivo ma rischio di ritracciamento
+      else if (m.priceVsSma200Pct > 0) s += 12;
+      else if (m.priceVsSma200Pct < -15) s -= 15;
+      else s -= 8;
+    }
+    if (m.goldenCross === true) s += 6;
+    else if (m.goldenCross === false) s -= 6;
+    if (m.adx14 != null && m.adx14 >= 25) s += (m.plusDI >= m.minusDI) ? 10 : -10;
+    if (m.momentum12_1Pct != null) {
+      if (m.momentum12_1Pct > 10) s += 8;
+      else if (m.momentum12_1Pct < -10) s -= 8;
+    }
+    longTrendScore = Math.max(10, Math.min(95, Math.round(s)));
+  }
+
+  let riskScore = null;
+  if (m.annVolPct != null) {
+    let s = 55;
+    if (m.sortino != null) {
+      if (m.sortino >= 1.5) s += 15;
+      else if (m.sortino >= 0.75) s += 8;
+      else if (m.sortino < 0) s -= 10;
+    }
+    if (m.maxDrawdownPct != null) {
+      if (m.maxDrawdownPct < 15) s += 8;
+      else if (m.maxDrawdownPct > 35) s -= 12;
+    }
+    if (m.currentDrawdownPct != null && m.currentDrawdownPct > 25) s -= 8;
+    if (m.var95Pct != null) {
+      if (m.var95Pct > 5) s -= 10;
+      else if (m.var95Pct < 2) s += 6;
+    }
+    if (m.volRegime != null && m.volRegime > 1.5) s -= 6;
+    riskScore = Math.max(10, Math.min(95, Math.round(s)));
+  }
+  return { longTrendScore, riskScore };
+}
+
+// Media pesata dei sotto-punteggi disponibili (i pesi dei componenti mancanti vengono redistribuiti)
+function combineAiSubScores(parts) {
+  const valid = parts.filter(p => p.score != null && Number.isFinite(p.score));
+  const wSum = valid.reduce((a, p) => a + p.weight, 0);
+  if (wSum <= 0) return 50;
+  return valid.reduce((a, p) => a + p.score * p.weight, 0) / wSum;
+}
+// @advanced-metrics-end
+
+function renderAdvancedMetricsPanel(m, asset, pfCtx) {
+  const wrap = document.getElementById('aiAdvancedMetrics');
+  const grid = document.getElementById('aiAdvancedMetricsGrid');
+  if (!wrap || !grid) return;
+  if (!m) {
+    wrap.hidden = true;
+    return;
+  }
+  const pct = (v, d = 1) => `${v >= 0 ? '+' : ''}${v.toFixed(d)}%`;
+  const tiles = [];
+  const add = (label, value, note, tone = 'neutral') => tiles.push({ label, value, note, tone });
+
+  if (m.priceVsSma200Pct != null) {
+    add('Trend lungo (media 200 sedute)',
+      `${pct(m.priceVsSma200Pct)} ${m.priceVsSma200Pct >= 0 ? 'sopra' : 'sotto'}`,
+      m.goldenCross ? 'Media 50 sopra la 200 (golden cross)' : 'Media 50 sotto la 200 (death cross)',
+      m.priceVsSma200Pct >= 0 ? 'up' : 'down');
+  } else if (m.priceVsSma50Pct != null) {
+    add('Trend medio (media 50 sedute)', `${pct(m.priceVsSma50Pct)} ${m.priceVsSma50Pct >= 0 ? 'sopra' : 'sotto'}`,
+      'Storico < 200 sedute: media lunga non disponibile', m.priceVsSma50Pct >= 0 ? 'up' : 'down');
+  }
+  if (m.adx14 != null) {
+    const strong = m.adx14 >= 25;
+    const bull = m.plusDI >= m.minusDI;
+    add('Forza del trend (ADX 14)', `${m.adx14.toFixed(0)} • ${strong ? 'trend forte' : (m.adx14 < 18 ? 'assente / laterale' : 'debole')}`,
+      `Direzione ${bull ? 'rialzista' : 'ribassista'} (+DI ${m.plusDI.toFixed(0)} / −DI ${m.minusDI.toFixed(0)})`,
+      strong ? (bull ? 'up' : 'down') : 'neutral');
+  }
+  if (m.momentum12_1Pct != null) {
+    add('Momentum 12-1 mesi', pct(m.momentum12_1Pct), 'Rendimento da 12 a 1 mese fa',
+      m.momentum12_1Pct > 5 ? 'up' : (m.momentum12_1Pct < -5 ? 'down' : 'neutral'));
+  } else if (m.ret1YPct != null) {
+    add('Rendimento 1 anno', pct(m.ret1YPct), 'Variazione sull\'ultimo anno', m.ret1YPct >= 0 ? 'up' : 'down');
+  }
+  if (m.annVolPct != null) {
+    const regime = m.volRegime == null ? '' : (m.volRegime > 1.3 ? `in aumento (×${m.volRegime.toFixed(1)})` : (m.volRegime < 0.75 ? `in calo (×${m.volRegime.toFixed(1)})` : 'stabile'));
+    add('Volatilità annua', `${m.annVolPct.toFixed(1)}%`, `Ultime 4 settimane: ${regime}`,
+      m.annVolPct > 40 ? 'down' : (m.annVolPct < 18 ? 'up' : 'neutral'));
+  }
+  if (m.atrPct != null) {
+    add('Escursione media (ATR 14)', `${m.atrPct.toFixed(2)}% / seduta`,
+      `≈ ${formatCurrency(m.atr14, asset)}: lo stop suggerito tiene conto di questo rumore`, 'neutral');
+  }
+  if (m.maxDrawdownPct != null) {
+    add('Ribasso massimo 1 anno', `−${m.maxDrawdownPct.toFixed(1)}%`,
+      `Ora −${m.currentDrawdownPct.toFixed(1)}% dal massimo del periodo`,
+      m.maxDrawdownPct > 35 ? 'down' : (m.maxDrawdownPct < 15 ? 'up' : 'neutral'));
+  }
+  if (m.var95Pct != null) {
+    let note = `Perdita media nei giorni peggiori (CVaR): −${m.cvar95Pct.toFixed(2)}%`;
+    if (pfCtx && pfCtx.inPortfolio && pfCtx.currentValEur > 0) {
+      const eur = pfCtx.currentValEur * m.var95Pct / 100;
+      note = `Sulla tua posizione ≈ −€ ${eur.toLocaleString('it-IT', { maximumFractionDigits: 0 })} • CVaR −${m.cvar95Pct.toFixed(2)}%`;
+    }
+    add('Perdita giornaliera 1 su 20 (VaR 95%)', `−${m.var95Pct.toFixed(2)}%`, note,
+      m.var95Pct > 5 ? 'down' : (m.var95Pct < 2 ? 'up' : 'neutral'));
+  }
+  if (m.sortino != null) {
+    add('Rendimento / rischio (Sortino • Calmar)',
+      `${m.sortino.toFixed(2)}${m.calmar != null ? ` • ${m.calmar.toFixed(2)}` : ''}`,
+      m.sortino >= 1 ? 'Rendimento elevato rispetto ai ribassi' : (m.sortino < 0 ? 'Rendimento negativo sul periodo' : 'Rapporto nella media'),
+      m.sortino >= 1 ? 'up' : (m.sortino < 0 ? 'down' : 'neutral'));
+  }
+  if (m.upDaysPct != null) {
+    add('Sedute positive (ultime 60)', `${m.upDaysPct.toFixed(0)}%`, 'Frequenza delle chiusure in rialzo',
+      m.upDaysPct >= 55 ? 'up' : (m.upDaysPct <= 45 ? 'down' : 'neutral'));
+  }
+  if (m.upVolumeSharePct != null) {
+    add('Pressione volumi (20 sedute)', `${m.upVolumeSharePct.toFixed(0)}% su rialzi`,
+      m.upVolumeSharePct >= 55 ? 'Prevalgono gli acquisti (accumulo)' : (m.upVolumeSharePct <= 45 ? 'Prevalgono le vendite (distribuzione)' : 'Volumi bilanciati'),
+      m.upVolumeSharePct >= 55 ? 'up' : (m.upVolumeSharePct <= 45 ? 'down' : 'neutral'));
+  }
+
+  if (tiles.length < 3) {
+    wrap.hidden = true;
+    return;
+  }
+  const countEl = document.getElementById('aiAdvancedMetricsCount');
+  if (countEl) countEl.textContent = `${tiles.length} metriche • ${m.bars} sedute`;
+  grid.innerHTML = tiles.map(t => `
+    <div class="ai-adv-metric tone-${t.tone}">
+      <span class="ai-adv-label">${escapePortfolioHtml(t.label)}</span>
+      <span class="ai-adv-value">${escapePortfolioHtml(t.value)}</span>
+      <span class="ai-adv-note">${escapePortfolioHtml(t.note)}</span>
+    </div>`).join('');
+  wrap.hidden = false;
+}
+
 function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   if (!asset) return;
+  // Le metriche avanzate vengono mostrate solo nel percorso di valutazione standard (non certificati / titoli recenti)
+  renderAdvancedMetricsPanel(null);
 
-  const activeBars = (!bars || bars.length < 2) ? [
-    { close: asset.price || 10.96, open: asset.price || 10.96, high: asset.price || 10.96, low: asset.price || 10.96, rsi: 38.4, ema20: 11.15, ema50: 11.45, lowerBand: 10.60, upperBand: 11.80, macdHist: -0.08, volume: 1000000 },
-    { close: asset.price || 10.96, open: asset.price || 10.96, high: asset.price || 10.96, low: asset.price || 10.96, rsi: 38.4, ema20: 11.15, ema50: 11.45, lowerBand: 10.60, upperBand: 11.80, macdHist: -0.08, volume: 1000000 }
-  ] : bars;
+  const hasBars = Array.isArray(bars) && bars.length >= 2;
+  const hasPrice = asset.price != null && Number.isFinite(asset.price) && asset.price > 0;
+  if (!hasBars && !hasPrice) {
+    // Nessun dato di mercato ancora disponibile: niente valutazione (evita analisi su valori inventati)
+    const verdictWaitEl = document.getElementById('aiVerdictBadge');
+    const narrativeWaitEl = document.getElementById('aiNarrativeText');
+    const scoreWaitEl = document.getElementById('aiScoreTextLabel');
+    const fillWaitEl = document.getElementById('aiScoreBarFill');
+    if (verdictWaitEl) {
+      verdictWaitEl.className = 'ai-verdict-pill rating-neutral';
+      verdictWaitEl.textContent = '⏳ IN ATTESA DEI DATI DI MERCATO';
+    }
+    if (scoreWaitEl) scoreWaitEl.textContent = 'Valutazione disponibile appena arrivano prezzo e storico.';
+    if (fillWaitEl) fillWaitEl.style.width = '0%';
+    if (narrativeWaitEl) narrativeWaitEl.textContent = `Dati di mercato per ${asset.symbol} non ancora disponibili.`;
+    return;
+  }
+  // Senza storico si usano due barre neutre al prezzo attuale (indicatori in posizione di equilibrio)
+  const neutralBar = { close: asset.price, open: asset.price, high: asset.price, low: asset.price, rsi: 50, ema20: asset.price, ema50: asset.price, lowerBand: null, upperBand: null, macdHist: 0, volume: null };
+  const activeBars = hasBars ? bars : [{ ...neutralBar }, { ...neutralBar }];
 
   const tagEl = document.getElementById('aiEvalAssetTag');
   const riskBadgeEl = document.getElementById('aiRiskProfileBadge');
@@ -6149,9 +6449,9 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   }
 
   // Use daily master series if available for multi-horizon performance & annualized volatility
-  const dailySeries = (AppState.cachedBars[`${asset.symbol}_DAILY`] && AppState.cachedBars[`${asset.symbol}_DAILY`].length >= 10)
-    ? AppState.cachedBars[`${asset.symbol}_DAILY`]
-    : activeBars;
+  const dailySeries = getDailySeriesForAsset(asset, activeBars);
+  const adv = computeAdvancedAssetMetrics(dailySeries, { isCrypto: asset.type === 'crypto' });
+  const advScores = scoreAdvancedAssetMetrics(adv);
 
   const calcHorizonReturn = (series, lookback) => {
     if (!series || series.length < 2) return null;
@@ -6303,16 +6603,23 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   }
   fundamentalScore = Math.max(15, Math.min(95, fundamentalScore));
 
-  // Combine into Composite AI Investment Score (35% Technical, 35% Curve/Trend, 30% Analysts/Fundamentals)
-  const compositeScore = Math.round(
-    Math.max(12, Math.min(96, (techScore * 0.35) + (curveScore * 0.35) + (fundamentalScore * 0.30)))
-  );
+  // Composite AI Investment Score: tecnico 25%, curva 25%, fondamentali 20%, trend lungo 15%, rischio 15%
+  // (se lo storico non basta per trend lungo / rischio, i loro pesi vengono redistribuiti sugli altri)
+  const compositeScore = Math.round(Math.max(12, Math.min(96, combineAiSubScores([
+    { score: techScore, weight: 0.25 },
+    { score: curveScore, weight: 0.25 },
+    { score: fundamentalScore, weight: 0.20 },
+    { score: advScores.longTrendScore, weight: 0.15 },
+    { score: advScores.riskScore, weight: 0.15 }
+  ]))));
+  renderAdvancedMetricsPanel(adv, asset, pfCtx);
 
   // Risk Profile Assessment (Plain Italian)
   const betaVal = fund.beta || (asset.type === 'crypto' ? 2.4 : (asset.type === 'bond' ? 0.35 : (asset.type === 'etf' ? 0.95 : 1.15)));
   let riskProfile = 'Medio';
   let riskColor = '#38bdf8';
-  if (asset.type === 'crypto' || annVolPct > 42 || betaVal >= 1.75) {
+  const deepDrawdownRisk = (adv.maxDrawdownPct != null && adv.maxDrawdownPct > 40) || (adv.var95Pct != null && adv.var95Pct > 5);
+  if (asset.type === 'crypto' || annVolPct > 42 || betaVal >= 1.75 || deepDrawdownRisk) {
     riskProfile = 'Alto (oscilla molto)';
     riskColor = '#fb7185';
   } else if (annVolPct < 18 && betaVal <= 1.05) {
@@ -6499,13 +6806,45 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     }
   }
 
+  // --- Dynamic Structured AI Evaluation & Trade Setup Plan (Requested Format) ---
+  // Trade Setup Levels
+  const entryPrice = currentPrice;
+  let stopLossPrice = (
+    (supportLevel > 0 && supportLevel < entryPrice * 0.99 && supportLevel >= entryPrice * 0.88)
+      ? Math.round(supportLevel * 100) / 100
+      : Math.round(entryPrice * 0.965 * 100) / 100
+  );
+  if (stopLossPrice >= entryPrice) {
+    stopLossPrice = Math.round(entryPrice * 0.965 * 100) / 100;
+  }
+  // Stop adattato alla volatilità: se lo stop è più vicino di 1 ATR (rumore di una seduta normale)
+  // lo si allarga a 2 ATR, senza superare il 12% dall'ingresso.
+  if (adv.atr14 != null && adv.atr14 > 0 && (entryPrice - stopLossPrice) < adv.atr14) {
+    const atrStop = Math.round(Math.max(entryPrice - 2 * adv.atr14, entryPrice * 0.88) * 100) / 100;
+    if (atrStop < stopLossPrice) stopLossPrice = atrStop;
+  }
+
+  let takeProfitPrice;
+  {
+    const slDist = Math.max(0.01, entryPrice - stopLossPrice);
+    if (resistanceLevel > entryPrice * 1.02 && (resistanceLevel - entryPrice) / slDist >= 1.3) {
+      // Una resistenza molto lontana (es. massimo prima di un crollo) non è un obiettivo realistico:
+      // il target viene limitato a 3 volte il rischio (R/R massimo 1 : 3)
+      takeProfitPrice = Math.round(Math.min(resistanceLevel, entryPrice + slDist * 3) * 100) / 100;
+    } else {
+      takeProfitPrice = Math.round((entryPrice + slDist * 1.85) * 100) / 100;
+    }
+  }
+
+  const setupRr = (Math.max(0, takeProfitPrice - entryPrice) / Math.max(0.0001, entryPrice - stopLossPrice)).toFixed(2);
+
   // Box 4: Prezzi Chiave Consigliati (context-aware: in-portfolio vs buy-only)
   if (factorStrategyEl) {
     if (pfCtx.inPortfolio) {
       const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
       factorStrategyEl.textContent = `Possiedi ${fmtSharesVal(pfCtx.shares)} quote (${fmtEurVal(pfCtx.currentValEur)}, P&L ${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(1)}%) • Compra altre quote: ${formatCurrency(supportLevel, asset)} • Vendi / Profit: ${formatCurrency(resistanceLevel, asset)}`;
     } else {
-      factorStrategyEl.textContent = `Zona ideale di acquisto: ${formatCurrency(supportLevel, asset)} • Obiettivo di crescita: ${formatCurrency(resistanceLevel, asset)}`;
+      factorStrategyEl.textContent = `Zona ideale di acquisto: ${formatCurrency(supportLevel, asset)} • Obiettivo di crescita: ${formatCurrency(takeProfitPrice, asset)}`;
     }
   }
 
@@ -6536,12 +6875,52 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     if (last.close <= 100.5) pros.push(`prezzo vicino o sotto la pari (100), favorevole per il rendimento a scadenza`);
   }
 
-  if (annVolPct > 38 || asset.type === 'crypto') {
-    cons.push(`il prezzo può subire oscillazioni ampie in poco tempo (volatilità annua ~${annVolPct.toFixed(0)}%)`);
+  const volForText = adv.annVolPct != null ? adv.annVolPct : annVolPct;
+  if (volForText > 38 || asset.type === 'crypto') {
+    cons.push(`il prezzo può subire oscillazioni ampie in poco tempo (volatilità annua ~${volForText.toFixed(0)}%)`);
   }
   if (rsi > 70) {
     cons.push(`nel brevissimo termine ha corso molto e potrebbe fare una piccola pausa`);
   }
+
+  // Fattori dalle metriche avanzate (lungo periodo e rischio di perdita): raccolti a parte e poi
+  // alternati con quelli di breve periodo, così nella sintesi compaiono entrambe le prospettive
+  const basePros = pros.splice(0);
+  const baseCons = cons.splice(0);
+  if (adv.priceVsSma200Pct != null) {
+    if (adv.priceVsSma200Pct > 0 && adv.goldenCross) {
+      pros.push(`il trend di lungo periodo è positivo: prezzo ${fmtSignedPct(adv.priceVsSma200Pct)} sopra la media delle ultime 200 sedute`);
+    } else if (adv.priceVsSma200Pct < 0) {
+      cons.push(`il prezzo è sotto la media delle ultime 200 sedute (${fmtSignedPct(adv.priceVsSma200Pct)}): il trend di lungo periodo non è ancora positivo`);
+    }
+  }
+  if (adv.adx14 != null && adv.adx14 >= 25 && adv.minusDI > adv.plusDI) {
+    cons.push(`è in corso una discesa con trend forte (ADX ${adv.adx14.toFixed(0)}): meglio non anticipare l'inversione`);
+  }
+  if (adv.sortino != null && adv.sortino >= 1.2) {
+    pros.push(`nell'ultimo anno ha reso bene in rapporto ai ribassi subiti (indice di Sortino ${adv.sortino.toFixed(2)})`);
+  }
+  if (adv.maxDrawdownPct != null && adv.maxDrawdownPct > 35) {
+    cons.push(`nell'ultimo anno è arrivato a perdere fino al −${adv.maxDrawdownPct.toFixed(0)}% dal massimo`);
+  }
+  if (adv.var95Pct != null && adv.var95Pct > 4) {
+    cons.push(`in una seduta negativa su 20 può perdere oltre il ${adv.var95Pct.toFixed(1)}%`);
+  }
+  if (adv.upVolumeSharePct != null && adv.upVolumeSharePct >= 60) {
+    pros.push(`i volumi si concentrano nelle sedute in rialzo (${adv.upVolumeSharePct.toFixed(0)}%), segno di accumulo`);
+  } else if (adv.upVolumeSharePct != null && adv.upVolumeSharePct <= 40) {
+    cons.push(`i volumi si concentrano nelle sedute in ribasso (${(100 - adv.upVolumeSharePct).toFixed(0)}%), segno di distribuzione`);
+  }
+  const interleave = (a, b) => {
+    const out = [];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (i < a.length) out.push(a[i]);
+      if (i < b.length) out.push(b[i]);
+    }
+    return out;
+  };
+  pros.splice(0, pros.length, ...interleave(basePros, pros));
+  cons.splice(0, cons.length, ...interleave(baseCons, cons));
 
   if (pros.length === 0) pros.push(`il prezzo sta cercando una base stabile intorno a ${formatCurrency(supportLevel, asset)}`);
   if (cons.length === 0) cons.push(`nessuna criticità evidente, ma resta sempre valido il normale rischio di mercato`);
@@ -6550,14 +6929,14 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
     narrativeEl.innerHTML =
       `<div>💼 <strong>Posizione in portafoglio (${escapePortfolioHtml(pfCtx.portfolioName)}):</strong> <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> • Controvalore lordo <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> / netto tasse IT (${escapePortfolioHtml(pfCtx.taxRateLabel || '26%')}) <strong>${fmtEurVal(pfCtx.netValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong>, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L lordo <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
-      `<div>✅ <strong>Fattori a favore di tenere / comprare altre quote:</strong> ${pros.slice(0, 2).join('; ')}.</div>` +
-      `<div>⚠️ <strong>Fattori per valutare vendita / alleggerimento:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
+      `<div>✅ <strong>Fattori a favore di tenere / comprare altre quote:</strong> ${pros.slice(0, 3).join('; ')}.</div>` +
+      `<div>⚠️ <strong>Fattori per valutare vendita / alleggerimento:</strong> ${cons.slice(0, 3).join('; ')}.</div>` +
       `<div>💡 <strong>Decisione operativa sulle tue quote:</strong> ${plainStrategy}.</div>`;
   } else {
     narrativeEl.innerHTML =
-      `<div>✅ <strong>Perché conviene acquistarlo:</strong> ${pros.slice(0, 3).join('; ')}.</div>` +
-      `<div>⚠️ <strong>Rischi prima dell'acquisto:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
-      `<div>💡 <strong>Verdetto acquisto:</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(resistanceLevel, asset)}</strong>.</div>`;
+      `<div>✅ <strong>Perché conviene acquistarlo:</strong> ${pros.slice(0, 4).join('; ')}.</div>` +
+      `<div>⚠️ <strong>Rischi prima dell'acquisto:</strong> ${cons.slice(0, 3).join('; ')}.</div>` +
+      `<div>💡 <strong>Verdetto acquisto:</strong> ${plainStrategy}. Se il prezzo tiene sopra <strong>${formatCurrency(supportLevel, asset)}</strong>, il primo obiettivo realistico si trova intorno a <strong>${formatCurrency(takeProfitPrice, asset)}</strong>.</div>`;
   }
 
   const assetGemKey = getAssetGeminiCacheKey(asset, pfCtx);
@@ -6584,93 +6963,67 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
     }
   }
 
-  // --- Dynamic Structured AI Evaluation & Trade Setup Plan (Requested Format) ---
-  const isAlo = (asset.symbol === 'ALO.PA');
-
-  // Trade Setup Levels
-  let entryPrice = isAlo ? 10.96 : currentPrice;
-  let stopLossPrice = isAlo ? 10.70 : (
-    (supportLevel > 0 && supportLevel < entryPrice * 0.99 && supportLevel >= entryPrice * 0.88)
-      ? Math.round(supportLevel * 100) / 100
-      : Math.round(entryPrice * 0.965 * 100) / 100
-  );
-  if (stopLossPrice >= entryPrice) {
-    stopLossPrice = Math.round(entryPrice * 0.965 * 100) / 100;
-  }
-
-  let takeProfitPrice = isAlo ? 11.42 : null;
-  if (!takeProfitPrice) {
-    const slDist = Math.max(0.01, entryPrice - stopLossPrice);
-    if (resistanceLevel > entryPrice * 1.02 && (resistanceLevel - entryPrice) / slDist >= 1.3) {
-      takeProfitPrice = Math.round(resistanceLevel * 100) / 100;
-    } else {
-      takeProfitPrice = Math.round((entryPrice + slDist * 1.85) * 100) / 100;
-    }
-  }
-
-  let setupRr = '1.77';
-  if (!isAlo) {
-    const rDist = Math.max(0, takeProfitPrice - entryPrice);
-    const slDist = Math.max(0.0001, entryPrice - stopLossPrice);
-    setupRr = (rDist / slDist).toFixed(2);
-  }
-
   const capVal = parseFloat(document.getElementById('calcCapital')?.value) || 2000;
   const riskPctVal = parseFloat(document.getElementById('calcRiskPct')?.value) || 1.0;
-  const riskCashVal = (isAlo && capVal === 2000 && riskPctVal === 1.0)
-    ? 20
-    : (capVal * riskPctVal) / 100;
+  const riskCashVal = (capVal * riskPctVal) / 100;
 
   // Structured Technical Narrative
   let structuredNarrativeText = '';
-  if (isAlo) {
-    structuredNarrativeText = "Il titolo si trova in un trend ribassista con prezzi inferiori alle medie mobili EMA20 e EMA50. L'RSI a 38.4 indica un momentum debole ma non ancora in ipervenduto estremo. La vicinanza alla banda di Bollinger inferiore suggerisce una possibile stabilizzazione, ma il MACD negativo conferma la mancanza di una spinta rialzista convincente per un trade a 7 giorni.";
+  let s1 = '';
+  if (currentPrice >= ema20 && ema20 >= ema50) {
+    s1 = 'Il titolo si trova in un trend rialzista con prezzi superiori alle medie mobili EMA20 e EMA50.';
+  } else if (currentPrice >= ema20 && currentPrice < ema50) {
+    s1 = 'Il titolo si trova in una fase di recupero tecnico con prezzi superiori alla media mobile EMA20 ma ancora inferiori alla EMA50.';
+  } else if (currentPrice < ema20 && ema20 >= ema50) {
+    s1 = 'Il titolo si trova in un pullback correttivo con prezzi temporaneamente inferiori alla media mobile EMA20 ma superiori alla EMA50.';
   } else {
-    let s1 = '';
-    if (currentPrice >= ema20 && ema20 >= ema50) {
-      s1 = 'Il titolo si trova in un trend rialzista con prezzi superiori alle medie mobili EMA20 e EMA50.';
-    } else if (currentPrice >= ema20 && currentPrice < ema50) {
-      s1 = 'Il titolo si trova in una fase di recupero tecnico con prezzi superiori alla media mobile EMA20 ma ancora inferiori alla EMA50.';
-    } else if (currentPrice < ema20 && ema20 >= ema50) {
-      s1 = 'Il titolo si trova in un pullback correttivo con prezzi temporaneamente inferiori alla media mobile EMA20 ma superiori alla EMA50.';
-    } else {
-      s1 = 'Il titolo si trova in un trend ribassista con prezzi inferiori alle medie mobili EMA20 e EMA50.';
-    }
-
-    const rsiVal = rsi != null ? rsi : 50;
-    const rsiNum = rsiVal.toFixed(1);
-    let s2 = '';
-    if (rsiVal >= 70) {
-      s2 = `L'RSI a ${rsiNum} indica un momentum surriscaldato in area di ipercomprato.`;
-    } else if (rsiVal >= 55) {
-      s2 = `L'RSI a ${rsiNum} indica un momentum favorevole sostenuto da acquisti costanti.`;
-    } else if (rsiVal >= 45) {
-      s2 = `L'RSI a ${rsiNum} indica un momentum neutrale in una fase di consolidamento equilibrato.`;
-    } else if (rsiVal >= 32) {
-      s2 = `L'RSI a ${rsiNum} indica un momentum debole ma non ancora in ipervenduto estremo.`;
-    } else {
-      s2 = `L'RSI a ${rsiNum} evidenzia un'area di ipervenduto con potenziale rimbalzo tecnico.`;
-    }
-
-    const bollingerDesc = (bPct <= 28)
-      ? 'La vicinanza alla banda di Bollinger inferiore suggerisce una possibile stabilizzazione'
-      : ((bPct >= 72)
-        ? 'La vicinanza alla banda di Bollinger superiore evidenzia un\'estensione marcata delle quotazioni'
-        : 'La posizione all\'interno del canale di Bollinger indica una volatilità contenuta');
-
-    let macdDesc = '';
-    if (last.macdHist > 0 && last.macdHist > (prev?.macdHist || 0)) {
-      macdDesc = 'e l\'istogramma MACD positivo in espansione conferma una spinta rialzista favorevole per un trade a 7 giorni.';
-    } else if (last.macdHist > 0) {
-      macdDesc = 'e il MACD positivo supporta una continuazione del movimento per un trade a 7 giorni.';
-    } else if (last.macdHist > (prev?.macdHist || 0)) {
-      macdDesc = 'ma il recupero progressivo dell\'istogramma MACD segnala un rallentamento della pressione ribassista per un trade a 7 giorni.';
-    } else {
-      macdDesc = 'ma il MACD negativo conferma la mancanza di una spinta rialzista convincente per un trade a 7 giorni.';
-    }
-
-    structuredNarrativeText = `${s1} ${s2} ${bollingerDesc}, ${macdDesc}`;
+    s1 = 'Il titolo si trova in un trend ribassista con prezzi inferiori alle medie mobili EMA20 e EMA50.';
   }
+
+  const rsiVal = rsi != null ? rsi : 50;
+  const rsiNum = rsiVal.toFixed(1);
+  let s2 = '';
+  if (rsiVal >= 70) {
+    s2 = `L'RSI a ${rsiNum} indica un momentum surriscaldato in area di ipercomprato.`;
+  } else if (rsiVal >= 55) {
+    s2 = `L'RSI a ${rsiNum} indica un momentum favorevole sostenuto da acquisti costanti.`;
+  } else if (rsiVal >= 45) {
+    s2 = `L'RSI a ${rsiNum} indica un momentum neutrale in una fase di consolidamento equilibrato.`;
+  } else if (rsiVal >= 32) {
+    s2 = `L'RSI a ${rsiNum} indica un momentum debole ma non ancora in ipervenduto estremo.`;
+  } else {
+    s2 = `L'RSI a ${rsiNum} evidenzia un'area di ipervenduto con potenziale rimbalzo tecnico.`;
+  }
+
+  const bollingerDesc = (bPct <= 28)
+    ? 'La vicinanza alla banda di Bollinger inferiore suggerisce una possibile stabilizzazione'
+    : ((bPct >= 72)
+      ? 'La vicinanza alla banda di Bollinger superiore evidenzia un\'estensione marcata delle quotazioni'
+      : 'La posizione all\'interno del canale di Bollinger indica una volatilità contenuta');
+
+  let macdDesc = '';
+  if (last.macdHist > 0 && last.macdHist > (prev?.macdHist || 0)) {
+    macdDesc = 'e l\'istogramma MACD positivo in espansione conferma una spinta rialzista favorevole per un trade a 7 giorni.';
+  } else if (last.macdHist > 0) {
+    macdDesc = 'e il MACD positivo supporta una continuazione del movimento per un trade a 7 giorni.';
+  } else if (last.macdHist > (prev?.macdHist || 0)) {
+    macdDesc = 'ma il recupero progressivo dell\'istogramma MACD segnala un rallentamento della pressione ribassista per un trade a 7 giorni.';
+  } else {
+    macdDesc = 'ma il MACD negativo conferma la mancanza di una spinta rialzista convincente per un trade a 7 giorni.';
+  }
+
+  let s3 = '';
+  if (adv.priceVsSma200Pct != null) {
+    const trendStrength = adv.adx14 == null ? '' : (adv.adx14 >= 25
+      ? `, con un trend forte (ADX ${adv.adx14.toFixed(0)})`
+      : `, con un trend debole o laterale (ADX ${adv.adx14.toFixed(0)})`);
+    s3 = ` Sul lungo periodo il prezzo è ${Math.abs(adv.priceVsSma200Pct).toFixed(1)}% ${adv.priceVsSma200Pct >= 0 ? 'sopra' : 'sotto'} la media a 200 sedute${trendStrength}.`;
+  }
+  if (adv.maxDrawdownPct != null && adv.var95Pct != null) {
+    s3 += ` Nell'ultimo anno il ribasso massimo è stato del ${adv.maxDrawdownPct.toFixed(1)}% e in una seduta negativa su 20 la perdita supera il ${adv.var95Pct.toFixed(1)}%.`;
+  }
+
+  structuredNarrativeText = `${s1} ${s2} ${bollingerDesc}, ${macdDesc}${s3}`;
 
   if (structuredNarrativeEl) {
     if (pfCtx.inPortfolio) {
@@ -6700,6 +7053,12 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
       if (slInp) slInp.value = stopLossPrice.toFixed(2);
       if (tpInp) tpInp.value = takeProfitPrice.toFixed(2);
       AppState.riskCalcLockedSymbol = asset.symbol;
+      setRiskOverride(asset.symbol, {
+        entry: Number(entryPrice.toFixed(2)),
+        sl: Number(stopLossPrice.toFixed(2)),
+        tp: Number(takeProfitPrice.toFixed(2))
+      });
+      updateRiskOverrideNote(asset);
 
       const calcTab = document.querySelector('.tools-tab[data-tool="calculator"]');
       if (calcTab) calcTab.click();
@@ -6723,6 +7082,46 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   }
 }
 
+// --- Parametri applicati dalla Valutazione IA ("Applica al Calcolatore Rischio") ---
+// Valgono per la sessione corrente (sessionStorage: sopravvivono a cambio titolo e ricarica della pagina,
+// si azzerano chiudendo scheda/app). Alla sessione successiva tornano i valori calcolati in automatico.
+const RISK_OVERRIDES_SESSION_KEY = 'marketpulse_risk_overrides_session';
+let riskOverridesCache = null;
+
+function readRiskOverrides() {
+  if (riskOverridesCache) return riskOverridesCache;
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(RISK_OVERRIDES_SESSION_KEY) || '{}');
+    riskOverridesCache = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch (e) {
+    riskOverridesCache = {};
+  }
+  return riskOverridesCache;
+}
+
+function getRiskOverride(symbol) {
+  if (!symbol) return null;
+  const o = readRiskOverrides()[symbol];
+  return (o && [o.entry, o.sl, o.tp].every(v => Number.isFinite(v) && v > 0)) ? o : null;
+}
+
+function setRiskOverride(symbol, values) {
+  if (!symbol) return;
+  const all = readRiskOverrides();
+  if (values) all[symbol] = values;
+  else delete all[symbol];
+  try {
+    sessionStorage.setItem(RISK_OVERRIDES_SESSION_KEY, JSON.stringify(all));
+  } catch (e) {
+    // sessionStorage non disponibile (es. navigazione privata restrittiva): resta valido in memoria
+  }
+}
+
+function updateRiskOverrideNote(asset) {
+  const note = document.getElementById('calcOverrideNote');
+  if (note) note.hidden = !(asset && !asset.isPortfolio && getRiskOverride(asset.symbol));
+}
+
 // --- Position Sizing & Risk Management Calculator ---
 function updateRiskCalculatorPreloads(asset, forceReset = false) {
   const entryInput = document.getElementById('calcEntryPrice');
@@ -6735,6 +7134,18 @@ function updateRiskCalculatorPreloads(asset, forceReset = false) {
     if (affix) affix.textContent = curSym;
   });
 
+  updateRiskOverrideNote(asset);
+  const override = (asset && !asset.isPortfolio) ? getRiskOverride(asset.symbol) : null;
+  if (override && (forceReset || AppState.riskCalcLockedSymbol !== asset.symbol)) {
+    // Titolo con parametri applicati in questa sessione: si ripristinano al posto dei valori automatici
+    entryInput.value = override.entry.toFixed(2);
+    slInput.value = override.sl.toFixed(2);
+    tpInput.value = override.tp.toFixed(2);
+    AppState.riskCalcLockedSymbol = asset.symbol;
+    calculateRiskOutput();
+    return;
+  }
+
   if (forceReset) {
     AppState.riskCalcLockedSymbol = null;
   } else if (asset && AppState.riskCalcLockedSymbol === asset.symbol) {
@@ -6742,17 +7153,11 @@ function updateRiskCalculatorPreloads(asset, forceReset = false) {
     return;
   }
 
-  if (asset) {
-    if (asset.symbol === 'ALO.PA') {
-      entryInput.value = '10.96';
-      slInput.value = '10.70';
-      tpInput.value = '11.42';
-    } else if (asset.price != null && !isNaN(asset.price)) {
-      entryInput.value = asset.price.toFixed(2);
-      // Default Stop Loss at -3.5%, Take Profit at +8.4%
-      slInput.value = (asset.price * 0.965).toFixed(2);
-      tpInput.value = (asset.price * 1.084).toFixed(2);
-    }
+  if (asset && asset.price != null && !isNaN(asset.price)) {
+    entryInput.value = asset.price.toFixed(2);
+    // Default Stop Loss at -3.5%, Take Profit at +8.4%
+    slInput.value = (asset.price * 0.965).toFixed(2);
+    tpInput.value = (asset.price * 1.084).toFixed(2);
   }
 
   calculateRiskOutput();
@@ -7319,6 +7724,14 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Ripristino dei valori automatici dopo "Applica al Calcolatore Rischio"
+  document.getElementById('calcOverrideReset')?.addEventListener('click', () => {
+    const asset = AppState.selectedAsset;
+    if (!asset) return;
+    setRiskOverride(asset.symbol, null);
+    updateRiskCalculatorPreloads(asset, true);
+  });
 
   // Calculator Inputs
   ['calcCapital', 'calcRiskPct', 'calcEntryPrice', 'calcStopLoss', 'calcTakeProfit'].forEach(id => {
@@ -10232,7 +10645,17 @@ La scheda **Valutazione IA: Conviene Investire?** elabora in tempo reale i dati 
 - **Grado di Fiducia (\`0–100\`) e Barra Visiva**: sintetizza la coerenza complessiva del quadro tecnico.
 - **Badge Verdetto e Livello di Rischio**: riassume l'orientamento (*es. Acquisto, Accumulo Graduale, Neutro, Cautela*) e la fascia di volatilità (*Basso, Moderato, Alto*).
 - **Riepilogo Operativo**: spiega in linguaggio chiaro **perché può convenire**, **a cosa fare attenzione** e **cosa fare** in conclusione.
-- **Livelli Operativi Suggeriti**: mostra i prezzi indicativi di **Ingresso**, **Stop Loss** e **Target** con il relativo rapporto Rischio/Rendimento.
+- **Livelli Operativi Suggeriti**: mostra i prezzi indicativi di **Ingresso**, **Stop Loss** e **Target** con il relativo rapporto Rischio/Rendimento. Lo **Stop Loss** tiene conto dell'escursione media giornaliera (ATR): se il supporto è troppo vicino al prezzo, lo stop viene allargato a 2 ATR (entro il 12%) per non uscire sul normale rumore di mercato. Il **Target** è limitato a 3 volte il rischio (R/R massimo \`1 : 3\`), così un massimo lontano non diventa un obiettivo irrealistico.
+- **🔬 Metriche Avanzate** (calcolate sul dispositivo dai prezzi giornalieri, anche senza Gemini; la sezione si apre e chiude cliccando sul titolo):
+  - **Trend lungo (media 200 sedute)**: distanza % del prezzo dalla media a 200 sedute e stato *golden cross* / *death cross* (media 50 sopra o sotto la 200).
+  - **Forza del trend (ADX 14)**: sopra **\`25\`** il trend è forte; **+DI / −DI** indicano se la spinta è rialzista o ribassista.
+  - **Momentum 12-1 mesi**: rendimento da 12 mesi fa a 1 mese fa, escludendo l'ultimo mese più rumoroso.
+  - **Volatilità annua** e **Escursione media (ATR 14)**: quanto oscilla il prezzo in un anno e in una singola seduta; il regime indica se la volatilità recente è in aumento.
+  - **Ribasso massimo 1 anno** (*drawdown*) e distanza attuale dal massimo del periodo.
+  - **Perdita giornaliera 1 su 20 (VaR 95%)** e **CVaR**: la perdita superata in una seduta negativa su 20 e la perdita media in quei giorni; se possiedi il titolo è stimata anche in euro sulla tua posizione.
+  - **Sortino e Calmar**: rendimento dell'ultimo anno rapportato ai ribassi subiti (valori sopra **\`1\`** sono buoni).
+  - **Sedute positive** e **Pressione volumi**: quota di chiusure in rialzo e di volumi scambiati nelle sedute in rialzo (accumulo) o in ribasso (distribuzione).
+  - Il **Grado di Fiducia** combina analisi tecnica (25%), andamento della curva (25%), fondamentali (20%), trend di lungo periodo (15%) e rischio (15%); se lo storico non basta per una metrica, il suo peso viene ridistribuito.
 - **Collegamenti Rapidi**: sotto il grafico trovi i pulsanti rapidi per aprire lo stesso titolo su piattaforme esterne di analisi o broker.
 
 ---
@@ -10256,6 +10679,8 @@ Serve a stabilire **quante quote comprare** senza mai rischiare più di una perc
    - **Rischio Monetario Massimo**: perdita massima in euro/dollari se scatta lo Stop Loss.
    - **Guadagno Potenziale**: profitto atteso al raggiungimento del Take Profit.
    - **Rapporto Rischio/Rendimento (\`R:R\`)**: confronta guadagno potenziale e rischio (es. \`1 : 2.50\`). Un rapporto pari o superiore a \`1 : 2\` indica un'operazione statisticamente equilibrata.
+
+Se nella **Valutazione IA** premi **⚡ Applica al Calcolatore Rischio**, Ingresso, Stop Loss e Take Profit vengono sostituiti dai livelli suggeriti per quel titolo e restano validi **per tutta la sessione corrente**, anche se cambi titolo o ricarichi la pagina; una nota in cima al calcolatore lo segnala. Premi **Ripristina automatici** per tornare subito ai valori calcolati dall'app; alla successiva apertura dell'app tornano comunque i valori automatici.
 
 ### Checklist Disciplinare Pre-Trade & Note Operative
 - **Checklist Pre-Trade**: spunta le verifiche essenziali prima di eseguire l'ordine (allineamento al trend, conferma volumi, presenza dello Stop Loss, rispetto del rischio massimo). L'app calcola un **Discipline Score** percentuale per evitare ingressi impulsivi.
