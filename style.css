@@ -339,9 +339,9 @@ body {
   overflow-x: auto;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 2px 2px 16px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.45) rgba(15, 23, 42, 0.35);
+  padding: 2px;
+  /* Scrollbar nascosta: si scorre con le frecce, trascinando, con la rotella o lo swipe */
+  scrollbar-width: none;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
@@ -360,21 +360,7 @@ body {
 }
 
 .category-chips::-webkit-scrollbar {
-  height: 6px;
-}
-
-.category-chips::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.35);
-  border-radius: 999px;
-}
-
-.category-chips::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.45);
-  border-radius: 999px;
-}
-
-.category-chips::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.75);
+  display: none;
 }
 
 .chip-btn {
