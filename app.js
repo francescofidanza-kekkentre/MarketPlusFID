@@ -363,7 +363,7 @@ let isRemoteUpdateInProgress = false;
 async function getFirebaseModule() {
   if (FirebaseModule) return FirebaseModule;
   try {
-    FirebaseModule = await import('./firebase-sync.js?v=68');
+    FirebaseModule = await import('./firebase-sync.js?v=69');
     return FirebaseModule;
   } catch (err) {
     console.warn('[MarketPulse] Firebase sync module could not be loaded:', err);
@@ -1208,6 +1208,28 @@ function isValidYahooChartPayload(data) {
   );
 }
 
+// Rileva una sola volta (sonda /api/status) se server.py è attivo.
+// Gli errori sulle singole richieste NON disattivano il server locale per l'intera sessione:
+// in quel caso si passa semplicemente ai gateway pubblici per quella richiesta.
+let localApiProbePromise = null;
+function isLocalApiAvailable() {
+  if (AppState.localApiAvailable !== null) return Promise.resolve(AppState.localApiAvailable);
+  if (!localApiProbePromise) {
+    localApiProbePromise = fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(2000) })
+      .then(async res => {
+        if (!res.ok) return false;
+        const data = await res.json().catch(() => null);
+        return Boolean(data && data.status === 'ok');
+      })
+      .catch(() => false)
+      .then(ok => {
+        AppState.localApiAvailable = ok;
+        return ok;
+      });
+  }
+  return localApiProbePromise;
+}
+
 async function fetchYahooChartRaw(asset, range, interval, isIncremental = false) {
   const yahooSym = getYahooSymbol(asset);
   // For incremental updates, only request the most recent window (1d for intraday, 5d for daily/weekly/monthly)
@@ -1216,24 +1238,17 @@ async function fetchYahooChartRaw(asset, range, interval, isIncremental = false)
     : range;
 
   // 1. Try local server.py endpoint if available (zero CORS, persistent disk cache)
-  if (AppState.localApiAvailable !== false) {
+  if (await isLocalApiAvailable()) {
     try {
       const localUrl = `/api/history?symbol=${encodeURIComponent(yahooSym)}&range=${effectiveRange}&interval=${interval}`;
-      const localRes = await fetch(localUrl, { signal: AbortSignal.timeout(1500) });
-      if (localRes.status === 404) {
-        AppState.localApiAvailable = false;
-      } else if (localRes.ok) {
+      // server.py interroga a sua volta Yahoo/CNBC: serve un timeout più ampio della sola sonda
+      const localRes = await fetch(localUrl, { signal: AbortSignal.timeout(8000) });
+      if (localRes.ok) {
         const data = await localRes.json();
-        if (isValidYahooChartPayload(data)) {
-          AppState.localApiAvailable = true;
-          return data;
-        }
-        AppState.localApiAvailable = false;
+        if (isValidYahooChartPayload(data)) return data;
       }
     } catch (e) {
-      if (AppState.localApiAvailable === null) {
-        AppState.localApiAvailable = false;
-      }
+      // Errore sulla singola richiesta: si prosegue con i gateway pubblici
     }
   }
 
@@ -7946,18 +7961,13 @@ async function fetchYahooSearchRaw(query, quotesCount = 15) {
   if (!q) return null;
 
   // 1. Try local server.py /api/search first (zero CORS, no third-party proxy rate limits)
-  if (AppState.localApiAvailable !== false) {
+  if (await isLocalApiAvailable()) {
     try {
       const localUrl = `/api/search?q=${encodeURIComponent(q)}&quotesCount=${quotesCount}`;
-      const res = await fetch(localUrl, { signal: AbortSignal.timeout(3000) });
-      if (res.status === 404) {
-        AppState.localApiAvailable = false;
-      } else if (res.ok) {
+      const res = await fetch(localUrl, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.quotes)) {
-          AppState.localApiAvailable = true;
-          return data;
-        }
+        if (data && Array.isArray(data.quotes)) return data;
       }
     } catch (e) {}
   }
@@ -7982,7 +7992,7 @@ async function fetchOpenFigiByIsin(isin) {
   if (!isIsinCode(cleanIsin)) return [];
 
   // 1. Try local server.py /api/openfigi first
-  if (AppState.localApiAvailable !== false) {
+  if (await isLocalApiAvailable()) {
     try {
       const res = await fetch(`/api/openfigi?isin=${encodeURIComponent(cleanIsin)}`, { signal: AbortSignal.timeout(4000) });
       if (res.ok) {

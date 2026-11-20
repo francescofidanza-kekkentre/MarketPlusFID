@@ -20,6 +20,8 @@ rules_version = '2';
 //      - photoURL: string (optional, valid URL format or empty string, max 500 chars)
 //      - settings: map (optional, preferences map, validated keys & types)
 //      - portfolio: map (optional, ticker symbol keys -> position map, max 500 entries)
+//      - portfolios: list (optional, multi-portfolio objects {id, name, composition, horizon, budgetEur, riskProfile, positions}, max 50 items)
+//      - activePortfolioId: string (optional, id of the selected portfolio, 1-64 chars)
 //      - portfolioSort: string (optional, e.g. 'pnl', 'best', 'alpha', max 30 chars)
 //      - assets: list (optional, list of asset objects, max 500 items)
 //      - watchlist: list (optional, list of ticker symbols, max 200 items)
@@ -218,6 +220,8 @@ service cloud.firestore {
           'photoURL',
           'settings',
           'portfolio',
+          'portfolios',
+          'activePortfolioId',
           'portfolioSort',
           'assets',
           'watchlist',
@@ -235,6 +239,8 @@ service cloud.firestore {
         isOptionalUrl(data, 'photoURL') &&
         (!('settings' in data) || isValidSettingsMap(data.settings)) &&
         (!('portfolio' in data) || (data.portfolio is map && data.portfolio.size() <= 500)) &&
+        (!('portfolios' in data) || (data.portfolios is list && data.portfolios.size() <= 50)) &&
+        isOptionalString(data, 'activePortfolioId', 1, 64) &&
         isOptionalString(data, 'portfolioSort', 1, 30) &&
         (!('assets' in data) || (data.assets is list && data.assets.size() <= 500)) &&
         (!('watchlist' in data) || (data.watchlist is list && data.watchlist.size() <= 200)) &&

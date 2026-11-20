@@ -13,6 +13,8 @@
       "**/node_modules/**",
       "README.md",
       "GEMINI.md",
+      "CLAUDE.md",
+      "tools/**",
       "server.py",
       "history_cache.json",
       "__pycache__/**"

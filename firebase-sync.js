@@ -1,7 +1,7 @@
 // MarketPulse Pro - Firebase Authentication & Cloud Firestore Sync Engine
 // Modular SDK integration using official Google gstatic CDN
 
-import { getFirebaseConfig } from './firebase-config.js';
+import { getFirebaseConfig } from './firebase-config.js?v=1';
 
 let app = null;
 let auth = null;
