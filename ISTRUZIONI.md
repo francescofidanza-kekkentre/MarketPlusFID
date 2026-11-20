@@ -102,8 +102,8 @@ Crea più portafogli, monitora P&L e pesi percentuali, verifica sovrapposizioni 
 
 ### Aggiungere, Modificare o Rimuovere Posizioni
 - Clicca sul pulsante **`+`** su qualsiasi titolo nella Watchlist (o nella scheda portafoglio).
-- Inserisci il **Numero di Quote** possedute e il **Prezzo Medio di Carico (PMC)** (puoi premere *Usa prezzo attuale* per compilarlo in un clic).
-- L'app calcola subito per ogni asset e per l'intero portafoglio: **Valore Attuale**, **Capitale Investito**, **P&L (€ e %)** e **Peso %** sul totale.
+- Inserisci il **Numero di Quote** possedute, il **Prezzo Medio di Carico (PMC)** (puoi premere *Usa prezzo attuale* per compilarlo in un clic) e, se necessario, personalizza il **Regime Fiscale Italia** (altrimenti impostato automaticamente).
+- L'app calcola subito per ogni asset e per l'intero portafoglio: **Controvalore Lordo**, **Controvalore Netto (al netto delle tasse sulle plusvalenze in Italia: 12,5% Titoli di Stato/White List, 26% Azioni/ETF/Certificati, 33% Cripto-attività)**, **Capitale Investito**, **P&L (€ e %)** e **Peso %** sul totale. Premi **`ⓘ`** su ogni posizione per vedere il dettaglio fiscale completo.
 
 ### Valutazione IA Composizione & Simulatore "What-If"
 - **1. Sovrapposizioni**: analizza automaticamente se stai accumulando esposizione sugli stessi titoli o indici tra azioni singole, ETF e certificati.

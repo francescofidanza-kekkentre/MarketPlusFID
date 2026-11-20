@@ -1665,6 +1665,253 @@ async function pollLivePrices() {
   }
 }
 
+// --- Italian Capital Gains Tax Engine & Helpers ---
+const ITALIAN_TAX_REGIMES = {
+  gov12_5: {
+    mode: 'gov12_5',
+    rate: 0.125,
+    ratePct: 12.5,
+    rateLabel: '12,5%',
+    shortTag: 'Titoli di Stato / White List',
+    reason: 'Aliquota agevolata 12,5% prevista in Italia per Titoli di Stato italiani, esteri White List ed ETF governativi equiparati.'
+  },
+  std26: {
+    mode: 'std26',
+    rate: 0.26,
+    ratePct: 26,
+    rateLabel: '26%',
+    shortTag: 'Aliquota Ordinaria 26%',
+    reason: 'Imposta sostitutiva ordinaria 26% prevista in Italia su plusvalenze di azioni, ETF non governativi, certificati, ETP/ETN e obbligazioni corporate.'
+  },
+  crypto33: {
+    mode: 'crypto33',
+    rate: 0.33,
+    ratePct: 33,
+    rateLabel: '33%',
+    shortTag: 'Cripto-attività (Italia 2026)',
+    reason: 'Aliquota 33% sulle plusvalenze da cripto-attività in possesso diretto in Italia dal 1° gennaio 2026 (Legge di Bilancio 2025).'
+  },
+  exempt0: {
+    mode: 'exempt0',
+    rate: 0,
+    ratePct: 0,
+    rateLabel: '0%',
+    shortTag: 'Esente / Personalizzata',
+    reason: 'Aliquota personalizzata allo 0% (es. regime PIR o esenzione specifica impostata dall\'utente).'
+  }
+};
+
+const WHITE_LIST_GOV_SYMBOLS = new Set([
+  'XEON', 'C3M', 'SMART', 'CSH2', 'LEONIA', 'XG7S', 'SEGA', 'IEAG', 'EUNH',
+  'TLT', 'IEF', 'SHY', 'SGOV', 'BIL', 'GOVT', 'VGLT', 'VGIT', 'VGSH',
+  'EGOV', 'EM13', 'EM35', 'EM710', 'EM1015', 'X13E', 'X35E', 'X710', 'X1G',
+  'IBGL', 'IBGM', 'IBGS', 'DTLA', 'IDTL', 'SYBA', 'SYBB', 'PR1T'
+]);
+
+const WHITE_LIST_GOV_ISINS = new Set([
+  'IT0005560948', 'IT0003934657', 'IT0005594467', 'IT0005532723', 'IT0005210650',
+  'DE000BU2Z015', 'FR001400L834', 'LU0290358497', 'FR0010754200', 'LU1190417599',
+  'LU0290355717', 'IE00B4WXJJ64', 'US4642874329'
+]);
+
+const EUR_MICAR_EMT_SYMBOLS = new Set(['EURC', 'EURI', 'EURT', 'AEUR', 'EURCV', 'EUROP', 'EURS']);
+
+function formatItEurAmount(val) {
+  return Number(val || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Determina il profilo fiscale italiano applicabile alle plusvalenze di una posizione.
+ */
+function getItalianTaxProfile(asset, pos = null) {
+  const overrideMode = pos && typeof pos.taxRegime === 'string' ? pos.taxRegime : 'auto';
+  if (overrideMode !== 'auto' && ITALIAN_TAX_REGIMES[overrideMode]) {
+    return { ...ITALIAN_TAX_REGIMES[overrideMode], isOverride: true };
+  }
+
+  if (!asset) {
+    return { ...ITALIAN_TAX_REGIMES.std26, isOverride: false };
+  }
+
+  const baseSym = normalizePortfolioTicker(asset.symbol);
+  const marketBase = normalizePortfolioTicker(asset.marketSymbol);
+  const isin = String(asset.isin || '').trim().toUpperCase();
+  const text = `${asset.symbol || ''} ${asset.name || ''} ${asset.exchange || ''}`.toLowerCase();
+
+  if (asset.type === 'crypto') {
+    if (EUR_MICAR_EMT_SYMBOLS.has(baseSym) || /\b(eurc|euri|aeur|eurcv|micar|euro\s*stable)\b/i.test(text)) {
+      return {
+        mode: 'std26',
+        rate: 0.26,
+        ratePct: 26,
+        rateLabel: '26%',
+        shortTag: 'EMT EUR (MiCAR)',
+        reason: 'Token di moneta elettronica (EMT) in Euro conforme MiCAR: aliquota agevolata al 26% sulle plusvalenze.',
+        isOverride: false
+      };
+    }
+    return { ...ITALIAN_TAX_REGIMES.crypto33, isOverride: false };
+  }
+
+  const isCorporateOrEmBond = /\b(corp|corporate|high\s*yield|hy\b|subordinat|junk|convertible|coco|at1|t2|emerging|em\s*bond|embe|ihyg|eunw|aggregate|aggh|vagf|euna)\b/i.test(text);
+  const isSovereignText = /\b(btp|bot|cct|ctz|bund|oat|bobl|schatz|buxl|bonos|gilt|treasury|t-bill|t-note|t-bond|tips|govt|government|sovereign|titoli\s*di\s*stato|eurozone\s*gov|euro\s*gov|overnight\s*(rate|return))\b/i.test(text);
+  const isKnownGovSymbol = WHITE_LIST_GOV_SYMBOLS.has(baseSym) || WHITE_LIST_GOV_SYMBOLS.has(marketBase) || WHITE_LIST_GOV_ISINS.has(isin);
+
+  if ((asset.type === 'bond' || asset.type === 'etf') && !isCorporateOrEmBond && (isKnownGovSymbol || isSovereignText)) {
+    return { ...ITALIAN_TAX_REGIMES.gov12_5, isOverride: false };
+  }
+
+  return { ...ITALIAN_TAX_REGIMES.std26, isOverride: false };
+}
+
+/**
+ * Calcola controvalore lordo, imposta stimata in Italia e controvalore netto di una posizione.
+ */
+function computePositionTaxBreakdown(asset, pos, curPriceOverride = null) {
+  const shares = Math.max(0, Number(pos?.shares) || 0);
+  const buyPrice = Math.max(0, Number(pos?.buyPrice) || 0);
+  const curPrice = (curPriceOverride != null && curPriceOverride > 0)
+    ? Number(curPriceOverride)
+    : (asset && asset.price != null ? Number(asset.price) : buyPrice);
+
+  const investedNative = shares * buyPrice;
+  const grossValNative = shares * curPrice;
+  const grossPnlNative = grossValNative - investedNative;
+
+  const investedEur = convertToEur(investedNative, asset || { currency: 'EUR' });
+  const grossValEur = convertToEur(grossValNative, asset || { currency: 'EUR' });
+  const grossPnlEur = grossValEur - investedEur;
+  const grossPnlPct = investedEur > 0 ? (grossPnlEur / investedEur) * 100 : 0;
+
+  const taxProfile = getItalianTaxProfile(asset, pos);
+  const taxEur = grossPnlEur > 0 ? grossPnlEur * taxProfile.rate : 0;
+  const taxNative = grossPnlNative > 0 ? grossPnlNative * taxProfile.rate : 0;
+
+  const netValEur = grossValEur - taxEur;
+  const netValNative = grossValNative - taxNative;
+  const netPnlEur = grossPnlEur - taxEur;
+  const netPnlNative = grossPnlNative - taxNative;
+  const netPnlPct = investedEur > 0 ? (netPnlEur / investedEur) * 100 : 0;
+
+  return {
+    shares,
+    buyPrice,
+    curPrice,
+    investedNative,
+    grossValNative,
+    grossPnlNative,
+    taxNative,
+    netValNative,
+    netPnlNative,
+    investedEur,
+    grossValEur,
+    grossPnlEur,
+    grossPnlPct,
+    taxEur,
+    netValEur,
+    netPnlEur,
+    netPnlPct,
+    taxProfile
+  };
+}
+
+let currentOpenTaxPopoverSymbol = null;
+
+function renderTaxDetailPopoverContent(symbol) {
+  const popover = document.getElementById('portTaxDetailPopover');
+  const titleEl = document.getElementById('portTaxPopoverTitle');
+  const bodyEl = document.getElementById('portTaxPopoverBody');
+  if (!popover || !titleEl || !bodyEl) return;
+
+  const asset = (AppState.assets || []).find(a => a.symbol === symbol);
+  const pos = AppState.portfolio ? AppState.portfolio[symbol] : null;
+  if (!asset || !pos) return;
+
+  currentOpenTaxPopoverSymbol = symbol;
+  const tb = computePositionTaxBreakdown(asset, pos);
+  const isGain = tb.grossPnlEur > 0;
+  const isLoss = tb.grossPnlEur < 0;
+  const isNonEur = (asset.currency || 'EUR').toUpperCase() !== 'EUR';
+  const grossSign = tb.grossPnlEur >= 0 ? '+' : '-';
+  const netSign = tb.netPnlEur >= 0 ? '+' : '-';
+
+  titleEl.textContent = `${asset.symbol} — ${asset.name}`;
+  bodyEl.innerHTML = `
+    <div class="port-tax-popover-regime">
+      <strong>Aliquota applicata: ${escapePortfolioHtml(tb.taxProfile.rateLabel)}</strong> • ${escapePortfolioHtml(tb.taxProfile.shortTag)}${tb.taxProfile.isOverride ? ' (manuale)' : ' (auto)'}
+      <div style="margin-top:3px;color:var(--text-muted);font-size:0.71rem;">${escapePortfolioHtml(tb.taxProfile.reason)}</div>
+    </div>
+    <div class="port-tax-popover-rows">
+      <div class="port-tax-popover-row">
+        <span>Capitale investito</span>
+        <strong>€ ${formatItEurAmount(tb.investedEur)}${isNonEur ? ` (${formatCurrency(tb.investedNative, asset)})` : ''}</strong>
+      </div>
+      <div class="port-tax-popover-row">
+        <span>Controvalore Lordo</span>
+        <strong>€ ${formatItEurAmount(tb.grossValEur)}${isNonEur ? ` (${formatCurrency(tb.grossValNative, asset)})` : ''}</strong>
+      </div>
+      <div class="port-tax-popover-row">
+        <span>${isLoss ? 'Minusvalenza latente' : 'Plusvalenza lorda'}</span>
+        <strong style="color:${tb.grossPnlEur >= 0 ? '#34d399' : '#f87171'};">${grossSign}€ ${formatItEurAmount(Math.abs(tb.grossPnlEur))} (${grossSign}${Math.abs(tb.grossPnlPct).toFixed(2)}%)</strong>
+      </div>
+      <div class="port-tax-popover-row">
+        <span>Imposta stimata (${escapePortfolioHtml(tb.taxProfile.rateLabel)})</span>
+        <strong style="color:${isGain && tb.taxEur > 0 ? '#fbbf24' : '#94a3b8'};">${isGain && tb.taxEur > 0 ? '-€ ' + formatItEurAmount(tb.taxEur) : '€ 0,00'}${isLoss ? ' (nessuna imposta)' : ''}</strong>
+      </div>
+      <div class="port-tax-popover-row is-highlight">
+        <span>Controvalore Netto (Tasse IT)</span>
+        <strong>€ ${formatItEurAmount(tb.netValEur)}</strong>
+      </div>
+      <div class="port-tax-popover-row">
+        <span>P&amp;L Netto post-tasse</span>
+        <strong style="color:${tb.netPnlEur >= 0 ? '#34d399' : '#f87171'};">${netSign}€ ${formatItEurAmount(Math.abs(tb.netPnlEur))} (${netSign}${Math.abs(tb.netPnlPct).toFixed(2)}%)</strong>
+      </div>
+    </div>
+    <div class="port-tax-popover-note">
+      Stima basata sull'imposta sostitutiva italiana sulle plusvalenze (${escapePortfolioHtml(tb.taxProfile.rateLabel)}). Esclusi imposta di bollo/IVAFE/IVACA (0,20%/anno), commissioni broker ed eventuali minusvalenze pregresse nello zainetto fiscale.
+    </div>
+    <div class="port-tax-popover-actions">
+      <button type="button" class="port-tax-popover-edit-btn" id="portTaxPopoverEditBtn">Modifica posizione / aliquota</button>
+    </div>
+  `;
+
+  const editBtn = document.getElementById('portTaxPopoverEditBtn');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => {
+      currentOpenTaxPopoverSymbol = null;
+      syncTaxPopoverAriaExpanded(false);
+      if (typeof popover.hidePopover === 'function') {
+        try { popover.hidePopover(); } catch (e) {}
+      }
+      openPortfolioModal(symbol);
+    });
+  }
+  syncTaxPopoverAriaExpanded(true);
+}
+
+function syncTaxPopoverAriaExpanded(isOpen) {
+  document.querySelectorAll('.port-tax-info-btn').forEach(btn => {
+    const sym = btn.getAttribute('data-symbol');
+    btn.setAttribute('aria-expanded', String(Boolean(isOpen) && sym === currentOpenTaxPopoverSymbol));
+  });
+}
+
+function initPortfolioTaxPopoverSupport() {
+  if (!Object.hasOwn(HTMLElement.prototype, 'popover')) {
+    import('https://unpkg.com/@oddbird/popover-polyfill@latest/dist/popover.min.js').catch(() => {});
+  }
+
+  document.addEventListener('toggle', (e) => {
+    const target = e.target;
+    if (!target || target.id !== 'portTaxDetailPopover') return;
+    const isOpen = e.newState === 'open';
+    if (!isOpen) {
+      currentOpenTaxPopoverSymbol = null;
+    }
+    syncTaxPopoverAriaExpanded(isOpen);
+  }, true);
+}
+
 // --- Portfolio Logic & AI Advice ---
 function getPortfolioAiAdvice(asset, pos, currentPrice) {
   const buyPrice = pos.buyPrice;
@@ -2292,18 +2539,7 @@ function getAssetPortfolioContext(asset, currentPriceOverride = null) {
   if (!pos || !(pos.shares > 0)) {
     return { inPortfolio: false };
   }
-  const currentPrice = (currentPriceOverride != null && currentPriceOverride > 0)
-    ? currentPriceOverride
-    : (asset.price != null ? asset.price : pos.buyPrice);
-  const shares = Number(pos.shares);
-  const buyPrice = Number(pos.buyPrice);
-  const investedNative = shares * buyPrice;
-  const currentValNative = shares * currentPrice;
-  const pnlNative = currentValNative - investedNative;
-  const pnlPct = investedNative > 0 ? (pnlNative / investedNative) * 100 : 0;
-  const investedEur = convertToEur(investedNative, asset);
-  const currentValEur = convertToEur(currentValNative, asset);
-  const pnlEur = currentValEur - investedEur;
+  const tb = computePositionTaxBreakdown(asset, pos, currentPriceOverride);
 
   let totalPortfolioEur = 0;
   for (const [sym, p] of Object.entries(AppState.portfolio)) {
@@ -2312,22 +2548,27 @@ function getAssetPortfolioContext(asset, currentPriceOverride = null) {
     const px = a && a.price != null ? a.price : p.buyPrice;
     totalPortfolioEur += convertToEur(p.shares * px, a || { currency: 'EUR' });
   }
-  const weightPct = totalPortfolioEur > 0 ? (currentValEur / totalPortfolioEur) * 100 : 100;
+  const weightPct = totalPortfolioEur > 0 ? (tb.grossValEur / totalPortfolioEur) * 100 : 100;
   const activePf = typeof getActivePortfolioObj === 'function' ? getActivePortfolioObj() : null;
 
   return {
     inPortfolio: true,
     portfolioName: activePf ? activePf.name : 'Portafoglio',
-    shares,
-    buyPrice,
-    currentPrice,
-    investedNative,
-    currentValNative,
-    pnlNative,
-    pnlPct,
-    investedEur,
-    currentValEur,
-    pnlEur,
+    shares: tb.shares,
+    buyPrice: tb.buyPrice,
+    currentPrice: tb.curPrice,
+    investedNative: tb.investedNative,
+    currentValNative: tb.grossValNative,
+    pnlNative: tb.grossPnlNative,
+    pnlPct: tb.grossPnlPct,
+    investedEur: tb.investedEur,
+    currentValEur: tb.grossValEur,
+    pnlEur: tb.grossPnlEur,
+    netValEur: tb.netValEur,
+    taxEur: tb.taxEur,
+    taxRateLabel: tb.taxProfile.rateLabel,
+    netPnlEur: tb.netPnlEur,
+    netPnlPct: tb.netPnlPct,
     totalPortfolioEur,
     weightPct
   };
@@ -2875,16 +3116,20 @@ function renderPortfolioAiAnalysisSection() {
 function getPortfolioMetricsSnapshot() {
   const entries = getPortfolioAssetsWithPos();
   let totalEur = 0;
+  let totalNetEur = 0;
+  let totalTaxEur = 0;
   let investedEur = 0;
   const classTotals = { Azioni: 0, ETF: 0, Obbligazioni: 0, Crypto: 0, Certificati: 0 };
   const currencyTotals = {};
 
   const items = entries.map(({ asset, pos }) => {
-    const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-    const valEur = convertToEur(pos.shares * curPrice, asset);
-    const invEur = convertToEur(pos.shares * pos.buyPrice, asset);
-    const pnlPct = pos.buyPrice > 0 ? ((curPrice - pos.buyPrice) / pos.buyPrice) * 100 : 0;
+    const tb = computePositionTaxBreakdown(asset, pos);
+    const valEur = tb.grossValEur;
+    const invEur = tb.investedEur;
+    const pnlPct = tb.grossPnlPct;
     totalEur += valEur;
+    totalNetEur += tb.netValEur;
+    totalTaxEur += tb.taxEur;
     investedEur += invEur;
 
     const clsLabel = asset.type === 'stock'
@@ -2903,6 +3148,9 @@ function getPortfolioMetricsSnapshot() {
       asset,
       pos,
       valEur,
+      netValEur: tb.netValEur,
+      taxEur: tb.taxEur,
+      taxProfile: tb.taxProfile,
       invEur,
       pnlPct,
       clsLabel,
@@ -2949,6 +3197,8 @@ function getPortfolioMetricsSnapshot() {
   return {
     items,
     totalEur,
+    totalNetEur,
+    totalTaxEur,
     investedEur,
     classTotals,
     currencyTotals,
@@ -3079,6 +3329,17 @@ function renderPortfolioHealthPane() {
     <div class="port-right-card">
       <div class="port-right-title"><span>Metriche Aggregate</span><span>${snap.items.length} Pos.</span></div>
       <div class="port-right-kpis">
+        <div class="port-right-kpi">
+          <div class="lbl">Controvalore Lordo</div>
+          <div class="val" style="font-variant-numeric:tabular-nums;">€ ${formatItEurAmount(snap.totalEur)}</div>
+        </div>
+        <div class="port-right-kpi">
+          <div class="lbl">Netto Tasse IT</div>
+          <div class="val" style="color:#6ee7b7;font-variant-numeric:tabular-nums;">
+            € ${formatItEurAmount(snap.totalNetEur)}
+            <div style="font-size:0.64rem;font-weight:600;color:${snap.totalTaxEur > 0 ? '#fbbf24' : 'var(--text-muted)'};">${snap.totalTaxEur > 0 ? 'Tasse: -€ ' + formatItEurAmount(snap.totalTaxEur) : 'Tasse: € 0,00'}</div>
+          </div>
+        </div>
         <div class="port-right-kpi">
           <div class="lbl">Concentrazione Top 1</div>
           <div class="val" style="color:${topItem.weightPct > 35 ? '#fbbf24' : '#34d399'};">${escapePortfolioHtml(topItem.asset.symbol)} (${topItem.weightPct.toFixed(0)}%)</div>
@@ -3433,6 +3694,16 @@ function openPortfolioModal(symbol) {
   if (inShares) inShares.value = isExisting ? pos.shares : '';
   if (inBuyPrice) inBuyPrice.value = isExisting ? pos.buyPrice : (asset.price != null ? asset.price : '');
 
+  const inTaxRegime = document.getElementById('portInputTaxRegime');
+  const autoTaxHelper = document.getElementById('portAutoTaxHelper');
+  const autoProfile = getItalianTaxProfile(asset, null);
+  if (autoTaxHelper) {
+    autoTaxHelper.textContent = `Auto: ${autoProfile.rateLabel} (${autoProfile.shortTag})`;
+  }
+  if (inTaxRegime) {
+    inTaxRegime.value = (isExisting && pos.taxRegime && ITALIAN_TAX_REGIMES[pos.taxRegime]) ? pos.taxRegime : 'auto';
+  }
+
   if (btnDelete) btnDelete.style.display = isExisting ? 'inline-block' : 'none';
   if (btnSave) btnSave.textContent = isExisting ? 'Aggiorna Posizione' : 'Salva nel Portafoglio';
 
@@ -3449,30 +3720,35 @@ function updatePortfolioModalPreview(asset) {
 
   const shares = parseFloat(document.getElementById('portInputShares')?.value) || 0;
   const buyPrice = parseFloat(document.getElementById('portInputBuyPrice')?.value) || 0;
-  const curPrice = curAsset.price != null ? curAsset.price : buyPrice;
+  const taxRegime = document.getElementById('portInputTaxRegime')?.value || 'auto';
+  const tb = computePositionTaxBreakdown(curAsset, { shares, buyPrice, taxRegime });
 
-  const invested = shares * buyPrice;
-  const curVal = shares * curPrice;
-  const pnlCash = curVal - invested;
-  const pnlPct = invested > 0 ? (pnlCash / invested) * 100 : 0;
-  const isUp = pnlCash >= 0;
-
-  const investedEur = convertToEur(invested, curAsset);
-  const curValEur = convertToEur(curVal, curAsset);
-  const pnlCashEur = convertToEur(pnlCash, curAsset);
+  const isUp = tb.grossPnlEur >= 0;
+  const isNetUp = tb.netPnlEur >= 0;
 
   const elInvested = document.getElementById('portPreviewInvested');
   const elCurVal = document.getElementById('portPreviewCurrentVal');
+  const elTaxRate = document.getElementById('portPreviewTaxRateLabel');
+  const elTaxAmt = document.getElementById('portPreviewTaxAmount');
+  const elNetVal = document.getElementById('portPreviewNetVal');
   const elPnl = document.getElementById('portPreviewPnl');
 
   const isNonEur = (curAsset.currency || '').toUpperCase() !== 'EUR';
-  const nativeInvested = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(invested, curAsset)})</span>` : '';
-  const nativeCurVal = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(curVal, curAsset)})</span>` : '';
+  const nativeInvested = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(tb.investedNative, curAsset)})</span>` : '';
+  const nativeCurVal = isNonEur ? ` <span style="font-size:0.7rem; color:var(--text-muted); font-weight:normal;">(${formatCurrency(tb.grossValNative, curAsset)})</span>` : '';
 
-  if (elInvested) elInvested.innerHTML = `€ ${investedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${nativeInvested}`;
-  if (elCurVal) elCurVal.innerHTML = `€ ${curValEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${nativeCurVal}`;
+  if (elInvested) elInvested.innerHTML = `€ ${formatItEurAmount(tb.investedEur)}${nativeInvested}`;
+  if (elCurVal) elCurVal.innerHTML = `€ ${formatItEurAmount(tb.grossValEur)}${nativeCurVal}`;
+  if (elTaxRate) elTaxRate.textContent = tb.taxProfile.rateLabel;
+  if (elTaxAmt) {
+    elTaxAmt.textContent = tb.taxEur > 0 ? `-€ ${formatItEurAmount(tb.taxEur)}` : '€ 0,00';
+    elTaxAmt.style.color = tb.taxEur > 0 ? '#fbbf24' : '#94a3b8';
+  }
+  if (elNetVal) elNetVal.textContent = `€ ${formatItEurAmount(tb.netValEur)}`;
   if (elPnl) {
-    elPnl.innerHTML = `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${pnlPct.toFixed(2)}% (${isUp ? '+€ ' : '-€ '}${Math.abs(pnlCashEur).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>`;
+    elPnl.innerHTML =
+      `<span style="color: ${isUp ? 'var(--color-up)' : 'var(--color-down)'};">${isUp ? '+' : ''}${tb.grossPnlPct.toFixed(2)}% (${isUp ? '+€ ' : '-€ '}${formatItEurAmount(Math.abs(tb.grossPnlEur))})</span>` +
+      ` <span style="font-size:0.72rem;color:#94a3b8;font-weight:600;">/ Netto ${isNetUp ? '+€ ' : '-€ '}${formatItEurAmount(Math.abs(tb.netPnlEur))}</span>`;
   }
 }
 
@@ -3487,11 +3763,13 @@ function getPortfolioVirtualAsset() {
   const entries = getPortfolioAssetsWithPos();
   let totalInvestedEur = 0;
   let totalCurrentValueEur = 0;
+  let totalNetValueEur = 0;
 
   entries.forEach(({ asset, pos }) => {
-    const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-    totalInvestedEur += convertToEur(pos.shares * pos.buyPrice, asset);
-    totalCurrentValueEur += convertToEur(pos.shares * curPrice, asset);
+    const tb = computePositionTaxBreakdown(asset, pos);
+    totalInvestedEur += tb.investedEur;
+    totalCurrentValueEur += tb.grossValEur;
+    totalNetValueEur += tb.netValEur;
   });
 
   const totalPnlCashEur = totalCurrentValueEur - totalInvestedEur;
@@ -3516,7 +3794,7 @@ function getPortfolioVirtualAsset() {
     change: totalPnlPct,
     high: periodHigh,
     low: periodLow,
-    volume: `Inv. € ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    volume: `Netto IT € ${formatItEurAmount(totalNetValueEur)}`,
     favorite: false,
     isPortfolio: true
   };
@@ -3532,6 +3810,7 @@ function savePortfolioPosition() {
 
   const shares = parseFloat(document.getElementById('portInputShares')?.value);
   const buyPrice = parseFloat(document.getElementById('portInputBuyPrice')?.value);
+  const taxRegime = document.getElementById('portInputTaxRegime')?.value || 'auto';
 
   if (!shares || shares <= 0 || !buyPrice || buyPrice <= 0) {
     alert('Inserisci un numero valido di quote e un prezzo medio di acquisto (PMC).');
@@ -3539,11 +3818,15 @@ function savePortfolioPosition() {
   }
 
   if (!AppState.portfolio) AppState.portfolio = {};
-  AppState.portfolio[symbol] = {
+  const nextPos = {
     shares: shares,
     buyPrice: buyPrice,
     updatedAt: Date.now()
   };
+  if (taxRegime !== 'auto' && ITALIAN_TAX_REGIMES[taxRegime]) {
+    nextPos.taxRegime = taxRegime;
+  }
+  AppState.portfolio[symbol] = nextPos;
 
   savePortfolioToStorage();
   closePortfolioModal();
@@ -3768,24 +4051,30 @@ function renderAssetList() {
       });
     }
 
-    // Overall portfolio metrics in EUR
+    // Overall portfolio metrics in EUR (Gross & Net of Italian Capital Gains Tax)
     let totalInvestedEur = 0;
     let totalCurrentValueEur = 0;
+    let totalNetValueEur = 0;
+    let totalTaxEur = 0;
+    const taxBySymbol = new Map();
 
     portfolioAssets.forEach(asset => {
       const pos = AppState.portfolio[asset.symbol];
       if (pos) {
-        const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-        const investedNative = pos.shares * pos.buyPrice;
-        const currentValNative = pos.shares * curPrice;
-        totalInvestedEur += convertToEur(investedNative, asset);
-        totalCurrentValueEur += convertToEur(currentValNative, asset);
+        const tb = computePositionTaxBreakdown(asset, pos);
+        taxBySymbol.set(asset.symbol, tb);
+        totalInvestedEur += tb.investedEur;
+        totalCurrentValueEur += tb.grossValEur;
+        totalNetValueEur += tb.netValEur;
+        totalTaxEur += tb.taxEur;
       }
     });
 
     const totalPnlCashEur = totalCurrentValueEur - totalInvestedEur;
     const totalPnlPct = totalInvestedEur > 0 ? (totalPnlCashEur / totalInvestedEur) * 100 : 0;
     const isTotalPnlUp = totalPnlCashEur >= 0;
+    const totalNetPnlEur = totalNetValueEur - totalInvestedEur;
+    const isNetPnlUp = totalNetPnlEur >= 0;
 
     const isPortfolioSelected = Boolean(AppState.selectedAsset && AppState.selectedAsset.isPortfolio);
     const summaryHtml = `
@@ -3793,17 +4082,30 @@ function renderAssetList() {
         <div class="port-sum-row">
           <div>
             <div class="port-sum-label">💼 ${escapePortfolioHtml(activePf.name)} <span class="port-chart-link-pill">📈 Grafico</span></div>
-            <div class="port-sum-val">€ ${totalCurrentValueEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div class="port-sum-val">€ ${formatItEurAmount(totalCurrentValueEur)} <span class="port-sum-gross-tag">Lordo</span></div>
           </div>
           <div style="text-align: right;">
-            <div class="port-sum-label">P&L Totale</div>
+            <div class="port-sum-label">P&L Lordo</div>
             <div class="port-sum-pnl ${isTotalPnlUp ? 'badge-up' : 'badge-down'}">
-              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+€ ' : '-€ '}${Math.abs(totalPnlCashEur).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              ${isTotalPnlUp ? '▲ +' : '▼ '}${Math.abs(totalPnlPct).toFixed(2)}% (${isTotalPnlUp ? '+€ ' : '-€ '}${formatItEurAmount(Math.abs(totalPnlCashEur))})
             </div>
           </div>
         </div>
+        <div class="port-sum-tax-bar">
+          <div class="port-sum-tax-item">
+            <span class="port-sum-tax-lbl">Netto Tasse IT</span>
+            <strong class="port-sum-tax-val">€ ${formatItEurAmount(totalNetValueEur)}</strong>
+          </div>
+          <div class="port-sum-tax-item" style="text-align: right;">
+            <span class="port-sum-tax-lbl">Imposta stimata • P&L Netto</span>
+            <strong class="port-sum-tax-sub">
+              <span class="${totalTaxEur > 0 ? 'port-tax-deduct' : ''}">${totalTaxEur > 0 ? '-€ ' + formatItEurAmount(totalTaxEur) : '€ 0,00'}</span>
+              <span class="port-sum-net-pnl ${isNetPnlUp ? 'is-up' : 'is-down'}">(${isNetPnlUp ? '+€ ' : '-€ '}${formatItEurAmount(Math.abs(totalNetPnlEur))})</span>
+            </strong>
+          </div>
+        </div>
         <div class="port-sum-sub">
-          <span>Capitale Investito: <strong>€ ${totalInvestedEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+          <span>Capitale Investito: <strong>€ ${formatItEurAmount(totalInvestedEur)}</strong></span>
           <span>Posizioni Attive: <strong>${portfolioAssets.length}</strong></span>
         </div>
         <div class="port-sum-profile-row">
@@ -3818,35 +4120,29 @@ function renderAssetList() {
     const cardsHtml = portfolioAssets.map(asset => {
       const pos = AppState.portfolio[asset.symbol];
       const isSelected = AppState.selectedAsset && AppState.selectedAsset.symbol === asset.symbol;
-      const curPrice = asset.price != null ? asset.price : pos.buyPrice;
-      const currentValNative = pos.shares * curPrice;
-      const investedNative = pos.shares * pos.buyPrice;
-      const pnlCashNative = currentValNative - investedNative;
-      const pnlPct = investedNative > 0 ? (pnlCashNative / investedNative) * 100 : 0;
-      const isPnlUp = pnlCashNative >= 0;
+      const tb = taxBySymbol.get(asset.symbol) || computePositionTaxBreakdown(asset, pos);
+      const isPnlUp = tb.grossPnlEur >= 0;
 
-      const currentValEur = convertToEur(currentValNative, asset);
-      const weightPct = totalCurrentValueEur > 0 ? (currentValEur / totalCurrentValueEur) * 100 : 0;
-      const pnlCashEur = convertToEur(pnlCashNative, asset);
-
+      const weightPct = totalCurrentValueEur > 0 ? (tb.grossValEur / totalCurrentValueEur) * 100 : 0;
       const isNonEur = (asset.currency || '').toUpperCase() !== 'EUR';
       const formattedPrice = asset.price != null ? formatCurrency(asset.price, asset) : '—';
       const formattedPmc = formatCurrency(pos.buyPrice, asset);
-      const nativeValHtml = isNonEur ? `<span class="port-metric-native">(${formatCurrency(currentValNative, asset)})</span>` : '';
-      const advice = getPortfolioAiAdvice(asset, pos, curPrice);
+      const advice = getPortfolioAiAdvice(asset, pos, tb.curPrice);
+      const symEsc = escapePortfolioHtml(asset.symbol);
+      const isTaxOpen = currentOpenTaxPopoverSymbol === asset.symbol;
 
       return `
-        <div class="portfolio-card ${isSelected ? 'selected' : ''} ${isPnlUp ? 'is-up' : 'is-down'}" data-symbol="${asset.symbol}">
+        <div class="portfolio-card ${isSelected ? 'selected' : ''} ${isPnlUp ? 'is-up' : 'is-down'}" data-symbol="${symEsc}">
           <div class="port-card-top">
             <div class="port-card-identity">
-              <span class="asset-symbol">${asset.symbol}</span>
+              <span class="asset-symbol">${symEsc}</span>
               <span class="asset-type-badge type-${asset.type}">${asset.type === 'certificate' ? 'CERT' : (asset.type === 'bond' ? 'BOND' : asset.type)}</span>
               <span class="port-shares-pill">${pos.shares} quote</span>
             </div>
             <div class="port-card-actions">
               <span class="port-weight-pill" title="Peso della posizione nel portafoglio">Peso ${weightPct.toFixed(0)}%</span>
-              <button class="port-edit-btn" data-action="edit" data-symbol="${asset.symbol}" title="Modifica posizione">✏️</button>
-              <button class="port-edit-btn" data-action="delete" data-symbol="${asset.symbol}" title="Rimuovi dal portafoglio">🗑️</button>
+              <button class="port-edit-btn" data-action="edit" data-symbol="${symEsc}" title="Modifica posizione">✏️</button>
+              <button class="port-edit-btn" data-action="delete" data-symbol="${symEsc}" title="Rimuovi dal portafoglio">🗑️</button>
             </div>
           </div>
 
@@ -3855,11 +4151,39 @@ function renderAssetList() {
           <div class="port-card-metrics">
             <div>
               <div class="port-metric-sub">PMC: ${formattedPmc} • Attuale: ${formattedPrice}</div>
-              <div class="port-metric-val">Valore: <strong>€ ${currentValEur.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ${nativeValHtml}</div>
             </div>
             <div class="port-metric-right">
               <div class="port-pnl-pill ${isPnlUp ? 'badge-up' : 'badge-down'}">
-                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(pnlPct).toFixed(2)}% (${isPnlUp ? '+€ ' : '-€ '}${Math.abs(pnlCashEur).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                ${isPnlUp ? '▲ +' : '▼ '}${Math.abs(tb.grossPnlPct).toFixed(2)}% (${isPnlUp ? '+€ ' : '-€ '}${formatItEurAmount(Math.abs(tb.grossPnlEur))})
+              </div>
+            </div>
+          </div>
+
+          <div class="port-val-tax-grid">
+            <div class="port-val-box port-val-gross">
+              <div class="port-val-label">Controvalore Lordo</div>
+              <div class="port-val-amount">€ ${formatItEurAmount(tb.grossValEur)}</div>
+              <div class="port-val-sub">
+                ${isNonEur ? formatCurrency(tb.grossValNative, asset) : `Inv. € ${formatItEurAmount(tb.investedEur)}`}
+              </div>
+            </div>
+            <div class="port-val-box port-val-net">
+              <div class="port-val-label-row">
+                <span class="port-val-label">Netto IT <span class="port-tax-rate-chip">${escapePortfolioHtml(tb.taxProfile.rateLabel)}</span></span>
+                <button type="button"
+                  class="port-tax-info-btn"
+                  popovertarget="portTaxDetailPopover"
+                  popovertargetaction="show"
+                  data-symbol="${symEsc}"
+                  aria-expanded="${isTaxOpen ? 'true' : 'false'}"
+                  aria-label="Dettaglio tasse Italia per ${symEsc}">ⓘ</button>
+              </div>
+              <div class="port-val-amount">€ ${formatItEurAmount(tb.netValEur)}</div>
+              <div class="port-val-sub">
+                ${tb.taxEur > 0
+                  ? `Tasse: <span class="port-tax-deduct">-€ ${formatItEurAmount(tb.taxEur)}</span>`
+                  : (tb.grossPnlEur < 0 ? 'Tasse: € 0,00 (minusv.)' : 'Tasse: € 0,00')
+                }
               </div>
             </div>
           </div>
@@ -3911,6 +4235,37 @@ function renderAssetList() {
         }
       });
     });
+
+    // Attach Italian tax detail popover triggers (stop card selection propagation)
+    container.querySelectorAll('.port-tax-info-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sym = btn.getAttribute('data-symbol');
+        const popover = document.getElementById('portTaxDetailPopover');
+        if (!sym || !popover) return;
+        const isAlreadyOpen = typeof popover.matches === 'function' && (popover.matches(':popover-open') || popover.classList.contains(':popover-open'));
+        if (isAlreadyOpen && currentOpenTaxPopoverSymbol === sym) {
+          e.preventDefault();
+          currentOpenTaxPopoverSymbol = null;
+          syncTaxPopoverAriaExpanded(false);
+          if (typeof popover.hidePopover === 'function') {
+            try { popover.hidePopover(); } catch (err) {}
+          }
+          return;
+        }
+        renderTaxDetailPopoverContent(sym);
+      });
+    });
+
+    // Keep open tax popover synchronized on live price polls
+    const openTaxPopover = document.getElementById('portTaxDetailPopover');
+    if (openTaxPopover && currentOpenTaxPopoverSymbol && typeof openTaxPopover.matches === 'function' && (openTaxPopover.matches(':popover-open') || openTaxPopover.classList.contains(':popover-open'))) {
+      if (AppState.portfolio && AppState.portfolio[currentOpenTaxPopoverSymbol]) {
+        renderTaxDetailPopoverContent(currentOpenTaxPopoverSymbol);
+      } else if (typeof openTaxPopover.hidePopover === 'function') {
+        try { openTaxPopover.hidePopover(); } catch (err) {}
+      }
+    }
 
     // Attach edit / delete handlers
     container.querySelectorAll('.port-edit-btn').forEach(btn => {
@@ -5615,7 +5970,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
 
       if (narrativeEl) {
         narrativeEl.innerHTML =
-          `<div>💼 <strong>Posizione attuale:</strong> possiedi <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> per un valore di <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong> nel portafoglio, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
+          `<div>💼 <strong>Posizione attuale:</strong> possiedi <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> • Controvalore lordo <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> / netto tasse IT (${escapePortfolioHtml(pfCtx.taxRateLabel || '26%')}) <strong>${fmtEurVal(pfCtx.netValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong> nel portafoglio, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L lordo <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
           `<div>💡 <strong>Valutazione (comprare altre quote o vendere):</strong> ${certActionAdvice}</div>`;
       }
       if (structuredNarrativeEl) {
@@ -6179,7 +6534,7 @@ function updateAiInvestmentEvaluation(asset, bars, techScore = 50) {
   if (pfCtx.inPortfolio) {
     const pnlSign = pfCtx.pnlEur >= 0 ? '+' : '-';
     narrativeEl.innerHTML =
-      `<div>💼 <strong>Posizione in portafoglio (${escapePortfolioHtml(pfCtx.portfolioName)}):</strong> <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> • Valore attuale <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong>, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
+      `<div>💼 <strong>Posizione in portafoglio (${escapePortfolioHtml(pfCtx.portfolioName)}):</strong> <strong>${fmtSharesVal(pfCtx.shares)} quote</strong> • Controvalore lordo <strong>${fmtEurVal(pfCtx.currentValEur)}</strong> / netto tasse IT (${escapePortfolioHtml(pfCtx.taxRateLabel || '26%')}) <strong>${fmtEurVal(pfCtx.netValEur)}</strong> (peso <strong>${pfCtx.weightPct.toFixed(1)}%</strong>, PMC ${formatCurrency(pfCtx.buyPrice, asset)}, P&L lordo <strong>${pnlSign}${Math.abs(pfCtx.pnlPct).toFixed(2)}%</strong> / ${pnlSign}${fmtEurVal(Math.abs(pfCtx.pnlEur))}).</div>` +
       `<div>✅ <strong>Fattori a favore di tenere / comprare altre quote:</strong> ${pros.slice(0, 2).join('; ')}.</div>` +
       `<div>⚠️ <strong>Fattori per valutare vendita / alleggerimento:</strong> ${cons.slice(0, 2).join('; ')}.</div>` +
       `<div>💡 <strong>Decisione operativa sulle tue quote:</strong> ${plainStrategy}.</div>`;
@@ -9413,6 +9768,9 @@ function setupModals() {
   const portUseCurrentPriceBtn = document.getElementById('portUseCurrentPriceBtn');
   const portInputShares = document.getElementById('portInputShares');
   const portInputBuyPrice = document.getElementById('portInputBuyPrice');
+  const portInputTaxRegime = document.getElementById('portInputTaxRegime');
+
+  initPortfolioTaxPopoverSupport();
 
   if (headerPortBtn) {
     headerPortBtn.addEventListener('click', () => {
@@ -9434,6 +9792,7 @@ function setupModals() {
   if (deletePortBtn) deletePortBtn.addEventListener('click', () => deletePortfolioPosition());
   if (portInputShares) portInputShares.addEventListener('input', () => updatePortfolioModalPreview());
   if (portInputBuyPrice) portInputBuyPrice.addEventListener('input', () => updatePortfolioModalPreview());
+  if (portInputTaxRegime) portInputTaxRegime.addEventListener('change', () => updatePortfolioModalPreview());
   if (portUseCurrentPriceBtn) {
     portUseCurrentPriceBtn.addEventListener('click', () => {
       const sym = currentPortfolioModalSymbol;
@@ -9913,8 +10272,8 @@ Crea più portafogli, monitora P&L e pesi percentuali, verifica sovrapposizioni 
 
 ### Aggiungere, Modificare o Rimuovere Posizioni
 - Clicca sul pulsante **\`+\`** su qualsiasi titolo nella Watchlist (o nella scheda portafoglio).
-- Inserisci il **Numero di Quote** possedute e il **Prezzo Medio di Carico (PMC)** (puoi premere *Usa prezzo attuale* per compilarlo in un clic).
-- L'app calcola subito per ogni asset e per l'intero portafoglio: **Valore Attuale**, **Capitale Investito**, **P&L (€ e %)** e **Peso %** sul totale.
+- Inserisci il **Numero di Quote** possedute, il **Prezzo Medio di Carico (PMC)** (puoi premere *Usa prezzo attuale* per compilarlo in un clic) e, se necessario, personalizza il **Regime Fiscale Italia** (altrimenti impostato automaticamente).
+- L'app calcola subito per ogni asset e per l'intero portafoglio: **Controvalore Lordo**, **Controvalore Netto (al netto delle tasse sulle plusvalenze in Italia: 12,5% Titoli di Stato/White List, 26% Azioni/ETF/Certificati, 33% Cripto-attività)**, **Capitale Investito**, **P&L (€ e %)** e **Peso %** sul totale. Premi **\`ⓘ\`** su ogni posizione per vedere il dettaglio fiscale completo.
 
 ### Valutazione IA Composizione & Simulatore "What-If"
 - **1. Sovrapposizioni**: analizza automaticamente se stai accumulando esposizione sugli stessi titoli o indici tra azioni singole, ETF e certificati.
